@@ -4,7 +4,7 @@
 
 // Vertex Shader, plotting the location of the vertices.
 pub const vertexShaderImpl =
-    \\ #version 330 core
+    \\ #version 410 core
     \\ void main (void)
     \\ {
     \\     const vec4 vertices[] = vec4[](vec4( 0.25, -0.25, 0.5, 1.0),
@@ -16,7 +16,7 @@ pub const vertexShaderImpl =
 
 // fragment Shader, changing the color of the the geometries
 pub const fragmentShaderImpl =
-    \\ #version 330 core
+    \\ #version 410 core
     \\
     \\ out vec4 color;
     \\ 

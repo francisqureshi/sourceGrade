@@ -89,9 +89,9 @@ fn intializeGlfw() !void {
         return error.GLFWInitializationFailed;
     };
 
-    // Use OpenGL 3.3 which is more widely supported on macOS
-    glfw.windowHint(glfw.WindowHint.context_version_major, 3);
-    glfw.windowHint(glfw.WindowHint.context_version_minor, 3);
+    // Use OpenGL 4.1 - highest version supported on macOS
+    glfw.windowHint(glfw.WindowHint.context_version_major, 4);
+    glfw.windowHint(glfw.WindowHint.context_version_minor, 1);
     glfw.windowHint(glfw.WindowHint.opengl_profile, glfw.OpenGLProfile.opengl_core_profile);
     glfw.windowHint(glfw.WindowHint.opengl_forward_compat, true); // Required on macOS
 }
