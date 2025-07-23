@@ -1,3 +1,0 @@
-0
-241826 94017878 1753226902967897581 86501dc510331da26275322e654ec46a 3 p/zglfw-0.10.0-dev-zgVDNMacIQA-k7kNSfwUc9Lfzx-bb_wklVm25K-p8Tr7/libs/glfw/include/GLFW/glfw3.h
-21201 94017879 1753226902968232873 368cd78bfbe5e29e658aa2a5326f9063 3 p/zglfw-0.10.0-dev-zgVDNMacIQA-k7kNSfwUc9Lfzx-bb_wklVm25K-p8Tr7/libs/glfw/include/GLFW/glfw3native.h
