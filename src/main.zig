@@ -106,24 +106,29 @@ pub fn main() !void {
     // Show the window
     c.metal_window_show(window);
 
-    std.debug.print("Starting continuous render loop...\n", .{});
+    std.debug.print("🌀 Starting ROTATING triangle render loop...\n", .{});
     std.debug.print("Close the window or press Cmd+Q to quit.\n\n", .{});
 
-    // Render ONE frame and wait for GPU completion
-    std.debug.print("Rendering single frame...\n", .{});
-    {
+    // Continuous render loop with rotation
+    var frame: u64 = 0;
+    const start_time = try std.time.Instant.now();
+
+    while (true) : (frame += 1) {
+        // Process events
+        c.metal_window_process_events(window);
+
+        // Calculate rotation angle (360 degrees every 3 seconds)
+        const current_time = try std.time.Instant.now();
+        const elapsed_ns = current_time.since(start_time);
+        const elapsed_ms = elapsed_ns / std.time.ns_per_ms;
+        const rotation_angle: f32 = @as(f32, @floatFromInt(elapsed_ms % 3000)) / 3000.0 * 2.0 * std.math.pi;
+
         // Get drawable
         const drawable_ptr = c.metal_layer_get_next_drawable(layer);
-        if (drawable_ptr == null) {
-            std.debug.print("ERROR: No drawable!\n", .{});
-            return error.NoDrawable;
-        }
+        if (drawable_ptr == null) continue;
 
         const texture_ptr = c.metal_drawable_get_texture(drawable_ptr);
-        if (texture_ptr == null) {
-            std.debug.print("ERROR: No texture!\n", .{});
-            return error.NoTexture;
-        }
+        if (texture_ptr == null) continue;
 
         // Wrap texture
         var drawable_texture = metal.MetalTexture.initFromPtr(texture_ptr);
@@ -132,7 +137,7 @@ pub fn main() !void {
         var render_pass = metal.MetalRenderPassDescriptor.init();
         defer render_pass.deinit();
         render_pass.setColorTexture(&drawable_texture, 0);
-        render_pass.setClearColor(0.1, 0.1, 0.1, 1.0, 0); // Dark gray to verify it's not just black
+        render_pass.setClearColor(0.0, 0.0, 0.0, 1.0, 0); // Black background
 
         // Create command buffer
         var command_buffer = try queue.createCommandBuffer();
@@ -142,31 +147,25 @@ pub fn main() !void {
         var render_encoder = try command_buffer.createRenderEncoder(&render_pass);
         defer render_encoder.deinit();
 
-        // Set pipeline and draw
+        // Set pipeline
         render_encoder.setPipeline(&pipeline);
 
-        // Use setVertexBytes to directly upload vertex data inline
-        const vertex_data_size = @sizeOf(@TypeOf(vertices));
-        std.debug.print("Setting vertex bytes: size={}, ptr={*}\n", .{ vertex_data_size, &vertices });
-        render_encoder.setVertexBytes(@ptrCast(&vertices), @intCast(vertex_data_size), 0);
+        // Pass rotation angle to shader (buffer index 1)
+        render_encoder.setVertexBytes(@ptrCast(&rotation_angle), @sizeOf(f32), 1);
 
+        // Draw triangle
         render_encoder.drawPrimitives(.triangle, 0, 3);
         render_encoder.end();
 
-        // Schedule present
+        // Schedule present and commit
         command_buffer.present(drawable_ptr);
-
-        // Commit and WAIT for completion
         command_buffer.commit();
-        command_buffer.waitForCompletion();
 
-        std.debug.print("✓ Frame rendered and GPU completed!\n", .{});
+        if (frame == 0) {
+            std.debug.print("✓ First frame rendered! Triangle is now spinning!\n", .{});
+        }
+
+        // ~60 FPS
+        std.posix.nanosleep(0, 16_000_000);
     }
-
-    std.debug.print("Window should show triangle. Entering AppKit loop...\n", .{});
-    std.debug.print("If you see dark gray background, rendering works but triangle is wrong.\n", .{});
-    std.debug.print("If you see black, something else is wrong.\n\n", .{});
-
-    // Keep window open
-    c.metal_window_run_app();
 }

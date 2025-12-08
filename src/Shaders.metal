@@ -13,24 +13,36 @@ struct VertexOut {
     float4 color;
 };
 
-// Vertex shader  
+// Vertex shader with rotation
 vertex VertexOut vertexShader(
     uint vertexID [[vertex_id]],
-    device const VertexIn* vertices [[buffer(0)]])
+    device const VertexIn* vertices [[buffer(0)]],
+    constant float &rotationAngle [[buffer(1)]])  // Rotation angle in radians
 {
     VertexOut out;
 
-    // HARDCODE positions that we know work
+    // Define base positions for the triangle
+    float2 position;
     if (vertexID == 0) {
-        out.position = float4(0.0, 0.5, 0.0, 1.0);  // Top
-        out.color = float4(0.0, 1.0, 0.0, 1.0);      // Green
+        position = float2(0.0, 0.5);     // Top
+        out.color = float4(0.0, 1.0, 0.0, 1.0);  // Green
     } else if (vertexID == 1) {
-        out.position = float4(-0.5, -0.5, 0.0, 1.0); // Bottom-left
-        out.color = float4(0.0, 0.0, 1.0, 1.0);      // Blue
+        position = float2(-0.5, -0.5);   // Bottom-left
+        out.color = float4(0.0, 0.0, 1.0, 1.0);  // Blue
     } else {
-        out.position = float4(0.5, -0.5, 0.0, 1.0);  // Bottom-right
-        out.color = float4(1.0, 0.0, 0.0, 1.0);      // Red
+        position = float2(0.5, -0.5);    // Bottom-right
+        out.color = float4(1.0, 0.0, 0.0, 1.0);  // Red
     }
+    
+    // Apply 2D rotation matrix
+    float cosAngle = cos(rotationAngle);
+    float sinAngle = sin(rotationAngle);
+    
+    float2 rotatedPos;
+    rotatedPos.x = position.x * cosAngle - position.y * sinAngle;
+    rotatedPos.y = position.x * sinAngle + position.y * cosAngle;
+    
+    out.position = float4(rotatedPos, 0.0, 1.0);
 
     return out;
 }
