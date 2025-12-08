@@ -82,10 +82,12 @@ pub fn main() !void {
         color: [4]f32,
     };
 
+    // Create a perfectly centered triangle
+    // For a triangle to be centered, we need to offset it so its centroid is at (0,0)
     const vertices = [_]VertexData{
-        .{ .position = .{ 0.0, 0.2 }, .color = .{ 1.0, 0.0, 0.0, 1.0 } }, // Top (red) - move down
-        .{ .position = .{ -0.3, -0.2 }, .color = .{ 0.0, 1.0, 0.0, 1.0 } }, // Bottom-left (green) - move up
-        .{ .position = .{ 0.3, -0.2 }, .color = .{ 0.0, 0.0, 1.0, 1.0 } }, // Bottom-right (blue) - move up
+        .{ .position = .{ 0.0, 0.27 }, .color = .{ 1.0, 0.0, 0.0, 1.0 } }, // Top (red) - centered
+        .{ .position = .{ -0.3, -0.13 }, .color = .{ 0.0, 1.0, 0.0, 1.0 } }, // Bottom-left (green)
+        .{ .position = .{ 0.3, -0.13 }, .color = .{ 0.0, 0.0, 1.0, 1.0 } }, // Bottom-right (blue)
     };
 
     var vertex_buffer = try device.createBuffer(@sizeOf(@TypeOf(vertices)));
