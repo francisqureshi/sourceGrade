@@ -33,8 +33,7 @@
     // internet connectivity.
     .dependencies = .{
         .metal_bindings = .{
-            .url = "git+https://github.com/francisqureshi/metal-bindings.git#cb3c7819f6ce2cfc61d9cc7f475513049e3f5305",
-            .hash = "metal_bindings-0.0.0-512c6w-MAQD5AgjUKtCkm79ke7gCyrEfsr2kbeJaFJMV",
+            .path = "../metal-bindings",
         },
     },
     .paths = .{

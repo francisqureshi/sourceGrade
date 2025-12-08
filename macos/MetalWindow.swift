@@ -88,6 +88,49 @@ public func metal_window_run_app() {
     NSApplication.shared.run()
 }
 
+@_cdecl("metal_window_is_running")
+public func metal_window_is_running(_ windowPtr: UnsafeMutableRawPointer) -> Bool {
+    let window = Unmanaged<MetalWindow>.fromOpaque(windowPtr).takeUnretainedValue()
+    return window.isVisible && NSApplication.shared.isRunning
+}
+
+@_cdecl("metal_layer_get_next_drawable")
+public func metal_layer_get_next_drawable(_ layerPtr: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer? {
+    let layer = Unmanaged<CAMetalLayer>.fromOpaque(layerPtr).takeUnretainedValue()
+    guard let drawable = layer.nextDrawable() else { return nil }
+    
+    // Return the CAMetalDrawable pointer
+    return Unmanaged.passRetained(drawable).toOpaque()
+}
+
+@_cdecl("metal_drawable_get_texture")
+public func metal_drawable_get_texture(_ drawablePtr: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer? {
+    let drawable = Unmanaged<CAMetalDrawable>.fromOpaque(drawablePtr).takeUnretainedValue()
+    
+    // Return the MTLTexture pointer
+    return Unmanaged.passRetained(drawable.texture).toOpaque()
+}
+
+@_cdecl("metal_drawable_present")
+public func metal_drawable_present(_ drawablePtr: UnsafeMutableRawPointer) {
+    let drawable = Unmanaged<CAMetalDrawable>.fromOpaque(drawablePtr).takeUnretainedValue()
+    drawable.present()
+}
+
+@_cdecl("metal_window_process_events")
+public func metal_window_process_events(_ windowPtr: UnsafeMutableRawPointer) {
+    // Process pending events
+    let event = NSApplication.shared.nextEvent(
+        matching: .any,
+        until: nil,
+        inMode: .default,
+        dequeue: true
+    )
+    if event != nil {
+        NSApplication.shared.sendEvent(event!)
+    }
+}
+
 @_cdecl("metal_window_release")
 public func metal_window_release(_ windowPtr: UnsafeMutableRawPointer) {
     let _ = Unmanaged<MetalWindow>.fromOpaque(windowPtr).takeRetainedValue()

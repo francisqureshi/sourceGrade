@@ -16,21 +16,21 @@ struct VertexOut {
 // Vertex shader
 vertex VertexOut vertexShader(
     uint vertexID [[vertex_id]],
-    device const VertexIn* vertices [[buffer(0)]],
-    constant float2& viewportSize [[buffer(1)]])
+    device const VertexIn* vertices [[buffer(0)]])
 {
     VertexOut out;
 
-    // Convert position from pixel space to normalized device coordinates
-    float2 pixelPosition = vertices[vertexID].position;
-    float2 viewportSizeFloat = float2(viewportSize.x, viewportSize.y);
-
-    // Normalize to [-1, 1] range
-    out.position = float4(0.0, 0.0, 0.0, 1.0);
-    out.position.xy = pixelPosition / (viewportSizeFloat / 2.0);
-
-    // Pass color through to fragment shader
-    out.color = vertices[vertexID].color;
+    // Use position directly from vertex buffer
+    out.position = float4(vertices[vertexID].position, 0.0, 1.0);
+    
+    // Debug: different color for each vertex based on ID
+    if (vertexID == 0) {
+        out.color = float4(1.0, 0.0, 0.0, 1.0); // Red
+    } else if (vertexID == 1) {
+        out.color = float4(0.0, 1.0, 0.0, 1.0); // Green
+    } else {
+        out.color = float4(0.0, 0.0, 1.0, 1.0); // Blue
+    }
 
     return out;
 }

@@ -3,4 +3,9 @@ _metal_window_get_layer
 _metal_window_get_device
 _metal_window_show
 _metal_window_run_app
+_metal_window_is_running
+_metal_layer_get_next_drawable
+_metal_drawable_get_texture
+_metal_drawable_present
+_metal_window_process_events
 _metal_window_release

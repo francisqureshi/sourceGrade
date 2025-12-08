@@ -15,9 +15,8 @@ pub fn main() !void {
         return error.MetalNotAvailable;
     }
 
-    // Create the window (800x600, borderless = false for normal window)
-    // Change to `true` for borderless window
-    const window = c.metal_window_create(800, 600, true);
+    // Create window (800x600, normal window with title bar)
+    const window = c.metal_window_create(800, 600, false);
     if (window == null) {
         std.debug.print("Failed to create window\n", .{});
         return error.WindowCreationFailed;
@@ -84,9 +83,9 @@ pub fn main() !void {
     };
 
     const vertices = [_]VertexData{
-        .{ .position = .{ 0.0, 0.5 }, .color = .{ 1.0, 0.0, 0.0, 1.0 } }, // Top (red)
-        .{ .position = .{ -0.5, -0.5 }, .color = .{ 0.0, 1.0, 0.0, 1.0 } }, // Bottom-left (green)
-        .{ .position = .{ 0.5, -0.5 }, .color = .{ 0.0, 0.0, 1.0, 1.0 } }, // Bottom-right (blue)
+        .{ .position = .{ 0.0, 0.2 }, .color = .{ 1.0, 0.0, 0.0, 1.0 } }, // Top (red) - move down
+        .{ .position = .{ -0.3, -0.2 }, .color = .{ 0.0, 1.0, 0.0, 1.0 } }, // Bottom-left (green) - move up
+        .{ .position = .{ 0.3, -0.2 }, .color = .{ 0.0, 0.0, 1.0, 1.0 } }, // Bottom-right (blue) - move up
     };
 
     var vertex_buffer = try device.createBuffer(@sizeOf(@TypeOf(vertices)));
@@ -94,13 +93,65 @@ pub fn main() !void {
     vertex_buffer.upload(std.mem.sliceAsBytes(&vertices));
 
     std.debug.print("Triangle ready to render!\n", .{});
-    std.debug.print("Window is visible. The rendering loop would go here.\n", .{});
-    std.debug.print("Press Cmd+Q to quit.\n\n", .{});
+    std.debug.print("Showing window and starting AppKit main loop...\n", .{});
 
     // Show the window
     c.metal_window_show(window);
 
-    // TODO: Implement render loop with CAMetalLayer
-    // For now, just run the app event loop
+    // Render a few frames to show triangle is working
+    for (0..5) |frame| {
+        std.debug.print("Rendering frame {}\n", .{frame});
+
+        // Get next drawable from CAMetalLayer
+        const drawable_ptr = c.metal_layer_get_next_drawable(layer);
+        if (drawable_ptr == null) {
+            std.debug.print("No drawable available\n", .{});
+            continue;
+        }
+
+        // Create MetalDrawable wrapper
+        var drawable = metal.MetalDrawable{ .handle = drawable_ptr };
+
+        // Get texture from drawable
+        var drawable_texture = drawable.getTexture();
+        defer drawable_texture.deinit();
+
+        // Create render pass descriptor
+        var render_pass = metal.MetalRenderPassDescriptor.init();
+        defer render_pass.deinit();
+        render_pass.setColorTexture(&drawable_texture, 0);
+        render_pass.setClearColor(0.0, 0.0, 0.0, 1.0, 0); // Black background
+
+        // Create command buffer
+        var command_buffer = try queue.createCommandBuffer();
+        defer command_buffer.deinit();
+
+        // Create render encoder
+        var render_encoder = try command_buffer.createRenderEncoder(&render_pass);
+        defer render_encoder.deinit();
+
+        // Set render pipeline
+        render_encoder.setPipeline(&pipeline);
+
+        // Set vertex data directly instead of buffer
+        render_encoder.setVertexBytes(&vertices, @sizeOf(@TypeOf(vertices)), 0);
+
+        // Draw triangle
+        render_encoder.drawPrimitives(.triangle, 0, 3);
+        render_encoder.end();
+
+        // Commit and present
+        command_buffer.commit();
+        drawable.present();
+
+        // Process events
+        c.metal_window_process_events(window);
+    }
+
+    std.debug.print("Starting AppKit main loop (window should be visible now)...\n", .{});
+
+    // Run the AppKit main loop - this will block and handle events
     c.metal_window_run_app();
+
+    std.debug.print("AppKit loop ended.\n", .{});
 }
