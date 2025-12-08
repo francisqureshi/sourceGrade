@@ -22,6 +22,9 @@ void* metal_window_get_device(void* window);
 /// Show the window
 void metal_window_show(void* window);
 
+/// Initialize NSApplication without running main loop
+void metal_window_init_app(void);
+
 /// Run the NSApplication main loop
 void metal_window_run_app(void);
 

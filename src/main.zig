@@ -82,47 +82,57 @@ pub fn main() !void {
         color: [4]f32,
     };
 
-    // Create a perfectly centered triangle
-    // For a triangle to be centered, we need to offset it so its centroid is at (0,0)
+    // Create a centered, properly colored triangle matching Apple's example
     const vertices = [_]VertexData{
-        .{ .position = .{ 0.0, 0.27 }, .color = .{ 1.0, 0.0, 0.0, 1.0 } }, // Top (red) - centered
-        .{ .position = .{ -0.3, -0.13 }, .color = .{ 0.0, 1.0, 0.0, 1.0 } }, // Bottom-left (green)
-        .{ .position = .{ 0.3, -0.13 }, .color = .{ 0.0, 0.0, 1.0, 1.0 } }, // Bottom-right (blue)
+        .{ .position = .{ 0.0, 0.5 }, .color = .{ 0.0, 1.0, 0.0, 1.0 } }, // Top (green)
+        .{ .position = .{ -0.5, -0.5 }, .color = .{ 0.0, 0.0, 1.0, 1.0 } }, // Bottom-left (blue)
+        .{ .position = .{ 0.5, -0.5 }, .color = .{ 1.0, 0.0, 0.0, 1.0 } }, // Bottom-right (red)
     };
 
     var vertex_buffer = try device.createBuffer(@sizeOf(@TypeOf(vertices)));
     defer vertex_buffer.deinit();
     vertex_buffer.upload(std.mem.sliceAsBytes(&vertices));
 
+    std.debug.print("Vertex data:\n", .{});
+    for (vertices, 0..) |v, i| {
+        std.debug.print("  Vertex {}: pos=({d:.2}, {d:.2}), color=({d:.2}, {d:.2}, {d:.2}, {d:.2})\n", .{ i, v.position[0], v.position[1], v.color[0], v.color[1], v.color[2], v.color[3] });
+    }
     std.debug.print("Triangle ready to render!\n", .{});
-    std.debug.print("Showing window and starting AppKit main loop...\n", .{});
+    std.debug.print("Initializing AppKit and showing window...\n", .{});
+
+    // Initialize NSApplication (this must happen before showing window)
+    c.metal_window_init_app();
 
     // Show the window
     c.metal_window_show(window);
 
-    // Render a few frames to show triangle is working
-    for (0..5) |frame| {
-        std.debug.print("Rendering frame {}\n", .{frame});
+    std.debug.print("Starting continuous render loop...\n", .{});
+    std.debug.print("Close the window or press Cmd+Q to quit.\n\n", .{});
 
-        // Get next drawable from CAMetalLayer
+    // Render ONE frame and wait for GPU completion
+    std.debug.print("Rendering single frame...\n", .{});
+    {
+        // Get drawable
         const drawable_ptr = c.metal_layer_get_next_drawable(layer);
         if (drawable_ptr == null) {
-            std.debug.print("No drawable available\n", .{});
-            continue;
+            std.debug.print("ERROR: No drawable!\n", .{});
+            return error.NoDrawable;
         }
 
-        // Create MetalDrawable wrapper
-        var drawable = metal.MetalDrawable{ .handle = drawable_ptr };
+        const texture_ptr = c.metal_drawable_get_texture(drawable_ptr);
+        if (texture_ptr == null) {
+            std.debug.print("ERROR: No texture!\n", .{});
+            return error.NoTexture;
+        }
 
-        // Get texture from drawable
-        var drawable_texture = drawable.getTexture();
-        defer drawable_texture.deinit();
+        // Wrap texture
+        var drawable_texture = metal.MetalTexture.initFromPtr(texture_ptr);
 
-        // Create render pass descriptor
+        // Create render pass
         var render_pass = metal.MetalRenderPassDescriptor.init();
         defer render_pass.deinit();
         render_pass.setColorTexture(&drawable_texture, 0);
-        render_pass.setClearColor(0.0, 0.0, 0.0, 1.0, 0); // Black background
+        render_pass.setClearColor(0.1, 0.1, 0.1, 1.0, 0); // Dark gray to verify it's not just black
 
         // Create command buffer
         var command_buffer = try queue.createCommandBuffer();
@@ -132,28 +142,31 @@ pub fn main() !void {
         var render_encoder = try command_buffer.createRenderEncoder(&render_pass);
         defer render_encoder.deinit();
 
-        // Set render pipeline
+        // Set pipeline and draw
         render_encoder.setPipeline(&pipeline);
 
-        // Set vertex data directly instead of buffer
-        render_encoder.setVertexBytes(&vertices, @sizeOf(@TypeOf(vertices)), 0);
+        // Use setVertexBytes to directly upload vertex data inline
+        const vertex_data_size = @sizeOf(@TypeOf(vertices));
+        std.debug.print("Setting vertex bytes: size={}, ptr={*}\n", .{ vertex_data_size, &vertices });
+        render_encoder.setVertexBytes(@ptrCast(&vertices), @intCast(vertex_data_size), 0);
 
-        // Draw triangle
         render_encoder.drawPrimitives(.triangle, 0, 3);
         render_encoder.end();
 
-        // Commit and present
-        command_buffer.commit();
-        drawable.present();
+        // Schedule present
+        command_buffer.present(drawable_ptr);
 
-        // Process events
-        c.metal_window_process_events(window);
+        // Commit and WAIT for completion
+        command_buffer.commit();
+        command_buffer.waitForCompletion();
+
+        std.debug.print("✓ Frame rendered and GPU completed!\n", .{});
     }
 
-    std.debug.print("Starting AppKit main loop (window should be visible now)...\n", .{});
+    std.debug.print("Window should show triangle. Entering AppKit loop...\n", .{});
+    std.debug.print("If you see dark gray background, rendering works but triangle is wrong.\n", .{});
+    std.debug.print("If you see black, something else is wrong.\n\n", .{});
 
-    // Run the AppKit main loop - this will block and handle events
+    // Keep window open
     c.metal_window_run_app();
-
-    std.debug.print("AppKit loop ended.\n", .{});
 }

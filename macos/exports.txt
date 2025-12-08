@@ -2,6 +2,7 @@ _metal_window_create
 _metal_window_get_layer
 _metal_window_get_device
 _metal_window_show
+_metal_window_init_app
 _metal_window_run_app
 _metal_window_is_running
 _metal_layer_get_next_drawable

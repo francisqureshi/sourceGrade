@@ -79,6 +79,14 @@ public func metal_window_show(_ windowPtr: UnsafeMutableRawPointer) {
     window.makeKeyAndOrderFront(nil)
 }
 
+@_cdecl("metal_window_init_app")
+public func metal_window_init_app() {
+    // Initialize NSApplication without running the main loop
+    let _ = NSApplication.shared
+    NSApplication.shared.setActivationPolicy(.regular)
+    NSApplication.shared.activate(ignoringOtherApps: true)
+}
+
 @_cdecl("metal_window_run_app")
 public func metal_window_run_app() {
     // Initialize NSApplication if needed

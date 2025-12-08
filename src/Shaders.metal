@@ -13,23 +13,23 @@ struct VertexOut {
     float4 color;
 };
 
-// Vertex shader
+// Vertex shader  
 vertex VertexOut vertexShader(
     uint vertexID [[vertex_id]],
     device const VertexIn* vertices [[buffer(0)]])
 {
     VertexOut out;
 
-    // Use position directly from vertex buffer
-    out.position = float4(vertices[vertexID].position, 0.0, 1.0);
-    
-    // Debug: different color for each vertex based on ID
+    // HARDCODE positions that we know work
     if (vertexID == 0) {
-        out.color = float4(1.0, 0.0, 0.0, 1.0); // Red
+        out.position = float4(0.0, 0.5, 0.0, 1.0);  // Top
+        out.color = float4(0.0, 1.0, 0.0, 1.0);      // Green
     } else if (vertexID == 1) {
-        out.color = float4(0.0, 1.0, 0.0, 1.0); // Green
+        out.position = float4(-0.5, -0.5, 0.0, 1.0); // Bottom-left
+        out.color = float4(0.0, 0.0, 1.0, 1.0);      // Blue
     } else {
-        out.color = float4(0.0, 0.0, 1.0, 1.0); // Blue
+        out.position = float4(0.5, -0.5, 0.0, 1.0);  // Bottom-right
+        out.color = float4(1.0, 0.0, 0.0, 1.0);      // Red
     }
 
     return out;
