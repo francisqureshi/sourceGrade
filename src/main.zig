@@ -167,5 +167,7 @@ pub fn main() !void {
 
         // ~60 FPS
         std.posix.nanosleep(0, 16_000_000);
+        // 120 FPS
+        std.posix.nanosleep(0, 8_300_000);
     }
 }
