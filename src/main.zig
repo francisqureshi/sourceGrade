@@ -59,7 +59,7 @@ pub fn main() !void {
     std.debug.print("✓ Compiled shader library\n", .{});
 
     // Get shader functions
-    var vertex_fn = try library.createFunction("vertexShader");
+    var vertex_fn = try library.createFunction("vertexShaderBuffered");
     defer vertex_fn.deinit();
 
     var fragment_fn = try library.createFunction("fragmentShader");
@@ -77,28 +77,24 @@ pub fn main() !void {
     std.debug.print("✓ Created render pipeline\n\n", .{});
 
     // Create vertex buffer with triangle data
+    // Using extern struct with explicit alignment to match Metal's expectations
     const VertexData = extern struct {
-        position: [2]f32,
-        color: [4]f32,
+        position: [2]f32 align(4),
+        color: [4]f32 align(4),
     };
 
-    // Create a centered, properly colored triangle matching Apple's example
+    // Colorful quad using triangle strip (4 vertices with corner colors)
     const vertices = [_]VertexData{
-        .{ .position = .{ 0.0, 0.5 }, .color = .{ 0.0, 1.0, 0.0, 1.0 } }, // Top (green)
-        .{ .position = .{ -0.5, -0.5 }, .color = .{ 0.0, 0.0, 1.0, 1.0 } }, // Bottom-left (blue)
-        .{ .position = .{ 0.5, -0.5 }, .color = .{ 1.0, 0.0, 0.0, 1.0 } }, // Bottom-right (red)
+        .{ .position = .{ -0.5, 0.5 }, .color = .{ 1.0, 0.0, 0.0, 1.0 } },   // top-left: red
+        .{ .position = .{ -0.5, -0.5 }, .color = .{ 0.0, 1.0, 0.0, 1.0 } },  // bottom-left: green
+        .{ .position = .{ 0.5, 0.5 }, .color = .{ 0.0, 0.0, 1.0, 1.0 } },    // top-right: blue
+        .{ .position = .{ 0.5, -0.5 }, .color = .{ 1.0, 1.0, 0.0, 1.0 } },   // bottom-right: yellow
     };
-
-    var vertex_buffer = try device.createBuffer(@sizeOf(@TypeOf(vertices)));
+    const vertex_data_bytes = std.mem.sliceAsBytes(&vertices);
+    var vertex_buffer = try device.createBuffer(@intCast(vertex_data_bytes.len));
     defer vertex_buffer.deinit();
-    vertex_buffer.upload(std.mem.sliceAsBytes(&vertices));
-
-    std.debug.print("Vertex data:\n", .{});
-    for (vertices, 0..) |v, i| {
-        std.debug.print("  Vertex {}: pos=({d:.2}, {d:.2}), color=({d:.2}, {d:.2}, {d:.2}, {d:.2})\n", .{ i, v.position[0], v.position[1], v.color[0], v.color[1], v.color[2], v.color[3] });
-    }
-    std.debug.print("Triangle ready to render!\n", .{});
-    std.debug.print("Initializing AppKit and showing window...\n", .{});
+    vertex_buffer.upload(vertex_data_bytes);
+    std.debug.print("✓ Created vertex buffer ({} bytes)\n\n", .{vertex_data_bytes.len});
 
     // Initialize NSApplication (this must happen before showing window)
     c.metal_window_init_app();
@@ -106,7 +102,7 @@ pub fn main() !void {
     // Show the window
     c.metal_window_show(window);
 
-    std.debug.print("🌀 Starting ROTATING triangle render loop...\n", .{});
+    std.debug.print("🌀 Starting render loop...\n", .{});
     std.debug.print("Close the window or press Cmd+Q to quit.\n\n", .{});
 
     // Continuous render loop with rotation
@@ -121,7 +117,7 @@ pub fn main() !void {
         const current_time = try std.time.Instant.now();
         const elapsed_ns = current_time.since(start_time);
         const elapsed_ms = elapsed_ns / std.time.ns_per_ms;
-        const rotation_angle: f32 = @as(f32, @floatFromInt(elapsed_ms % 3000)) / 3000.0 * 2.0 * std.math.pi;
+        const rotation_angle: f32 = @as(f32, @floatFromInt(elapsed_ms % 30000)) / 30000.0 * 2.0 * std.math.pi;
 
         // Get drawable
         const drawable_ptr = c.metal_layer_get_next_drawable(layer);
@@ -150,11 +146,14 @@ pub fn main() !void {
         // Set pipeline
         render_encoder.setPipeline(&pipeline);
 
+        // Bind vertex buffer (buffer index 0)
+        render_encoder.setVertexBuffer(&vertex_buffer, 0, 0);
+
         // Pass rotation angle to shader (buffer index 1)
         render_encoder.setVertexBytes(@ptrCast(&rotation_angle), @sizeOf(f32), 1);
 
-        // Draw triangle
-        render_encoder.drawPrimitives(.triangle, 0, 3);
+        // Draw quad (4 vertices as triangle strip)
+        render_encoder.drawPrimitives(.triangle_strip, 0, 4);
         render_encoder.end();
 
         // Schedule present and commit
@@ -162,11 +161,11 @@ pub fn main() !void {
         command_buffer.commit();
 
         if (frame == 0) {
-            std.debug.print("✓ First frame rendered! Triangle is now spinning!\n", .{});
+            std.debug.print("✓ First frame rendered!\n", .{});
         }
 
         // ~60 FPS
-        std.posix.nanosleep(0, 16_000_000);
+        // std.posix.nanosleep(0, 16_000_000);
         // 120 FPS
         std.posix.nanosleep(0, 8_300_000);
     }
