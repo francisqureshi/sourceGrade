@@ -10,3 +10,4 @@ _metal_drawable_get_texture
 _metal_drawable_present
 _metal_window_process_events
 _metal_window_release
+_metal_window_get_mouse_state

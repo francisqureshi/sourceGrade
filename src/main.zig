@@ -161,11 +161,15 @@ pub fn main() !void {
         // Build IMGUI frame (immediate-mode pattern)
         imgui_ctx.newFrame();
 
-        // TODO: Get real mouse input from events
-        // For now, use dummy values (you'll add event handling next)
-        imgui_ctx.mouse_x = 400;
-        imgui_ctx.mouse_y = 300;
-        imgui_ctx.mouse_down = false;
+        // Get real mouse input from Swift window
+        var mouse_x: f32 = 0;
+        var mouse_y: f32 = 0;
+        var mouse_down: bool = false;
+        c.metal_window_get_mouse_state(window, &mouse_x, &mouse_y, &mouse_down);
+
+        imgui_ctx.mouse_x = mouse_x;
+        imgui_ctx.mouse_y = mouse_y;
+        imgui_ctx.mouse_down = mouse_down;
 
         // Add some UI elements
         if (try imgui_ctx.button(1, 300, 250, 200, 60, "Click Me!")) {
@@ -173,10 +177,11 @@ pub fn main() !void {
             std.debug.print("Button clicked! Count: {}\n", .{button_click_count});
         }
 
-        try imgui_ctx.slider(2, 100, 400, 600, 20, &slider_value, 0.0, 1.0);
+        try imgui_ctx.slider(2, 100, 400, 600, 16, &slider_value, 0.0, 1.0);
 
         // Add some colored rectangles
         try imgui_ctx.addRect(50, 50, 100, 100, imgui.ImGuiContext.packColor(1, 0, 0, 0.8));
+        try imgui_ctx.addRect(350, 50, 100, 100, imgui.ImGuiContext.packColor(0, 0, slider_value, 0.8));
         try imgui_ctx.addRect(600, 50, 100, 100, imgui.ImGuiContext.packColor(0, 1, 0, 0.8));
 
         // Add a line

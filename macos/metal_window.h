@@ -46,6 +46,9 @@ void metal_window_process_events(void* window);
 /// Release the window
 void metal_window_release(void* window);
 
+/// Get current mouse state
+void metal_window_get_mouse_state(void* window, float* out_x, float* out_y, bool* out_down);
+
 #ifdef __cplusplus
 }
 #endif

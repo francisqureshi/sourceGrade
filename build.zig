@@ -109,11 +109,21 @@ pub fn build(b: *std.Build) void {
         "Metal",
         "-framework",
         "QuartzCore",
-        "-Xlinker",
-        "-exported_symbols_list",
-        "-Xlinker",
+        // Export all C-callable symbols directly
+        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_create",
+        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_get_layer",
+        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_get_device",
+        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_show",
+        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_init_app",
+        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_run_app",
+        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_is_running",
+        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_layer_get_next_drawable",
+        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_drawable_get_texture",
+        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_drawable_present",
+        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_process_events",
+        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_release",
+        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_get_mouse_state",
     });
-    swift_compile.addFileArg(b.path("macos/exports.txt"));
 
     // Link the Swift dylib
     exe.addLibraryPath(swift_dylib.dirname());

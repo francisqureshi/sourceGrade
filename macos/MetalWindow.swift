@@ -6,6 +6,11 @@ import QuartzCore
 class MetalView: NSView {
     var metalLayer: CAMetalLayer!
 
+    // Mouse tracking
+    var mouseX: Float = 0.0
+    var mouseY: Float = 0.0
+    var mouseDown: Bool = false
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         setupMetalLayer()
@@ -37,6 +42,33 @@ class MetalView: NSView {
             width: newSize.width * scale,
             height: newSize.height * scale
         )
+    }
+
+    // Mouse event handling
+    override func mouseDown(with event: NSEvent) {
+        let location = convert(event.locationInWindow, from: nil)
+        mouseX = Float(location.x)
+        mouseY = Float(bounds.height - location.y)  // Flip Y (top-left origin)
+        mouseDown = true
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let location = convert(event.locationInWindow, from: nil)
+        mouseX = Float(location.x)
+        mouseY = Float(bounds.height - location.y)
+        mouseDown = false
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let location = convert(event.locationInWindow, from: nil)
+        mouseX = Float(location.x)
+        mouseY = Float(bounds.height - location.y)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        let location = convert(event.locationInWindow, from: nil)
+        mouseX = Float(location.x)
+        mouseY = Float(bounds.height - location.y)
     }
 }
 
@@ -127,15 +159,20 @@ public func metal_drawable_present(_ drawablePtr: UnsafeMutableRawPointer) {
 
 @_cdecl("metal_window_process_events")
 public func metal_window_process_events(_ windowPtr: UnsafeMutableRawPointer) {
-    // Process pending events
-    let event = NSApplication.shared.nextEvent(
-        matching: .any,
-        until: nil,
-        inMode: .default,
-        dequeue: true
-    )
-    if event != nil {
-        NSApplication.shared.sendEvent(event!)
+    // Process ALL pending events (drain the queue)
+    while true {
+        let event = NSApplication.shared.nextEvent(
+            matching: .any,
+            until: nil,  // Don't wait, return immediately if no events
+            inMode: .default,
+            dequeue: true
+        )
+
+        guard let event = event else {
+            break  // No more events, exit loop
+        }
+
+        NSApplication.shared.sendEvent(event)
     }
 }
 
@@ -143,6 +180,26 @@ public func metal_window_process_events(_ windowPtr: UnsafeMutableRawPointer) {
 public func metal_window_release(_ windowPtr: UnsafeMutableRawPointer) {
     let _ = Unmanaged<MetalWindow>.fromOpaque(windowPtr).takeRetainedValue()
     // Window is now released
+}
+
+@_cdecl("metal_window_get_mouse_state")
+public func metal_window_get_mouse_state(
+    _ windowPtr: UnsafeMutableRawPointer,
+    _ outX: UnsafeMutablePointer<Float>,
+    _ outY: UnsafeMutablePointer<Float>,
+    _ outDown: UnsafeMutablePointer<Bool>
+) {
+    let window = Unmanaged<MetalWindow>.fromOpaque(windowPtr).takeUnretainedValue()
+    guard let metalView = window.contentView as? MetalView else {
+        outX.pointee = 0
+        outY.pointee = 0
+        outDown.pointee = false
+        return
+    }
+
+    outX.pointee = metalView.mouseX
+    outY.pointee = metalView.mouseY
+    outDown.pointee = metalView.mouseDown
 }
 
 /// Minimal Metal window wrapper
@@ -163,9 +220,12 @@ class MetalWindow: NSWindow {
         )
 
         // Set up the window
-        self.title = "Metal Triangle"
+        self.title = "Metal IMGUI"
         self.isOpaque = true
         self.backgroundColor = .black
+
+        // Enable mouse tracking
+        self.acceptsMouseMovedEvents = true
 
         // Center the window on screen
         self.center()

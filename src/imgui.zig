@@ -52,6 +52,7 @@ pub const ImGuiContext = struct {
     mouse_x: f32,
     mouse_y: f32,
     mouse_down: bool,
+    mouse_two_down: bool,
 
     // Screen dimensions for coordinate mapping
     display_width: f32,
@@ -72,6 +73,7 @@ pub const ImGuiContext = struct {
             .mouse_x = 0,
             .mouse_y = 0,
             .mouse_down = false,
+            .mouse_two_down = false,
             .display_width = 800,
             .display_height = 600,
         };
@@ -240,6 +242,7 @@ pub const ImGuiContext = struct {
     /// Immediate-mode slider widget
     /// Returns new value, updates value_ptr
     pub fn slider(self: *ImGuiContext, id: u32, x: f32, y: f32, w: f32, h: f32, value_ptr: *f32, min_val: f32, max_val: f32) !void {
+        // Hit-test uses the full height for easy clicking
         const is_hot = self.isInRect(x, y, w, h);
         const is_active = self.active_id == id;
 
@@ -258,7 +261,9 @@ pub const ImGuiContext = struct {
             if (self.mouse_down) self.active_id = id;
         }
 
-        // Draw slider track
+        // Draw thin visual track (centered vertically in the hit area)
+        const track_height = h * 0.3; // Thin track (30% of hit area)
+        const track_y = y + (h - track_height) / 2; // Center vertically
         const track_color = if (is_active)
             packColor(0.6, 0.6, 0.6, 1.0)
         else if (is_hot)
@@ -266,13 +271,14 @@ pub const ImGuiContext = struct {
         else
             packColor(0.4, 0.4, 0.4, 1.0);
 
-        try self.addRect(x, y, w, h, track_color);
+        try self.addRect(x, track_y, w, track_height, track_color);
 
-        // Draw slider thumb
+        // Draw slider thumb (full height, centered on track)
         const t = (value_ptr.* - min_val) / (max_val - min_val);
-        const thumb_x = x + t * w - 4;
+        const thumb_width: f32 = 8;
+        const thumb_x = x + t * w - thumb_width / 2;
         const thumb_color = packColor(1.0, 1.0, 1.0, 1.0);
-        try self.addRect(thumb_x, y - 2, 8, h + 4, thumb_color);
+        try self.addRect(thumb_x, y, thumb_width, h, thumb_color);
     }
 
     /// Get the vertex buffer for the previous frame (for rendering)
