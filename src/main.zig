@@ -83,29 +83,24 @@ pub fn main() !void {
         color: [4]f32 align(4),
     };
 
-    // Colorful quad using triangle strip (4 vertices with corner colors)
-    const vertices = [_]VertexData{
-        .{ .position = .{ -0.5, 0.5 }, .color = .{ 1.0, 0.0, 0.0, 1.0 } }, // top-left: red
-        .{ .position = .{ -0.5, -0.5 }, .color = .{ 0.0, 1.0, 0.0, 1.0 } }, // bottom-left: green
-        .{ .position = .{ 0.5, 0.5 }, .color = .{ 0.0, 0.0, 1.0, 1.0 } }, // top-right: blue
-        .{ .position = .{ 0.5, -0.5 }, .color = .{ 1.0, 1.0, 0.0, 1.0 } }, // bottom-right: yellow
+    // Single buffer for ALL geometry (quad + line)
+    const all_vertices = [_]VertexData{
+        // Quad (4 vertices for triangle strip)
+        .{ .position = .{ -0.5, 0.5 }, .color = .{ 1.0, 0.0, 0.0, 1.0 } },   // top-left: red
+        .{ .position = .{ -0.5, -0.5 }, .color = .{ 0.0, 1.0, 0.0, 1.0 } },  // bottom-left: green
+        .{ .position = .{ 0.5, 0.5 }, .color = .{ 0.0, 0.0, 1.0, 1.0 } },    // top-right: blue
+        .{ .position = .{ 0.5, -0.5 }, .color = .{ 1.0, 1.0, 0.0, 1.0 } },   // bottom-right: yellow
+        // Line (2 vertices)
+        .{ .position = .{ -0.6, 0.7 }, .color = .{ 1.0, 1.0, 1.0, 1.0 } },   // left point: white
+        .{ .position = .{ 0.6, 0.7 }, .color = .{ 1.0, 1.0, 1.0, 1.0 } },    // right point: white
     };
-    const vertex_data_bytes = std.mem.sliceAsBytes(&vertices);
-    var quad_vertex_buffer = try device.createBuffer(@intCast(vertex_data_bytes.len));
-    defer quad_vertex_buffer.deinit();
-    quad_vertex_buffer.upload(vertex_data_bytes);
 
-    // Create a white line on top
-    const line_vertices = [_]VertexData{
-        .{ .position = .{ -0.6, 0.7 }, .color = .{ 1.0, 1.0, 1.0, 1.0 } }, // left point: white
-        .{ .position = .{ 0.6, 0.7 }, .color = .{ 1.0, 1.0, 1.0, 1.0 } }, // right point: white
-    };
-    const line_data_bytes = std.mem.sliceAsBytes(&line_vertices);
-    var line_buffer = try device.createBuffer(@intCast(line_data_bytes.len));
-    defer line_buffer.deinit();
-    line_buffer.upload(line_data_bytes);
+    const vertex_data_bytes = std.mem.sliceAsBytes(&all_vertices);
+    var vertex_buffer = try device.createBuffer(@intCast(vertex_data_bytes.len));
+    defer vertex_buffer.deinit();
+    vertex_buffer.upload(vertex_data_bytes);
 
-    std.debug.print("✓ Created vertex buffers (quad: {} bytes, line: {} bytes)\n\n", .{ vertex_data_bytes.len, line_data_bytes.len });
+    std.debug.print("✓ Created vertex buffer ({} bytes, {} vertices)\n\n", .{ vertex_data_bytes.len, all_vertices.len });
 
     // Initialize NSApplication (this must happen before showing window)
     c.metal_window_init_app();
@@ -157,18 +152,17 @@ pub fn main() !void {
         // Set pipeline
         render_encoder.setPipeline(&pipeline);
 
-        // Bind vertex buffer (buffer index 0)
-        render_encoder.setVertexBuffer(&quad_vertex_buffer, 0, 0);
+        // Bind the single vertex buffer (contains both quad and line)
+        render_encoder.setVertexBuffer(&vertex_buffer, 0, 0);
 
         // Pass rotation angle to shader (buffer index 1)
         render_encoder.setVertexBytes(@ptrCast(&rotation_angle), @sizeOf(f32), 1);
 
-        // Draw quad (4 vertices as triangle strip)
+        // Draw quad from buffer (vertices 0-3, triangle strip)
         render_encoder.drawPrimitives(.triangle_strip, 0, 4);
 
-        // Draw line (2 vertices)
-        render_encoder.setVertexBuffer(&line_buffer, 0, 0);
-        render_encoder.drawPrimitives(.line, 0, 2);
+        // Draw line from same buffer (vertices 4-5, line)
+        render_encoder.drawPrimitives(.line, 4, 2);
 
         render_encoder.end();
 
