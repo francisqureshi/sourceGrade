@@ -1,5 +1,6 @@
 const std = @import("std");
 const metal = @import("metal");
+const imgui = @import("imgui.zig");
 
 // Import the Swift AppKit bridge
 const c = @cImport({
@@ -7,7 +8,12 @@ const c = @cImport({
 });
 
 pub fn main() !void {
-    std.debug.print("=== Metal Triangle with AppKit Window ===\n\n", .{});
+    std.debug.print("=== Metal IMGUI with Dynamic Ring Buffers ===\n\n", .{});
+
+    // Setup allocator
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
     // Check if Metal is available
     if (!metal.isAvailable()) {
@@ -74,7 +80,23 @@ pub fn main() !void {
 
     var pipeline = try vertex_fn.createRenderPipeline(&device, &fragment_fn, pipeline_desc);
     defer pipeline.deinit();
-    std.debug.print("✓ Created render pipeline\n\n", .{});
+    std.debug.print("✓ Created render pipeline\n", .{});
+
+    // Create IMGUI pipeline with alpha blending
+    var imgui_vertex_fn = try library.createFunction("imguiVertexShader");
+    defer imgui_vertex_fn.deinit();
+
+    var imgui_fragment_fn = try library.createFunction("imguiFragmentShader");
+    defer imgui_fragment_fn.deinit();
+
+    const imgui_pipeline_desc = metal.RenderPipelineDescriptor{
+        .pixel_format = .bgra8_unorm,
+        .blend_enabled = true, // Enable alpha blending for UI
+    };
+
+    var imgui_pipeline = try imgui_vertex_fn.createRenderPipeline(&device, &imgui_fragment_fn, imgui_pipeline_desc);
+    defer imgui_pipeline.deinit();
+    std.debug.print("✓ Created IMGUI render pipeline\n\n", .{});
 
     // Create vertex buffer with triangle data
     // Using extern struct with explicit alignment to match Metal's expectations
@@ -86,13 +108,13 @@ pub fn main() !void {
     // Single buffer for ALL geometry (quad + line)
     const all_vertices = [_]VertexData{
         // Quad (4 vertices for triangle strip)
-        .{ .position = .{ -0.5, 0.5 }, .color = .{ 1.0, 0.0, 0.0, 1.0 } },   // top-left: red
-        .{ .position = .{ -0.5, -0.5 }, .color = .{ 0.0, 1.0, 0.0, 1.0 } },  // bottom-left: green
-        .{ .position = .{ 0.5, 0.5 }, .color = .{ 0.0, 0.0, 1.0, 1.0 } },    // top-right: blue
-        .{ .position = .{ 0.5, -0.5 }, .color = .{ 1.0, 1.0, 0.0, 1.0 } },   // bottom-right: yellow
+        .{ .position = .{ -0.5, 0.5 }, .color = .{ 1.0, 0.0, 0.0, 1.0 } }, // top-left: red
+        .{ .position = .{ -0.5, -0.5 }, .color = .{ 0.0, 1.0, 0.0, 1.0 } }, // bottom-left: green
+        .{ .position = .{ 0.5, 0.5 }, .color = .{ 0.0, 0.0, 1.0, 1.0 } }, // top-right: blue
+        .{ .position = .{ 0.5, -0.5 }, .color = .{ 1.0, 1.0, 0.0, 1.0 } }, // bottom-right: yellow
         // Line (2 vertices)
-        .{ .position = .{ -0.6, 0.7 }, .color = .{ 1.0, 1.0, 1.0, 1.0 } },   // left point: white
-        .{ .position = .{ 0.6, 0.7 }, .color = .{ 1.0, 1.0, 1.0, 1.0 } },    // right point: white
+        .{ .position = .{ -0.6, 0.7 }, .color = .{ 1.0, 1.0, 1.0, 1.0 } }, // left point: white
+        .{ .position = .{ 0.6, 0.7 }, .color = .{ 1.0, 1.0, 1.0, 1.0 } }, // right point: white
     };
 
     const vertex_data_bytes = std.mem.sliceAsBytes(&all_vertices);
@@ -100,7 +122,14 @@ pub fn main() !void {
     defer vertex_buffer.deinit();
     vertex_buffer.upload(vertex_data_bytes);
 
-    std.debug.print("✓ Created vertex buffer ({} bytes, {} vertices)\n\n", .{ vertex_data_bytes.len, all_vertices.len });
+    std.debug.print("✓ Created vertex buffer ({} bytes, {} vertices)\n", .{ vertex_data_bytes.len, all_vertices.len });
+
+    // Initialize IMGUI context with ring buffers
+    var imgui_ctx = try imgui.ImGuiContext.init(allocator, &device);
+    defer imgui_ctx.deinit();
+    imgui_ctx.display_width = 800;
+    imgui_ctx.display_height = 600;
+    std.debug.print("✓ Created IMGUI context (triple-buffered)\n\n", .{});
 
     // Initialize NSApplication (this must happen before showing window)
     c.metal_window_init_app();
@@ -115,6 +144,10 @@ pub fn main() !void {
     var frame: u64 = 0;
     const start_time = try std.time.Instant.now();
 
+    // UI state
+    var button_click_count: u32 = 0;
+    var slider_value: f32 = 0.5;
+
     while (true) : (frame += 1) {
         // Process events
         c.metal_window_process_events(window);
@@ -124,6 +157,33 @@ pub fn main() !void {
         const elapsed_ns = current_time.since(start_time);
         const elapsed_ms = elapsed_ns / std.time.ns_per_ms;
         const rotation_angle: f32 = @as(f32, @floatFromInt(elapsed_ms % 30000)) / 30000.0 * 2.0 * std.math.pi;
+
+        // Build IMGUI frame (immediate-mode pattern)
+        imgui_ctx.newFrame();
+
+        // TODO: Get real mouse input from events
+        // For now, use dummy values (you'll add event handling next)
+        imgui_ctx.mouse_x = 400;
+        imgui_ctx.mouse_y = 300;
+        imgui_ctx.mouse_down = false;
+
+        // Add some UI elements
+        if (try imgui_ctx.button(1, 300, 250, 200, 60, "Click Me!")) {
+            button_click_count += 1;
+            std.debug.print("Button clicked! Count: {}\n", .{button_click_count});
+        }
+
+        try imgui_ctx.slider(2, 100, 400, 600, 20, &slider_value, 0.0, 1.0);
+
+        // Add some colored rectangles
+        try imgui_ctx.addRect(50, 50, 100, 100, imgui.ImGuiContext.packColor(1, 0, 0, 0.8));
+        try imgui_ctx.addRect(600, 50, 100, 100, imgui.ImGuiContext.packColor(0, 1, 0, 0.8));
+
+        // Add a line
+        try imgui_ctx.addLine(50, 500, 750, 500, imgui.ImGuiContext.packColor(1, 1, 1, 1), 2.0);
+
+        // Upload IMGUI geometry to GPU
+        imgui_ctx.render();
 
         // Get drawable
         const drawable_ptr = c.metal_layer_get_next_drawable(layer);
@@ -149,20 +209,30 @@ pub fn main() !void {
         var render_encoder = try command_buffer.createRenderEncoder(&render_pass);
         defer render_encoder.deinit();
 
-        // Set pipeline
+        // ===== Layer 1: Background rotating quad (old demo) =====
         render_encoder.setPipeline(&pipeline);
-
-        // Bind the single vertex buffer (contains both quad and line)
         render_encoder.setVertexBuffer(&vertex_buffer, 0, 0);
-
-        // Pass rotation angle to shader (buffer index 1)
         render_encoder.setVertexBytes(@ptrCast(&rotation_angle), @sizeOf(f32), 1);
-
-        // Draw quad from buffer (vertices 0-3, triangle strip)
         render_encoder.drawPrimitives(.triangle_strip, 0, 4);
-
-        // Draw line from same buffer (vertices 4-5, line)
         render_encoder.drawPrimitives(.line, 4, 2);
+
+        // ===== Layer 2: IMGUI (UI overlay with alpha blending) =====
+        const imgui_index_count = imgui_ctx.getIndexCount();
+        if (imgui_index_count > 0) {
+            render_encoder.setPipeline(&imgui_pipeline);
+
+            // Bind IMGUI buffers (from previous frame, due to ring buffer)
+            const imgui_vb = imgui_ctx.getVertexBuffer();
+            const imgui_ib = imgui_ctx.getIndexBuffer();
+            render_encoder.setVertexBuffer(imgui_vb, 0, 0);
+
+            // Pass screen size for coordinate conversion
+            const screen_size = [2]f32{ imgui_ctx.display_width, imgui_ctx.display_height };
+            render_encoder.setVertexBytes(@ptrCast(&screen_size), @sizeOf([2]f32), 1);
+
+            // Draw all UI geometry using indexed primitives (efficient!)
+            render_encoder.drawIndexedPrimitives(.triangle, imgui_index_count, imgui_ib, 0);
+        }
 
         render_encoder.end();
 
