@@ -18,7 +18,8 @@ struct VertexOut {
 vertex VertexOut vertexShaderBuffered(
     uint vertexID [[vertex_id]],
     device const VertexIn* vertices [[buffer(0)]],
-    constant float &rotationAngle [[buffer(1)]])  // Rotation angle in radians
+    constant float &rotationAngle [[buffer(1)]],  // Rotation angle in radians
+    constant float2 &translation [[buffer(2)]])    // Translation 
 {
     VertexOut out;
 
@@ -33,6 +34,8 @@ vertex VertexOut vertexShaderBuffered(
     float2 rotatedPos;
     rotatedPos.x = position.x * cosAngle - position.y * sinAngle;
     rotatedPos.y = position.x * sinAngle + position.y * cosAngle;
+
+    rotatedPos += translation;
 
     out.position = float4(rotatedPos, 0.0, 1.0);
 

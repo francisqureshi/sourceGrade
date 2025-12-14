@@ -135,14 +135,14 @@ pub const ImGuiContext = struct {
         self.current_frame = (self.current_frame + 1) % FRAMES_IN_FLIGHT;
     }
 
-    /// Add a filled triangle to the current frame's geometry
-    pub fn addTriangle(self: *ImGuiContext, xa: f32, ya: f32, xb: f32, yb: f32, xc: f32, yc: f32, color: u32) !void {
+    /// Add a filled triangle to the current frame's geometry, xy is first point, other points followed are relative.
+    pub fn addTriangle(self: *ImGuiContext, x: f32, y: f32, xb: f32, yb: f32, xc: f32, yc: f32, color: u32) !void {
         const base = @as(u16, @intCast(self.vertices.items.len));
 
         // Add 3 vertices (clockwise from top-left)
-        try self.vertices.append(self.allocator, ImVertex.init(xa, ya, 0, 0, color));
-        try self.vertices.append(self.allocator, ImVertex.init(xb, yb, 1, 0, color));
-        try self.vertices.append(self.allocator, ImVertex.init(xc, yc, 1, 1, color));
+        try self.vertices.append(self.allocator, ImVertex.init(x, y, 0, 0, color));
+        try self.vertices.append(self.allocator, ImVertex.init(x + xb, y + yb, 1, 0, color));
+        try self.vertices.append(self.allocator, ImVertex.init(x + xc, y + yc, 1, 1, color));
 
         // Add 3 indices
         try self.indices.appendSlice(self.allocator, &[3]u16{
@@ -190,7 +190,7 @@ pub const ImGuiContext = struct {
             try self.vertices.append(self.allocator, ImVertex.init(slice_x, slice_y, 0, 0, color));
         }
 
-        // Add indicess per subdivision..
+        // Add indicess per subdivision, last slice using 0th
         for (0..subdivisions) |slice| {
             const slice_index: u16 = @as(u16, @intCast(slice));
             if (slice < subdivisions - 1) {
