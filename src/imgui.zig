@@ -74,8 +74,8 @@ pub const ImGuiContext = struct {
             .mouse_y = 0,
             .mouse_down = false,
             .mouse_two_down = false,
-            .display_width = 800,
-            .display_height = 600,
+            .display_width = 1920,
+            .display_height = 1080,
         };
 
         // Pre-allocate capacity to avoid reallocations during frame construction
@@ -135,6 +135,21 @@ pub const ImGuiContext = struct {
         self.current_frame = (self.current_frame + 1) % FRAMES_IN_FLIGHT;
     }
 
+    /// Add a filled triangle to the current frame's geometry
+    pub fn addTriangle(self: *ImGuiContext, xa: f32, ya: f32, xb: f32, yb: f32, xc: f32, yc: f32, color: u32) !void {
+        const base = @as(u16, @intCast(self.vertices.items.len));
+
+        // Add 3 vertices (clockwise from top-left)
+        try self.vertices.append(self.allocator, ImVertex.init(xa, ya, 0, 0, color));
+        try self.vertices.append(self.allocator, ImVertex.init(xb, yb, 1, 0, color));
+        try self.vertices.append(self.allocator, ImVertex.init(xc, yc, 1, 1, color));
+
+        // Add 3 indices
+        try self.indices.appendSlice(self.allocator, &[3]u16{
+            base + 0, base + 1, base + 2, // First triangle
+        });
+    }
+
     /// Add a filled rectangle to the current frame's geometry
     /// Uses indexed triangles (4 vertices, 6 indices)
     pub fn addRect(self: *ImGuiContext, x: f32, y: f32, w: f32, h: f32, color: u32) !void {
@@ -151,6 +166,44 @@ pub const ImGuiContext = struct {
             base + 0, base + 1, base + 2, // First triangle
             base + 0, base + 2, base + 3, // Second triangle
         });
+    }
+
+    /// Add a filled circle to the current frame's geometry
+    /// Uses indexed triangles to make a circle... ()
+    pub fn addCircle(self: *ImGuiContext, x: f32, y: f32, r: f32, subdivisions: usize, color: u32) !void {
+        const radien: f32 = ((2.0 * std.math.pi) / @as(f32, @floatFromInt(subdivisions)));
+        const center = @as(u16, @intCast(self.vertices.items.len));
+
+        // Centet vertex
+        try self.vertices.append(self.allocator, ImVertex.init(x, y, 0, 0, color));
+
+        // add vertex for each sub division
+        for (0..subdivisions) |slice| {
+            const slice_angle = radien * @as(f32, @floatFromInt(slice));
+
+            // x = a + r * cos(θ)
+            const slice_x = x + r * std.math.cos(slice_angle);
+
+            // y = b + r * sin(θ)
+            const slice_y = y + r * std.math.sin(slice_angle);
+
+            try self.vertices.append(self.allocator, ImVertex.init(slice_x, slice_y, 0, 0, color));
+        }
+
+        // Add indicess per subdivision..
+        for (0..subdivisions) |slice| {
+            const slice_index: u16 = @as(u16, @intCast(slice));
+            if (slice < subdivisions - 1) {
+                try self.indices.appendSlice(self.allocator, &[3]u16{
+                    center + 0, center + 1 + slice_index, center + 1 + slice_index + 1,
+                });
+            } else {
+                // do last triangle with wrap around somehow?
+                try self.indices.appendSlice(self.allocator, &[3]u16{
+                    center + 0, center + 1 + slice_index, center + 1,
+                });
+            }
+        }
     }
 
     /// Add a line to the current frame's geometry

@@ -147,6 +147,7 @@ pub fn main() !void {
     // UI state
     var button_click_count: u32 = 0;
     var slider_value: f32 = 0.5;
+    var circle_slider: f32 = 100;
 
     while (true) : (frame += 1) {
         // Process events
@@ -178,11 +179,15 @@ pub fn main() !void {
         }
 
         try imgui_ctx.slider(2, 100, 400, 600, 16, &slider_value, 0.0, 1.0);
+        try imgui_ctx.slider(3, 100, 500, 600, 32, &circle_slider, 0.0, 400);
 
         // Add some colored rectangles
-        try imgui_ctx.addRect(50, 50, 100, 100, imgui.ImGuiContext.packColor(1, 0, 0, 0.8));
+        try imgui_ctx.addRect(50, 50, 100, 100, imgui.ImGuiContext.packColor(1, slider_value, 0, 0.8));
         try imgui_ctx.addRect(350, 50, 100, 100, imgui.ImGuiContext.packColor(0, 0, slider_value, 0.8));
         try imgui_ctx.addRect(600, 50, 100, 100, imgui.ImGuiContext.packColor(0, 1, 0, 0.8));
+        try imgui_ctx.addTriangle(5, 5, 5, 100, 100, 100, imgui.ImGuiContext.packColor(1, 1, 0, 0.8));
+
+        try imgui_ctx.addCircle(400, 100, circle_slider, 360, imgui.ImGuiContext.packColor(255, 200, 150, 1));
 
         // Add a line
         try imgui_ctx.addLine(50, 500, 750, 500, imgui.ImGuiContext.packColor(1, 1, 1, 1), 2.0);
