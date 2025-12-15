@@ -1,6 +1,7 @@
 import AppKit
 import Metal
 import QuartzCore
+import CoreVideo
 
 /// Simple Metal view that wraps a CAMetalLayer
 class MetalView: NSView {
@@ -200,6 +201,91 @@ public func metal_window_get_mouse_state(
     outX.pointee = metalView.mouseX
     outY.pointee = metalView.mouseY
     outDown.pointee = metalView.mouseDown
+}
+
+// MARK: - CVDisplayLink
+
+/// Wrapper class to hold CVDisplayLink and callback
+class MetalDisplayLinkWrapper {
+    var displayLink: CVDisplayLink?
+    var callback: (@convention(c) (UnsafeMutableRawPointer?) -> Void)?
+    var userdata: UnsafeMutableRawPointer?
+}
+
+// CVDisplayLink callback function (C function, not a method)
+private func displayLinkCallback(
+    _ displayLink: CVDisplayLink,
+    _ inNow: UnsafePointer<CVTimeStamp>,
+    _ inOutputTime: UnsafePointer<CVTimeStamp>,
+    _ flagsIn: CVOptionFlags,
+    _ flagsOut: UnsafeMutablePointer<CVOptionFlags>,
+    _ displayLinkContext: UnsafeMutableRawPointer?
+) -> CVReturn {
+    guard let context = displayLinkContext else { return kCVReturnSuccess }
+
+    let wrapper = Unmanaged<MetalDisplayLinkWrapper>.fromOpaque(context).takeUnretainedValue()
+    wrapper.callback?(wrapper.userdata)
+
+    return kCVReturnSuccess
+}
+
+@_cdecl("metal_displaylink_create")
+public func metal_displaylink_create(_ windowPtr: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer? {
+    let wrapper = MetalDisplayLinkWrapper()
+
+    // Create CVDisplayLink
+    var displayLink: CVDisplayLink?
+    let result = CVDisplayLinkCreateWithActiveCGDisplays(&displayLink)
+
+    if result != kCVReturnSuccess || displayLink == nil {
+        return nil
+    }
+
+    wrapper.displayLink = displayLink
+    return Unmanaged.passRetained(wrapper).toOpaque()
+}
+
+@_cdecl("metal_displaylink_set_callback")
+public func metal_displaylink_set_callback(
+    _ wrapperPtr: UnsafeMutableRawPointer,
+    _ callback: @escaping @convention(c) (UnsafeMutableRawPointer?) -> Void,
+    _ userdata: UnsafeMutableRawPointer?
+) {
+    let wrapper = Unmanaged<MetalDisplayLinkWrapper>.fromOpaque(wrapperPtr).takeUnretainedValue()
+    wrapper.callback = callback
+    wrapper.userdata = userdata
+
+    // Set the callback on the CVDisplayLink
+    if let displayLink = wrapper.displayLink {
+        CVDisplayLinkSetOutputCallback(displayLink, displayLinkCallback, wrapperPtr)
+    }
+}
+
+@_cdecl("metal_displaylink_start")
+public func metal_displaylink_start(_ wrapperPtr: UnsafeMutableRawPointer) {
+    let wrapper = Unmanaged<MetalDisplayLinkWrapper>.fromOpaque(wrapperPtr).takeUnretainedValue()
+
+    if let displayLink = wrapper.displayLink {
+        CVDisplayLinkStart(displayLink)
+    }
+}
+
+@_cdecl("metal_displaylink_stop")
+public func metal_displaylink_stop(_ wrapperPtr: UnsafeMutableRawPointer) {
+    let wrapper = Unmanaged<MetalDisplayLinkWrapper>.fromOpaque(wrapperPtr).takeUnretainedValue()
+
+    if let displayLink = wrapper.displayLink {
+        CVDisplayLinkStop(displayLink)
+    }
+}
+
+@_cdecl("metal_displaylink_release")
+public func metal_displaylink_release(_ wrapperPtr: UnsafeMutableRawPointer) {
+    let wrapper = Unmanaged<MetalDisplayLinkWrapper>.fromOpaque(wrapperPtr).takeRetainedValue()
+
+    if let displayLink = wrapper.displayLink {
+        CVDisplayLinkStop(displayLink)
+    }
 }
 
 /// Minimal Metal window wrapper

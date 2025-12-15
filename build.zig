@@ -123,6 +123,11 @@ pub fn build(b: *std.Build) void {
         "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_process_events",
         "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_release",
         "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_get_mouse_state",
+        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_displaylink_create",
+        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_displaylink_set_callback",
+        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_displaylink_start",
+        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_displaylink_stop",
+        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_displaylink_release",
     });
 
     // Link the Swift dylib

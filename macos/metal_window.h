@@ -49,6 +49,15 @@ void metal_window_release(void* window);
 /// Get current mouse state
 void metal_window_get_mouse_state(void* window, float* out_x, float* out_y, bool* out_down);
 
+/// CVDisplayLink functions for vsync
+/// Runs on separate thread, independent of runloop
+/// Callback signature: void (*callback)(void* userdata)
+void* metal_displaylink_create(void* window);
+void metal_displaylink_set_callback(void* displaylink, void (*callback)(void*), void* userdata);
+void metal_displaylink_start(void* displaylink);
+void metal_displaylink_stop(void* displaylink);
+void metal_displaylink_release(void* displaylink);
+
 #ifdef __cplusplus
 }
 #endif
