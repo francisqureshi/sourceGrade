@@ -22,11 +22,15 @@ const RenderContext = struct {
     queue: metal.MetalCommandQueue,
     pipeline: metal.MetalRenderPipelineState,
     imgui_pipeline: metal.MetalRenderPipelineState,
+    video_pipeline: metal.MetalRenderPipelineState,
     vertex_buffer: metal.MetalBuffer,
     index_buffer: metal.MetalBuffer,
     imgui_ctx: *imgui.ImGuiContext,
     displaylink: ?*anyopaque,
     start_time: std.time.Instant,
+    video_reader: ?*anyopaque,
+    device_ptr: *anyopaque,
+    video_fps: f64,
 };
 
 // Render thread entry point
@@ -36,6 +40,12 @@ fn renderThread(ctx: *RenderContext) void {
     var speed: f32 = 3000;
     var slider_value: f32 = 0.5;
     var circle_slider: f32 = 100;
+    var playback_speed: f32 = 1.0; // 1.0 = normal speed, 0.5 = half speed, 2.0 = double speed
+
+    // Video frame timing - let CVMetalTextureCache manage texture lifecycle
+    const base_frame_duration_ns = if (ctx.video_fps > 0) @as(u64, @intFromFloat(std.time.ns_per_s / ctx.video_fps)) else 0;
+    var last_frame_time: u64 = 0;
+    var current_video_texture: ?*anyopaque = null;
 
     while (true) : (frame += 1) {
         // Wait for vsync signal from CVDisplayLink
@@ -70,6 +80,7 @@ fn renderThread(ctx: *RenderContext) void {
         ctx.imgui_ctx.slider(2, 100, 400, 600, 16, &slider_value, 0.0, 1.0) catch {};
         ctx.imgui_ctx.slider(3, 100, 450, 600, 16, &speed, 3000, 0.00001) catch {};
         ctx.imgui_ctx.slider(4, 100, 500, 600, 32, &circle_slider, 0.0, 400) catch {};
+        ctx.imgui_ctx.slider(5, 100, 550, 600, 16, &playback_speed, 0.1, 2.0) catch {}; // Video playback speed
 
         ctx.imgui_ctx.addRect(600, 50, 100, 100, imgui.ImGuiContext.packColor(slider_value, 1, 0, 0.8)) catch {};
         ctx.imgui_ctx.addRect(650, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 0.5)) catch {};
@@ -78,6 +89,33 @@ fn renderThread(ctx: *RenderContext) void {
         ctx.imgui_ctx.addLine(0, 599, 800, 599, imgui.ImGuiContext.packColor(1, 0, 0, 0.5), 2.0) catch {};
 
         ctx.imgui_ctx.render();
+
+        // Video frame timing - only advance frame when enough time has elapsed
+        var video_texture_ptr: ?*anyopaque = null;
+        if (ctx.video_reader) |reader| {
+            const time_since_last_frame = elapsed_ns - last_frame_time;
+
+            // Adjust frame duration by playback speed (slower speed = longer duration)
+            const frame_duration_ns = if (playback_speed > 0.0)
+                @as(u64, @intFromFloat(@as(f64, @floatFromInt(base_frame_duration_ns)) / playback_speed))
+            else
+                base_frame_duration_ns;
+
+            // Time to advance to next frame?
+            if (frame_duration_ns == 0 or time_since_last_frame >= frame_duration_ns) {
+                // Get next frame (cache manages texture lifecycle automatically)
+                current_video_texture = c.video_reader_get_next_frame(reader);
+                if (current_video_texture == null) {
+                    // End of video, restart
+                    c.video_reader_restart(reader);
+                    current_video_texture = c.video_reader_get_next_frame(reader);
+                }
+
+                last_frame_time = elapsed_ns;
+            }
+
+            video_texture_ptr = current_video_texture;
+        }
 
         // Get drawable
         const drawable_ptr = c.metal_layer_get_next_drawable(ctx.layer);
@@ -102,12 +140,21 @@ fn renderThread(ctx: *RenderContext) void {
         var render_encoder = command_buffer.createRenderEncoder(&render_pass) catch continue;
         defer render_encoder.deinit();
 
-        // Layer 1: Background rotating quad with center vertex
-        render_encoder.setPipeline(&ctx.pipeline);
-        render_encoder.setVertexBuffer(&ctx.vertex_buffer, 0, 0);
-        render_encoder.setVertexBytes(@ptrCast(&rotation_angle), @sizeOf(f32), 1);
-        render_encoder.setVertexBytes(@ptrCast(&translation), @sizeOf([2]f32), 2);
-        render_encoder.drawIndexedPrimitives(.triangle, 12, &ctx.index_buffer, 0);
+        // Layer 1: Video or rotating quad
+        if (video_texture_ptr) |vtp| {
+            // Render video frame (texture is managed by render thread, don't release here)
+            var video_texture = metal.MetalTexture.initFromPtr(vtp);
+            render_encoder.setPipeline(&ctx.video_pipeline);
+            render_encoder.setFragmentTexture(&video_texture, 0);
+            render_encoder.drawPrimitives(.triangle_strip, 0, 4);
+        } else {
+            // Render rotating quad
+            render_encoder.setPipeline(&ctx.pipeline);
+            render_encoder.setVertexBuffer(&ctx.vertex_buffer, 0, 0);
+            render_encoder.setVertexBytes(@ptrCast(&rotation_angle), @sizeOf(f32), 1);
+            render_encoder.setVertexBytes(@ptrCast(&translation), @sizeOf([2]f32), 2);
+            render_encoder.drawIndexedPrimitives(.triangle, 12, &ctx.index_buffer, 0);
+        }
 
         // Layer 2: IMGUI
         const imgui_index_count = ctx.imgui_ctx.getIndexCount();
@@ -224,7 +271,23 @@ pub fn main() !void {
 
     var imgui_pipeline = try imgui_vertex_fn.createRenderPipeline(&device, &imgui_fragment_fn, imgui_pipeline_desc);
     defer imgui_pipeline.deinit();
-    std.debug.print("✓ Created IMGUI render pipeline\n\n", .{});
+    std.debug.print("✓ Created IMGUI render pipeline\n", .{});
+
+    // Create video pipeline
+    var video_vertex_fn = try library.createFunction("videoVertexShader");
+    defer video_vertex_fn.deinit();
+
+    var video_fragment_fn = try library.createFunction("videoFragmentShader");
+    defer video_fragment_fn.deinit();
+
+    const video_pipeline_desc = metal.RenderPipelineDescriptor{
+        .pixel_format = .bgra8_unorm,
+        .blend_enabled = false,
+    };
+
+    var video_pipeline = try video_vertex_fn.createRenderPipeline(&device, &video_fragment_fn, video_pipeline_desc);
+    defer video_pipeline.deinit();
+    std.debug.print("✓ Created video render pipeline\n\n", .{});
 
     // Create vertex buffer with triangle data
     // Using extern struct with explicit alignment to match Metal's expectations
@@ -294,6 +357,20 @@ pub fn main() !void {
 
     const start_time = try std.time.Instant.now();
 
+    // Create video reader with ProRes file
+    const video_path = "/Users/fq/Desktop/AGMM/A004C002_250326_RQ2M_S01.mov";
+    const video_reader = c.video_reader_create(video_path, device_ptr);
+    var video_fps: f64 = 0;
+    if (video_reader == null) {
+        std.debug.print("Warning: Failed to load video file, falling back to rotating quad\n", .{});
+    } else {
+        var width: i32 = 0;
+        var height: i32 = 0;
+        var duration: f64 = 0;
+        c.video_reader_get_info(video_reader, &width, &height, &duration, &video_fps);
+        std.debug.print("✓ Loaded video: {}x{} @ {d:.2}fps, duration: {d:.2}s\n\n", .{ width, height, video_fps, duration });
+    }
+
     // Create render context
     var render_ctx = RenderContext{
         .window = window.?,
@@ -301,11 +378,15 @@ pub fn main() !void {
         .queue = queue,
         .pipeline = pipeline,
         .imgui_pipeline = imgui_pipeline,
+        .video_pipeline = video_pipeline,
         .vertex_buffer = vertex_buffer,
         .index_buffer = index_buffer,
         .imgui_ctx = &imgui_ctx,
         .displaylink = displaylink,
         .start_time = start_time,
+        .video_reader = video_reader,
+        .device_ptr = device_ptr.?,
+        .video_fps = video_fps,
     };
 
     // Spawn render thread

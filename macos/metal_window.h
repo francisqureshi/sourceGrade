@@ -58,6 +58,24 @@ void metal_displaylink_start(void* displaylink);
 void metal_displaylink_stop(void* displaylink);
 void metal_displaylink_release(void* displaylink);
 
+/// ProRes video reader functions
+/// Create a video reader for the given file path
+void* video_reader_create(const char* filepath, void* metal_device);
+
+/// Get next frame as Metal texture (returns null at end of file)
+void* video_reader_get_next_frame(void* reader);
+
+/// Restart reading from the beginning
+void video_reader_restart(void* reader);
+
+/// Get video properties
+void video_reader_get_info(void* reader, int32_t* out_width, int32_t* out_height,
+                          double* out_duration, double* out_framerate);
+
+/// Release resources
+void video_reader_release(void* reader);
+void video_texture_release(void* texture);
+
 #ifdef __cplusplus
 }
 #endif

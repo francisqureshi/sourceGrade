@@ -109,3 +109,48 @@ fragment float4 imguiFragmentShader(ImGuiVertexOut in [[stage_in]])
 
     return in.color;
 }
+
+// ============================================================================
+// Video Texture Shaders (for displaying video frames)
+// ============================================================================
+
+struct VideoVertexOut {
+    float4 position [[position]];
+    float2 texCoord;
+};
+
+// Simple vertex shader for full-screen quad
+vertex VideoVertexOut videoVertexShader(uint vertexID [[vertex_id]])
+{
+    VideoVertexOut out;
+
+    // Full-screen quad coordinates
+    // vertexID 0,1,2,3 creates two triangles covering the screen
+    float2 positions[4] = {
+        float2(-1.0, -1.0),  // bottom-left
+        float2( 1.0, -1.0),  // bottom-right
+        float2(-1.0,  1.0),  // top-left
+        float2( 1.0,  1.0)   // top-right
+    };
+
+    float2 texCoords[4] = {
+        float2(0.0, 1.0),  // bottom-left (flip Y for video)
+        float2(1.0, 1.0),  // bottom-right
+        float2(0.0, 0.0),  // top-left
+        float2(1.0, 0.0)   // top-right
+    };
+
+    out.position = float4(positions[vertexID], 0.0, 1.0);
+    out.texCoord = texCoords[vertexID];
+
+    return out;
+}
+
+// Sample video texture
+fragment float4 videoFragmentShader(
+    VideoVertexOut in [[stage_in]],
+    texture2d<float> videoTexture [[texture(0)]])
+{
+    constexpr sampler textureSampler(filter::linear);
+    return videoTexture.sample(textureSampler, in.texCoord);
+}

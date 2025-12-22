@@ -175,7 +175,7 @@ pub const ImGuiContext = struct {
         const center = @as(u16, @intCast(self.vertices.items.len));
 
         // Centet vertex
-        try self.vertices.append(self.allocator, ImVertex.init(x, y, 0, 0, color));
+        try self.vertices.append(self.allocator, ImVertex.init(x, y, 0, 0, packColor(0, 0, 0, 1)));
 
         // add vertex for each sub division
         for (0..subdivisions) |slice| {
