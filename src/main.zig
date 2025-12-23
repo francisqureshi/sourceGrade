@@ -358,7 +358,7 @@ pub fn main() !void {
     const start_time = try std.time.Instant.now();
 
     // Create video reader with ProRes file
-    const video_path = "/Users/fq/Desktop/AGMM/A004C002_250326_RQ2M_S01.mov";
+    const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
     const video_reader = c.video_reader_create(video_path, device_ptr);
     var video_fps: f64 = 0;
     if (video_reader == null) {
