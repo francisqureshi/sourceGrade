@@ -76,12 +76,80 @@ pub const SttsEntry = struct {
     sample_duration: u32,
 };
 
+/// Media Header Box
+pub const MediaHeader = struct {
+    version: u8,
+    flags: [3]u8,
+    creation_time: u64,
+    modification_time: u64,
+    timescale: u32,
+    duration: u64,
+};
+
+/// Track Header Box
+pub const TrackHeader = struct {
+    version: u8,
+    flags: [3]u8,
+    creation_time: u64,
+    modification_time: u64,
+    track_id: u32,
+    duration: u64,
+    width: u32, // 16.16 fixed point
+    height: u32, // 16.16 fixed point
+
+    pub fn getWidth(self: TrackHeader) f32 {
+        return @as(f32, @floatFromInt(self.width)) / 65536.0;
+    }
+
+    pub fn getHeight(self: TrackHeader) f32 {
+        return @as(f32, @floatFromInt(self.height)) / 65536.0;
+    }
+};
+
+/// Video metadata extracted from stsd
+pub const VideoInfo = struct {
+    codec: [4]u8, // 'apch', 'apcn', etc.
+    width: u16,
+    height: u16,
+    depth: u16,
+};
+
+pub const TimecodeInfo = struct {
+    // Fram tmcd sample descriptio
+    flags: u32,
+    timescale: u32, // Usually same as media timescale
+    frame_duration: u32,
+    frames_per_second: u8,
+
+    // The actual timecode value (read from mdat)
+    frame_number: ?u32 = null,
+};
+
 pub const TrackData = struct {
     sizes: ?[]const u32 = null,
     chunk_offsets: ?[]const u64 = null, // Note: might be u64 from co64!
     stsc_entries: ?[]const StscEntry = null,
     stts_entries: ?[]const SttsEntry = null,
     stsd_data: ?[]const u8 = null, // Raw codec info
+
+    media_header: ?MediaHeader = null,
+    track_header: ?TrackHeader = null,
+    video_info: ?VideoInfo = null,
+    timecode_info: ?TimecodeInfo = null,
+
+    /// Return f32 framte rate - maybe switch to Rational
+    /// also calcs from track0 but need see if this is acc the best track...
+    pub fn getFrameRate(self: TrackData) ?f32 {
+        const mdhd = self.media_header orelse return null;
+        const stts = self.stts_entries orelse return null;
+
+        if (stts.len == 0) return null;
+
+        const frame_duration = stts[0].sample_duration;
+        if (frame_duration == 0) return null;
+
+        return @as(f32, @floatFromInt(mdhd.timescale)) / @as(f32, @floatFromInt(frame_duration));
+    }
 
     pub fn deinit(self: *TrackData, allocator: Allocator) void {
         if (self.sizes) |s| allocator.free(s);
@@ -291,6 +359,195 @@ fn parseStts(data: []const u8, allocator: Allocator) ![]SttsEntry {
     return stts_entry;
 }
 
+/// Parse mdhd (Media Header)
+fn parseMdhd(data: []const u8) !MediaHeader {
+    if (data.len < 24) return error.InvalidMdhdAtom;
+
+    var fixed_reader = Io.Reader.fixed(data);
+    const reader = &fixed_reader;
+
+    const version = try reader.takeByte();
+    const flags = try reader.takeArray(3);
+
+    const creation_time: u64 = if (version == 1)
+        try reader.takeInt(u64, .big)
+    else
+        try reader.takeInt(u32, .big);
+
+    const modification_time: u64 = if (version == 1)
+        try reader.takeInt(u64, .big)
+    else
+        try reader.takeInt(u32, .big);
+
+    const timescale = try reader.takeInt(u32, .big);
+
+    const duration: u64 = if (version == 1)
+        try reader.takeInt(u64, .big)
+    else
+        try reader.takeInt(u32, .big);
+
+    return MediaHeader{
+        .version = version,
+        .flags = flags.*,
+        .creation_time = creation_time,
+        .modification_time = modification_time,
+        .timescale = timescale,
+        .duration = duration,
+    };
+}
+
+/// Parse tkhd (Track Header)
+fn parseTkhd(data: []const u8) !TrackHeader {
+    if (data.len < 84) return error.InvalidTkhdAtom;
+
+    var fixed_reader = Io.Reader.fixed(data);
+    const reader = &fixed_reader;
+
+    const version = try reader.takeByte();
+    const flags = try reader.takeArray(3);
+
+    const creation_time: u64 = if (version == 1)
+        try reader.takeInt(u64, .big)
+    else
+        try reader.takeInt(u32, .big);
+
+    const modification_time: u64 = if (version == 1)
+        try reader.takeInt(u64, .big)
+    else
+        try reader.takeInt(u32, .big);
+
+    const track_id = try reader.takeInt(u32, .big);
+    _ = try reader.takeInt(u32, .big); // reserved
+
+    const duration: u64 = if (version == 1)
+        try reader.takeInt(u64, .big)
+    else
+        try reader.takeInt(u32, .big);
+
+    // Skip reserved, layer, alternate_group, volume, reserved
+    try reader.discardAll(2 * 4 + 2 + 2 + 2 + 2);
+
+    // Skip transformation matrix (9 * 4 bytes)
+    try reader.discardAll(9 * 4);
+
+    const width = try reader.takeInt(u32, .big);
+    const height = try reader.takeInt(u32, .big);
+
+    return TrackHeader{
+        .version = version,
+        .flags = flags.*,
+        .creation_time = creation_time,
+        .modification_time = modification_time,
+        .track_id = track_id,
+        .duration = duration,
+        .width = width,
+        .height = height,
+    };
+}
+
+/// Parse stsd for video info (ProRes-specific)
+fn parseStsdVideo(data: []const u8) !VideoInfo {
+    if (data.len < 86) return error.InvalidStsdAtom; // Need at least through depth field
+
+    var fixed_reader = Io.Reader.fixed(data);
+    const reader = &fixed_reader;
+
+    _ = try reader.takeByte(); // version
+    _ = try reader.takeArray(3); // flags
+    const entry_count = try reader.takeInt(u32, .big);
+
+    if (entry_count == 0) return error.NoVideoEntries;
+
+    // Read first entry
+    const entry_size = try reader.takeInt(u32, .big);
+    if (entry_size < 78) return error.InvalidVideoEntry; // Minimum for video sample entry
+
+    const codec = try reader.takeArray(4);
+
+    // Check if this is a video codec (not timecode or other)
+    const is_video = !std.mem.eql(u8, codec, "tmcd");
+    if (!is_video) return error.NotVideoTrack;
+
+    // Skip reserved (6 bytes) + data_reference_index (2 bytes)
+    try reader.discardAll(6 + 2);
+
+    // Skip version, revision, vendor (can be vendor-specific for ProRes)
+    _ = try reader.takeInt(u16, .big); // pre_version
+    _ = try reader.takeInt(u16, .big); // revision
+    _ = try reader.takeInt(u32, .big); // vendor
+
+    // temporal_quality, spatial_quality
+    _ = try reader.takeInt(u32, .big); // temporal (usually 0)
+    _ = try reader.takeInt(u32, .big); // spatial (usually 1023)
+
+    const width = try reader.takeInt(u16, .big);
+    const height = try reader.takeInt(u16, .big);
+
+    // Skip horiz/vert resolution (72 dpi = 0x00480000 in 16.16 fixed)
+    try reader.discardAll(4 + 4);
+
+    _ = try reader.takeInt(u32, .big); // data size (reserved, must be 0)
+
+    _ = try reader.takeInt(u16, .big); // frame_count (usually 1)
+
+    // Compressor name: 32 bytes (first byte is Pascal string length)
+    try reader.discardAll(32);
+
+    const depth = try reader.takeInt(u16, .big);
+
+    // Color table ID (usually -1 = 0xFFFF for none)
+    _ = try reader.takeInt(i16, .big);
+
+    return VideoInfo{
+        .codec = codec.*,
+        .width = width,
+        .height = height,
+        .depth = depth,
+    };
+}
+
+/// Parse timecode for timecode info
+fn parseTimecodeInfo(data: []const u8) !TimecodeInfo {
+    if (data.len < 38) return error.InvalidTmcdAtom;
+
+    var fixed_reader = Io.Reader.fixed(data);
+    const reader = &fixed_reader;
+
+    _ = try reader.takeByte(); // version
+    _ = try reader.takeArray(3); // flags
+    const entry_count = try reader.takeInt(u32, .big);
+
+    if (entry_count == 0) return error.NoTmcdEntries;
+
+    // Read first entry
+    const entry_size = try reader.takeInt(u32, .big);
+    if (entry_size < 30) return error.InvalidTmcdEntry;
+
+    const codec = try reader.takeArray(4);
+
+    // Check if this is timecode
+    const is_tmcd = std.mem.eql(u8, codec, "tmcd");
+    if (!is_tmcd) return error.NotTmcdTrack;
+
+    // Skip reserved (6 bytes) + data_reference_index (2 bytes)
+    try reader.discardAll(6 + 2);
+
+    // Now read the timecode-specific fields
+    const flags = try reader.takeInt(u32, .big);
+    const timescale = try reader.takeInt(u32, .big);
+    const frame_duration = try reader.takeInt(u32, .big);
+    const frames_per_second = try reader.takeByte();
+    _ = try reader.takeByte(); // reserved
+
+    return TimecodeInfo{
+        .flags = flags,
+        .timescale = timescale,
+        .frame_duration = frame_duration,
+        .frames_per_second = frames_per_second,
+        .frame_number = null, // Will be filled in when we read the actual sample
+    };
+}
+
 // ============================================================================
 // Recursive Atom Walker
 // ============================================================================
@@ -423,13 +680,63 @@ fn walkAtoms(
             if (ctx.on_stts) |handler| {
                 handler(stts);
             }
+        } else if (std.mem.eql(u8, &header.type, "mdhd")) {
+            const data = try readAtomData(reader, allocator, header);
+            defer allocator.free(data);
+
+            const mdhd = try parseMdhd(data);
+            ctx.track_data.media_header = mdhd;
+
+            if (ctx.verbose) {
+                std.debug.print("      [Media Header] timescale={d},  duration={d}\n", .{ mdhd.timescale, mdhd.duration });
+            }
+        } else if (std.mem.eql(u8, &header.type, "tkhd")) {
+            const data = try readAtomData(reader, allocator, header);
+            defer allocator.free(data);
+
+            const tkhd = try parseTkhd(data);
+            ctx.track_data.track_header = tkhd;
+
+            if (ctx.verbose) {
+                std.debug.print("      [Track Header] {}x{}, track_id={d}\n", .{ tkhd.getWidth(), tkhd.getHeight(), tkhd.track_id });
+            }
         } else if (std.mem.eql(u8, &header.type, "stsd")) {
-            // Just grab the raw data - we'll copy it as-is when muxing
             const data = try readAtomData(reader, allocator, header);
             ctx.track_data.stsd_data = data;
 
+            // Try to parse video info first
+            if (parseStsdVideo(data)) |video_info| {
+                ctx.track_data.video_info = video_info;
+
+                if (ctx.verbose) {
+                    std.debug.print("      [Video Info] {s} {}x{} depth={d}\n", .{
+                        video_info.codec,
+                        video_info.width,
+                        video_info.height,
+                        video_info.depth,
+                    });
+                }
+            } else |video_err| {
+                // Not a video track, try timecode
+                if (parseTimecodeInfo(data)) |timecode_info| {
+                    ctx.track_data.timecode_info = timecode_info;
+
+                    if (ctx.verbose) {
+                        std.debug.print("      [Timecode Info] fps={d}, timescale={d}, frame_duration={d}\n", .{
+                            timecode_info.frames_per_second,
+                            timecode_info.timescale,
+                            timecode_info.frame_duration,
+                        });
+                    }
+                } else |tc_err| {
+                    if (ctx.verbose) {
+                        std.debug.print("      Failed to parse as video ({}) or timecode ({})\n", .{ video_err, tc_err });
+                    }
+                }
+            }
+
             if (ctx.verbose) {
-                std.debug.print("      stored raw stsd data - [Codec Info] ({d} bytes)\n", .{data.len});
+                std.debug.print("      stored raw stsd data ({d} bytes)\n", .{data.len});
             }
         } else if (header.isContainer()) {
             // Special handling for trak atoms
@@ -558,6 +865,23 @@ pub fn extractFrame(
     // var buffers = [_][]u8{frame_data};
     // _ = try io.vtable.fileReadPositional(io.userdata, file, &buffers, frame_info.offset);
 
+}
+
+/// Extract timecode frame number (u32) from file
+pub fn extractTimecode(
+    io: Io,
+    file: Io.File,
+    offset: u64,
+) !u32 {
+    var buffer: [4]u8 = undefined;
+    var file_reader = file.reader(io, &buffer);
+
+    try file_reader.seekTo(offset);
+
+    var reader = &file_reader.interface;
+    const frame_number = try reader.takeInt(u32, .big);
+
+    return frame_number;
 }
 
 // ============================================================================
@@ -690,6 +1014,20 @@ pub fn parseMovFileVerbose(
                         std.debug.print("{x:0>2} ", .{byte});
                     }
                     std.debug.print("\n", .{});
+                }
+            }
+
+            // Extract timecode if this is a timecode track
+            if (track.timecode_info) |_| {
+                if (track.chunk_offsets) |offsets| {
+                    if (offsets.len > 0) {
+                        const tc_frame_number = try extractTimecode(io, file, offsets[0]);
+                        all_tracks.items[i].timecode_info.?.frame_number = tc_frame_number;
+
+                        if (verbose) {
+                            std.debug.print("  Timecode: {d} (raw frame number)\n", .{tc_frame_number});
+                        }
+                    }
                 }
             }
         }
@@ -844,5 +1182,24 @@ pub fn main() !void {
             track.deinit(allocator);
         }
         allocator.free(tracks);
+    }
+
+    for (tracks) |track| {
+        // std.debug.print("track: {any}\n", .{track});
+        if (track.video_info) |vi| {
+            std.debug.print("Codec: {s}\n", .{vi.codec});
+            std.debug.print("Resolution: {d}x{d}\n", .{ vi.width, vi.height });
+
+            if (track.getFrameRate()) |fps| {
+                std.debug.print("Frame Rate: {d:.2} fps\n", .{fps});
+            }
+        }
+
+        // Print timecode if available
+        if (track.timecode_info) |tc_info| {
+            if (tc_info.frame_number) |frame_num| {
+                std.debug.print("Timecode: {d} (raw frame number)\n", .{frame_num});
+            }
+        }
     }
 }
