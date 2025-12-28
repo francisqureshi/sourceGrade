@@ -10,10 +10,8 @@ pub const Resolution = struct {
     height: usize,
 };
 
-pub const Rational = extern struct {
-    num: usize,
-    den: usize,
-};
+// Re-export Rational from smpte for convenience
+pub const Rational = smpte.Rational;
 
 pub const SourceMedia = struct {
     file_name: []const u8,
@@ -77,7 +75,8 @@ pub const SourceMedia = struct {
         const smpte_calc = smpte.SMPTE.initFromRational(frame_rate, drop_frame);
         var start_tc_buffer: [32]u8 = undefined;
 
-        const start_timecode = try smpte_calc.getTC(start_frame_number, &start_tc_buffer);
+        const start_timecode_slice = try smpte_calc.getTC(start_frame_number, &start_tc_buffer);
+        const start_timecode = try allocator.dupe(u8, start_timecode_slice);
 
         // Build frame index from video track
         const frames = if (vt.sizes != null and vt.chunk_offsets != null and vt.stsc_entries != null)
@@ -113,6 +112,7 @@ pub const SourceMedia = struct {
 
     pub fn deinit(self: *SourceMedia, allocator: Allocator) void {
         allocator.free(self.frames);
+        allocator.free(self.start_timecode);
     }
 };
 
@@ -154,5 +154,5 @@ pub fn main() !void {
     std.debug.print("Start Source Frame: {d}\n", .{test_source.start_frame_number});
     std.debug.print("End Source Frame: {d}\n", .{test_source.end_frame_number});
     std.debug.print("Duration: {d} frames\n", .{test_source.duration_in_frames});
-    std.debug.print("Start Source TC: {s}\n", .{test_source.start_timecode});
+    std.debug.print("Start Source TC: {any}\n", .{test_source.start_timecode});
 }

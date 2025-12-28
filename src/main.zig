@@ -1,6 +1,10 @@
 const std = @import("std");
 const metal = @import("metal");
 const imgui = @import("imgui.zig");
+const media = @import("io/media.zig");
+
+const Allocator = std.mem.Allocator;
+const Io = std.Io;
 
 // Import the Swift AppKit bridge
 const c = @cImport({
@@ -176,6 +180,43 @@ fn renderThread(ctx: *RenderContext) void {
         command_buffer.present(drawable_ptr);
         command_buffer.commit();
     }
+}
+
+pub fn testSourceMedia() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var threaded: Io.Threaded = .init_single_threaded;
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    var argv = try std.process.argsWithAllocator(allocator);
+    defer argv.deinit();
+
+    _ = argv.next();
+    const filepath = argv.next() orelse {
+        std.debug.print("Usage: mov_parser <file.mov> [-v]\n", .{});
+        return error.MissingArgument;
+    };
+
+    // Open file
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const abs_path = try std.fs.cwd().realpath(filepath, &path_buf);
+
+    const file = try Io.File.openAbsolute(io, abs_path, .{});
+    defer file.close(io);
+
+    var test_source = try media.SourceMedia.init(filepath, file, io, allocator);
+    defer test_source.deinit(allocator);
+
+    std.debug.print("Resolution: {d}x{d}\n", .{ test_source.resolution.width, test_source.resolution.height });
+    std.debug.print("Frame Rate: {d}/{d} = {d:.2} fps\n", .{ test_source.frame_rate.num, test_source.frame_rate.den, test_source.frame_rate_float });
+    std.debug.print("Drop Frame: {}\n", .{test_source.drop_frame});
+    std.debug.print("Start Source Frame: {d}\n", .{test_source.start_frame_number});
+    std.debug.print("End Source Frame: {d}\n", .{test_source.end_frame_number});
+    std.debug.print("Duration: {d} frames\n", .{test_source.duration_in_frames});
+    std.debug.print("Start Source TC: {s}\n", .{test_source.start_timecode});
 }
 
 pub fn main() !void {
@@ -392,6 +433,9 @@ pub fn main() !void {
     // Spawn render thread
     const thread = try std.Thread.spawn(.{}, renderThread, .{&render_ctx});
     thread.detach();
+
+    // Test SourceMedia
+    try testSourceMedia();
 
     // Run NSApplication runloop forever (this never returns)
     c.metal_window_run_app();
