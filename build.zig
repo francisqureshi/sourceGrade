@@ -24,6 +24,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+
+    const smpte_dep = b.dependency("smpte", .{
+        .target = target,
+        .optimize = optimize,
+    });
     // This creates a module, which represents a collection of source files alongside
     // some compilation options, such as optimization mode and linked system libraries.
     // Zig modules are the preferred way of making Zig code available to consumers.
@@ -88,8 +93,9 @@ pub fn build(b: *std.Build) void {
 
     exe.root_module.addImport("metal", metal_dep.module("metal_bindings"));
 
+    exe.root_module.addImport("smpte", smpte_dep.module("smpte"));
     // Add the Swift AppKit bridge
-    exe.addIncludePath(b.path("macos"));
+    exe.root_module.addSystemIncludePath(b.path("macos"));
 
     // Build Swift code as a dynamic library
     const swift_compile = b.addSystemCommand(&.{
@@ -119,38 +125,107 @@ pub fn build(b: *std.Build) void {
         "-framework",
         "CoreVideo",
         // Export all C-callable symbols directly
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_create",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_get_layer",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_get_device",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_show",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_init_app",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_run_app",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_is_running",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_layer_get_next_drawable",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_drawable_get_texture",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_drawable_present",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_process_events",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_release",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_window_get_mouse_state",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_displaylink_create",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_displaylink_set_callback",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_displaylink_start",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_displaylink_stop",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_metal_displaylink_release",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_video_reader_create",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_video_reader_get_next_frame",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_video_reader_restart",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_video_reader_get_info",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_video_reader_release",
-        "-Xlinker", "-exported_symbol", "-Xlinker", "_video_texture_release",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_metal_window_create",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_metal_window_get_layer",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_metal_window_get_device",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_metal_window_show",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_metal_window_init_app",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_metal_window_run_app",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_metal_window_is_running",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_metal_layer_get_next_drawable",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_metal_drawable_get_texture",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_metal_drawable_present",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_metal_window_process_events",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_metal_window_release",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_metal_window_get_mouse_state",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_metal_displaylink_create",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_metal_displaylink_set_callback",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_metal_displaylink_start",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_metal_displaylink_stop",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_metal_displaylink_release",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_video_reader_create",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_video_reader_get_next_frame",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_video_reader_restart",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_video_reader_get_info",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_video_reader_release",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_video_texture_release",
     });
 
     // Link the Swift dylib
-    exe.addLibraryPath(swift_dylib.dirname());
-    exe.linkSystemLibrary2("MetalWindow", .{
-        .needed = true,
-        .use_pkg_config = .no,
-    });
+    exe.root_module.addLibraryPath(swift_dylib.dirname());
+    exe.root_module.linkSystemLibrary("MetalWindow", .{});
 
     // This declares intent for the executable to be installed into the
     // install prefix when running `zig build` (i.e. when executing the default

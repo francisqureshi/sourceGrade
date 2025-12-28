@@ -35,6 +35,10 @@
         .metal_bindings = .{
             .path = "../metal-bindings",
         },
+        .smpte = .{
+            .url = "git+https://github.com/francisqureshi/smpte.git#a021577fd671f6741b7d2a3044546d6697449ff6",
+            .hash = "smpte-0.0.0-P_FX_JoxAAD6AvMnWuJXAsfJgO-zwMPzd861MPuUgRHs",
+        },
     },
     .paths = .{
         "build.zig",
