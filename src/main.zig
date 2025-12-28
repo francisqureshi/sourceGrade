@@ -207,7 +207,8 @@ pub fn testSourceMedia() !void {
     const file = try Io.File.openAbsolute(io, abs_path, .{});
     defer file.close(io);
 
-    var test_source = try media.SourceMedia.init(filepath, file, io, allocator);
+    const ctx = media.MediaContext{ .io = io, .file = file, .allocator = allocator };
+    var test_source = try media.SourceMedia.init(filepath, ctx);
     defer test_source.deinit(allocator);
 
     std.debug.print("Resolution: {d}x{d}\n", .{ test_source.resolution.width, test_source.resolution.height });
@@ -217,6 +218,22 @@ pub fn testSourceMedia() !void {
     std.debug.print("End Source Frame: {d}\n", .{test_source.end_frame_number});
     std.debug.print("Duration: {d} frames\n", .{test_source.duration_in_frames});
     std.debug.print("Start Source TC: {s}\n", .{test_source.start_timecode});
+    std.debug.print("End   Source TC: {s}\n", .{test_source.end_timecode});
+
+    std.debug.print("frame 0: {any}\n", .{test_source.frames[0]});
+
+    // Test reading a frame
+    if (test_source.frames.len > 0) {
+        const frame_size = try test_source.getFrameSize(0);
+        std.debug.print("\nFirst frame size: {d} bytes\n", .{frame_size});
+
+        const buffer = try allocator.alloc(u8, frame_size);
+        defer allocator.free(buffer);
+
+        const bytes_read = try test_source.readFrame(ctx, 0, buffer);
+        std.debug.print("Read {d} bytes from frame 0\n", .{bytes_read});
+        // std.debug.print("buffer: {any}\n", .{buffer});
+    }
 }
 
 pub fn main() !void {

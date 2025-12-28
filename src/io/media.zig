@@ -5,6 +5,12 @@ const smpte = @import("smpte");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 
+pub const MediaContext = struct {
+    io: Io,
+    file: Io.File,
+    allocator: Allocator,
+};
+
 pub const Resolution = struct {
     width: usize,
     height: usize,
@@ -32,13 +38,13 @@ pub const SourceMedia = struct {
     reel_name: ?[]const u8,
     frames: []mov.FrameInfo,
 
-    pub fn init(file_path: []const u8, file: std.Io.File, io: std.Io, allocator: std.mem.Allocator) !SourceMedia {
-        const tracks = try mov.parseMovFile(io, allocator, file, false);
+    pub fn init(file_path: []const u8, ctx: MediaContext) !SourceMedia {
+        const tracks = try mov.parseMovFile(ctx.io, ctx.allocator, ctx.file, false);
         defer {
             for (tracks) |*track| {
-                track.deinit(allocator);
+                track.deinit(ctx.allocator);
             }
-            allocator.free(tracks);
+            ctx.allocator.free(tracks);
         }
 
         // Single pass through tracks to extract all metadata
@@ -78,12 +84,12 @@ pub const SourceMedia = struct {
         var start_tc_buffer: [32]u8 = undefined;
 
         const start_timecode_slice = try smpte_calc.getTC(start_frame_number, &start_tc_buffer);
-        const start_timecode = try allocator.dupe(u8, start_timecode_slice);
+        const start_timecode = try ctx.allocator.dupe(u8, start_timecode_slice);
 
         // Build frame index from video track
         const frames = if (vt.sizes != null and vt.chunk_offsets != null and vt.stsc_entries != null)
             try mov.buildFrameIndex(
-                allocator,
+                ctx.allocator,
                 vt.sizes.?,
                 vt.chunk_offsets.?,
                 vt.stsc_entries.?,
@@ -92,6 +98,11 @@ pub const SourceMedia = struct {
             return error.InsufficientTrackData;
 
         const duration_in_frames = @as(i64, @intCast(frames.len));
+        const end_frame_number = start_frame_number + duration_in_frames - 1;
+
+        var end_tc_buffer: [32]u8 = undefined;
+        const end_timecode_slice = try smpte_calc.getTC(end_frame_number, &end_tc_buffer);
+        const end_timecode = try ctx.allocator.dupe(u8, end_timecode_slice);
 
         return .{
             .file_name = "none",
@@ -103,18 +114,41 @@ pub const SourceMedia = struct {
             .drop_frame = drop_frame,
             .time_base = frame_rate, // Same as frame_rate for now
             .start_timecode = start_timecode,
-            .end_timecode = undefined,
+            .end_timecode = end_timecode,
             .duration_in_frames = duration_in_frames,
             .start_frame_number = start_frame_number,
-            .end_frame_number = start_frame_number + duration_in_frames,
+            .end_frame_number = end_frame_number,
             .reel_name = null,
             .frames = frames,
         };
     }
 
+    /// Read a frame into the provided buffer
+    /// Returns the number of bytes written to the buffer
+    /// Returns error.BufferTooSmall if buffer is insufficient
+    pub fn readFrame(self: *SourceMedia, ctx: MediaContext, frame_index: usize, buffer: []u8) !usize {
+        if (frame_index >= self.frames.len) return error.FrameIndexOutOfBounds;
+
+        const frame_data = try mov.extractFrame(ctx.io, ctx.file, self.frames[frame_index], ctx.allocator);
+        defer ctx.allocator.free(frame_data);
+
+        if (buffer.len < frame_data.len) return error.BufferTooSmall;
+
+        @memcpy(buffer[0..frame_data.len], frame_data);
+        return frame_data.len;
+    }
+
+    /// Get the size of a frame without reading it
+    /// Useful for allocating the correct buffer size
+    pub fn getFrameSize(self: *SourceMedia, frame_index: usize) !usize {
+        if (frame_index >= self.frames.len) return error.FrameIndexOutOfBounds;
+        return self.frames[frame_index].size;
+    }
+
     pub fn deinit(self: *SourceMedia, allocator: Allocator) void {
         allocator.free(self.frames);
         allocator.free(self.start_timecode);
+        allocator.free(self.end_timecode);
     }
 };
 
@@ -147,7 +181,8 @@ pub fn main() !void {
     const file = try Io.File.openAbsolute(io, abs_path, .{});
     defer file.close(io);
 
-    var test_source = try SourceMedia.init(filepath, file, io, allocator);
+    const ctx = MediaContext{ .io = io, .file = file, .allocator = allocator };
+    var test_source = try SourceMedia.init(filepath, ctx);
     defer test_source.deinit(allocator);
 
     std.debug.print("Resolution: {d}x{d}\n", .{ test_source.resolution.width, test_source.resolution.height });
@@ -156,5 +191,18 @@ pub fn main() !void {
     std.debug.print("Start Source Frame: {d}\n", .{test_source.start_frame_number});
     std.debug.print("End Source Frame: {d}\n", .{test_source.end_frame_number});
     std.debug.print("Duration: {d} frames\n", .{test_source.duration_in_frames});
-    std.debug.print("Start Source TC: {any}\n", .{test_source.start_timecode});
+    std.debug.print("Start Source TC: {s}\n", .{test_source.start_timecode});
+    std.debug.print("End Source TC: {s}\n", .{test_source.end_timecode});
+
+    // Test reading a frame
+    if (test_source.frames.len > 0) {
+        const frame_size = try test_source.getFrameSize(0);
+        std.debug.print("\nFirst frame size: {d} bytes\n", .{frame_size});
+
+        const buffer = try allocator.alloc(u8, frame_size);
+        defer allocator.free(buffer);
+
+        const bytes_read = try test_source.readFrame(ctx, 0, buffer);
+        std.debug.print("Read {d} bytes from frame 0\n", .{bytes_read});
+    }
 }
