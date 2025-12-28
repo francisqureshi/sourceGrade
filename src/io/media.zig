@@ -10,8 +10,10 @@ pub const Resolution = struct {
     height: usize,
 };
 
-// Re-export Rational from smpte for convenience
-pub const Rational = smpte.Rational;
+pub const Rational = struct {
+    num: usize,
+    den: usize,
+};
 
 pub const SourceMedia = struct {
     file_name: []const u8,
