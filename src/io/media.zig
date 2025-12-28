@@ -1,6 +1,6 @@
 const std = @import("std");
 const mov = @import("mov.zig");
-// const smpte = @import()
+const smpte = @import("smpte");
 
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
@@ -73,6 +73,12 @@ pub const SourceMedia = struct {
         else
             0;
 
+        // Create SMPTE calculator
+        const smpte_calc = smpte.SMPTE.initFromRational(frame_rate, drop_frame);
+        var start_tc_buffer: [32]u8 = undefined;
+
+        const start_timecode = try smpte_calc.getTC(start_frame_number, &start_tc_buffer);
+
         // Build frame index from video track
         const frames = if (vt.sizes != null and vt.chunk_offsets != null and vt.stsc_entries != null)
             try mov.buildFrameIndex(
@@ -95,7 +101,7 @@ pub const SourceMedia = struct {
             .frame_rate_float = frame_rate_float,
             .drop_frame = drop_frame,
             .time_base = frame_rate, // Same as frame_rate for now
-            .start_timecode = undefined,
+            .start_timecode = start_timecode,
             .end_timecode = undefined,
             .duration_in_frames = duration_in_frames,
             .start_frame_number = start_frame_number,
@@ -148,4 +154,5 @@ pub fn main() !void {
     std.debug.print("Start Source Frame: {d}\n", .{test_source.start_frame_number});
     std.debug.print("End Source Frame: {d}\n", .{test_source.end_frame_number});
     std.debug.print("Duration: {d} frames\n", .{test_source.duration_in_frames});
+    std.debug.print("Start Source TC: {s}\n", .{test_source.start_timecode});
 }
