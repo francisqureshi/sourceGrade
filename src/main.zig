@@ -436,7 +436,7 @@ pub fn main() !void {
     thread.detach();
 
     // Test SourceMedia
-    // try testSourceMedia();
+    try testSourceMedia();
 
     // Run NSApplication runloop forever (this never returns)
     c.metal_window_run_app();
