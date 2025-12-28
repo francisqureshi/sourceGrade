@@ -116,13 +116,26 @@ pub const VideoInfo = struct {
 
 pub const TimecodeInfo = struct {
     // Fram tmcd sample descriptio
-    flags: u32,
+    flags: TimecodeFlags,
     timescale: u32, // Usually same as media timescale
     frame_duration: u32,
     frames_per_second: u8,
 
     // The actual timecode value (read from mdat)
     frame_number: ?u32 = null,
+
+    pub fn isDropFrame(self: TimecodeInfo) bool {
+        return (self.flags & 0x00000001) != 0;
+    }
+};
+
+// From the tmcd box in stsd (not mdat)
+pub const TimecodeFlags = packed struct {
+    drop_frame: bool, // bit 0: 0x00000001
+    twenty_four_hour: bool, // bit 1: 0x00000002
+    negative_ok: bool, // bit 2: 0x00000004
+    counter: bool, // bit 3: 0x00000008
+    _reserved: u28,
 };
 
 pub const TrackData = struct {
@@ -138,7 +151,6 @@ pub const TrackData = struct {
     timecode_info: ?TimecodeInfo = null,
 
     /// Return f32 framte rate - maybe switch to Rational
-    /// also calcs from track0 but need see if this is acc the best track...
     pub fn getFrameRate(self: TrackData) ?f32 {
         const mdhd = self.media_header orelse return null;
         const stts = self.stts_entries orelse return null;
@@ -533,7 +545,9 @@ fn parseTimecodeInfo(data: []const u8) !TimecodeInfo {
     try reader.discardAll(6 + 2);
 
     // Now read the timecode-specific fields
-    const flags = try reader.takeInt(u32, .big);
+    _ = try reader.takeInt(u32, .big); // reserved (4 bytes)
+    const flags_u32 = try reader.takeInt(u32, .big); // Drop frame flag, etc.
+    const flags: TimecodeFlags = @bitCast(flags_u32);
     const timescale = try reader.takeInt(u32, .big);
     const frame_duration = try reader.takeInt(u32, .big);
     const frames_per_second = try reader.takeByte();
@@ -900,37 +914,29 @@ fn printIndented(depth: u32, comptime fmt: []const u8, args: anytype) void {
 // High-Level API
 // ============================================================================
 
-/// Parse a MOV/MP4 file and extract frame information
+// /// Parse a MOV/MP4 file and extract frame information
+// pub fn parseMovFile(
+//     io: Io,
+//     allocator: Allocator,
+//     filepath: []const u8,
+// ) ![]TrackData {
+//     return parseMovFileVerbose(io, allocator, filepath, false);
+// }
+
+/// Parse a MOV/MP4 file with optional verbose logging
 pub fn parseMovFile(
     io: Io,
     allocator: Allocator,
-    filepath: []const u8,
-) ![]TrackData {
-    return parseMovFileVerbose(io, allocator, filepath, false);
-}
-
-/// Parse a MOV/MP4 file with optional verbose logging
-pub fn parseMovFileVerbose(
-    io: Io,
-    allocator: Allocator,
-    filepath: []const u8,
+    file: std.Io.File,
     verbose: bool,
 ) ![]TrackData {
-    // Open file
-    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const abs_path = try std.fs.cwd().realpath(filepath, &path_buf);
-
-    const file = try Io.File.openAbsolute(io, abs_path, .{});
-    defer file.close(io);
-
     const stat = try file.stat(io);
     const file_size = stat.size;
 
     if (verbose) {
-        std.debug.print("Parsing: {s} ({d} bytes)\n", .{ filepath, file_size });
+        std.debug.print("File Size: {d} bytes\n", .{file_size});
         std.debug.print("{s}\n", .{"=" ** 60});
     }
-
     // Create reader with reasonable buffer
     var buffer: [8192]u8 = undefined;
     var file_reader = file.reader(io, &buffer);
@@ -1027,6 +1033,18 @@ pub fn parseMovFileVerbose(
                         if (verbose) {
                             std.debug.print("  Timecode: {d} (raw frame number)\n", .{tc_frame_number});
                         }
+                    }
+                }
+            }
+        }
+    } else {
+        // Non-verbose mode: still need to extract timecode
+        for (all_tracks.items, 0..) |track, i| {
+            if (track.timecode_info) |_| {
+                if (track.chunk_offsets) |offsets| {
+                    if (offsets.len > 0) {
+                        const tc_frame_number = try extractTimecode(io, file, offsets[0]);
+                        all_tracks.items[i].timecode_info.?.frame_number = tc_frame_number;
                     }
                 }
             }
@@ -1169,14 +1187,21 @@ pub fn main() !void {
     defer argv.deinit();
 
     _ = argv.next();
-    const filename = argv.next() orelse {
+    const filepath = argv.next() orelse {
         std.debug.print("Usage: mov_parser <file.mov> [-v]\n", .{});
         return error.MissingArgument;
     };
 
     const verbose = if (argv.next()) |arg| std.mem.eql(u8, arg, "-v") else false;
 
-    const tracks = try parseMovFileVerbose(io, allocator, filename, verbose);
+    // Open file
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const abs_path = try std.fs.cwd().realpath(filepath, &path_buf);
+
+    const file = try Io.File.openAbsolute(io, abs_path, .{});
+    defer file.close(io);
+
+    const tracks = try parseMovFile(io, allocator, file, verbose);
     defer {
         for (tracks) |*track| {
             track.deinit(allocator);
@@ -1200,6 +1225,10 @@ pub fn main() !void {
             if (tc_info.frame_number) |frame_num| {
                 std.debug.print("Timecode: {d} (raw frame number)\n", .{frame_num});
             }
+            std.debug.print("TC Flags: \n{any}\n", .{tc_info.flags});
+            std.debug.print("Frame duration: {d}\n", .{tc_info.frame_duration});
+            std.debug.print("Timescale: {d}\n", .{tc_info.timescale});
+            std.debug.print("FPS: {d}\n", .{tc_info.frames_per_second});
         }
     }
 }
