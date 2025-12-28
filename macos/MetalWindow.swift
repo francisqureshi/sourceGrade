@@ -12,6 +12,9 @@ class MetalView: NSView {
     var mouseY: Float = 0.0
     var mouseDown: Bool = false
 
+    // CRITICAL: Tell AppKit this view is fully opaque (no transparency)
+    override var isOpaque: Bool { return true }
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         setupMetalLayer()
@@ -28,10 +31,14 @@ class MetalView: NSView {
         metalLayer.device = MTLCreateSystemDefaultDevice()
         metalLayer.pixelFormat = .bgra8Unorm
         metalLayer.framebufferOnly = false
+        metalLayer.isOpaque = true  // CRITICAL: Tell CA this layer is fully opaque
 
         // Make the layer update when bounds change
         self.wantsLayer = true
         self.layer = metalLayer
+
+        // CRITICAL: Tell the view itself it's opaque (no transparency)
+        self.layer?.isOpaque = true
     }
 
     override func setFrameSize(_ newSize: NSSize) {

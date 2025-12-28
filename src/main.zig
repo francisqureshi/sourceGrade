@@ -86,11 +86,11 @@ fn renderThread(ctx: *RenderContext) void {
         ctx.imgui_ctx.slider(4, 100, 500, 600, 32, &circle_slider, 0.0, 400) catch {};
         ctx.imgui_ctx.slider(5, 100, 550, 600, 16, &playback_speed, 0.1, 2.0) catch {}; // Video playback speed
 
-        ctx.imgui_ctx.addRect(600, 50, 100, 100, imgui.ImGuiContext.packColor(slider_value, 1, 0, 0.8)) catch {};
-        ctx.imgui_ctx.addRect(650, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 0.5)) catch {};
-        ctx.imgui_ctx.addTriangle(100, 50, 0, 100, 100, 100, imgui.ImGuiContext.packColor(1, 1, 0, 0.8)) catch {};
+        ctx.imgui_ctx.addRect(600, 50, 100, 100, imgui.ImGuiContext.packColor(slider_value, 1, 0, 1.0)) catch {};
+        ctx.imgui_ctx.addRect(650, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
+        ctx.imgui_ctx.addTriangle(100, 50, 0, 100, 100, 100, imgui.ImGuiContext.packColor(1, 1, 0, 1.0)) catch {};
         ctx.imgui_ctx.addCircle(200, 300, circle_slider, 360, imgui.ImGuiContext.packColor(255, 200, 150, 1)) catch {};
-        ctx.imgui_ctx.addLine(0, 599, 800, 599, imgui.ImGuiContext.packColor(1, 0, 0, 0.5), 2.0) catch {};
+        ctx.imgui_ctx.addLine(0, 599, 800, 599, imgui.ImGuiContext.packColor(1, 0, 0, 1.0), 2.0) catch {};
 
         ctx.imgui_ctx.render();
 
@@ -303,11 +303,11 @@ pub fn main() !void {
 
     const imgui_pipeline_desc = metal.RenderPipelineDescriptor{
         .pixel_format = .bgra8_unorm,
-        .blend_enabled = true, // Enable alpha blending for UI
-        .source_rgb_blend_factor = .source_alpha,
-        .destination_rgb_blend_factor = .one_minus_source_alpha,
+        .blend_enabled = false, // Disable blending - IMGUI elements are fully opaque
+        .source_rgb_blend_factor = .one,
+        .destination_rgb_blend_factor = .zero,
         .source_alpha_blend_factor = .one,
-        .destination_alpha_blend_factor = .one_minus_source_alpha,
+        .destination_alpha_blend_factor = .zero,
     };
 
     var imgui_pipeline = try imgui_vertex_fn.createRenderPipeline(&device, &imgui_fragment_fn, imgui_pipeline_desc);
@@ -399,7 +399,8 @@ pub fn main() !void {
     const start_time = try std.time.Instant.now();
 
     // Create video reader with ProRes file
-    const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
+    const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
+    // const video_path = "";
     const video_reader = c.video_reader_create(video_path, device_ptr);
     var video_fps: f64 = 0;
     if (video_reader == null) {
@@ -435,7 +436,7 @@ pub fn main() !void {
     thread.detach();
 
     // Test SourceMedia
-    try testSourceMedia();
+    // try testSourceMedia();
 
     // Run NSApplication runloop forever (this never returns)
     c.metal_window_run_app();
