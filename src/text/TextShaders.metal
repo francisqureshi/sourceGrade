@@ -33,9 +33,9 @@ vertex TextFragmentIn textVertexShader(
     // Calculate glyph quad position
     float2 size = float2(in.glyph_size);
     float2 offset = float2(in.bearings);
-    offset.y = -offset.y;  // Flip Y bearing for Metal coordinates
 
-    float2 pos = in.screen_pos + size * corner + offset;
+    // Build the quad: top-left to bottom-right
+    float2 pos = in.screen_pos + offset + size * corner;
 
     // DEBUG: Force position to be visible
     pos = float2(100, 100) + size * corner;
@@ -45,7 +45,10 @@ vertex TextFragmentIn textVertexShader(
     ndc.y = -ndc.y;  // Flip Y for Metal coordinate system
 
     // Calculate texture coordinates in atlas (pixel coordinates for coord::pixel sampler)
-    float2 tex_coord = float2(in.glyph_pos) + float2(in.glyph_size) * corner;
+    // Need to flip Y because CoreGraphics renders with flipped Y coordinate system
+    float2 tex_corner = corner;
+    tex_corner.y = 1.0 - tex_corner.y;  // Flip Y for texture sampling
+    float2 tex_coord = float2(in.glyph_pos) + float2(in.glyph_size) * tex_corner;
 
     TextFragmentIn out;
     out.position = float4(ndc, 0.0, 1.0);
@@ -67,8 +70,8 @@ fragment float4 textFragmentShader(
     // DEBUG: Show alpha value
     if (alpha > 0.01) {
         return float4(alpha, alpha, alpha, 1.0);  // Show grayscale
-    } else {
-        return float4(0.5, 0.0, 0.0, 0.3);  // Red tint where alpha is 0
+    // } else {
+    //     return float4(1.0, 0.0, 0.0, 0.3);  // Red tint where alpha is 0
     }
 
     // Apply alpha to color
