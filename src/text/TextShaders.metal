@@ -62,6 +62,12 @@ fragment float4 textFragmentShader(
     // Sample the atlas (grayscale R8)
     float alpha = atlas.sample(smp, in.tex_coord).r;
 
-    // Apply text color with alpha from atlas
-    return float4(in.color.rgb, in.color.a * alpha);
+    // DEBUG: Show texture coordinates as color to verify they're correct
+    // Expected: very dark (tex_coord around 1-20 for small glyphs at atlas origin)
+    if (alpha > 0.01) {
+        return float4(1.0, 1.0, 1.0, 1.0); // White if we got glyph data
+    }
+
+    // Show tex_coord values as colors (divide by 50 to see range 0-50)
+    return float4(in.tex_coord.x / 50.0, in.tex_coord.y / 50.0, 0.0, 1.0);
 }
