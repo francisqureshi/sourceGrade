@@ -50,14 +50,20 @@ pub fn init(
     var vertex_buffer = try device.createBuffer(@intCast(@sizeOf(TextVertex) * max_vertices));
     errdefer vertex_buffer.deinit();
 
-    // Create index buffer (6 indices per glyph: 2 triangles)
-    const max_indices = max_glyphs * 6;
-    var index_buffer = try device.createBuffer(@intCast(@sizeOf(u16) * max_indices));
+    // Create index buffer - single quad pattern (like Ghostty)
+    // Indices: 0,1,2, 0,2,3 (TR,BR,BL, TR,BL,TL)
+    const quad_indices = [_]u16{ 0, 1, 2, 0, 2, 3 };
+    var index_buffer = try device.createBuffer(@intCast(@sizeOf(u16) * quad_indices.len));
     errdefer index_buffer.deinit();
+    index_buffer.upload(std.mem.sliceAsBytes(&quad_indices));
 
-    // Create screen size buffer
+    // Create screen size buffer and initialize it
     var screen_size_buffer = try device.createBuffer(@sizeOf([2]f32));
     errdefer screen_size_buffer.deinit();
+
+    // Initialize with default size (will be updated by setScreenSize)
+    const initial_size = [2]f32{ 800.0, 600.0 };
+    screen_size_buffer.upload(std.mem.asBytes(&initial_size));
 
     // Load shaders
     const shader_source = @embedFile("TextShaders.metal");
@@ -114,7 +120,16 @@ pub fn deinit(self: *TextRenderer) void {
 /// Update screen size for coordinate transformation
 pub fn setScreenSize(self: *TextRenderer, width: f32, height: f32) void {
     const screen_size = [2]f32{ width, height };
+    std.debug.print("TextRenderer.setScreenSize: uploading {d:.1}x{d:.1} ({} bytes)\n", .{ width, height, @sizeOf([2]f32) });
     self.screen_size_buffer.upload(std.mem.asBytes(&screen_size));
+
+    // DEBUG: Verify what we uploaded
+    const bytes = std.mem.asBytes(&screen_size);
+    std.debug.print("  Buffer bytes: ", .{});
+    for (bytes) |b| {
+        std.debug.print("{x:0>2} ", .{b});
+    }
+    std.debug.print("\n", .{});
 }
 
 /// Render text at the specified position with color
@@ -128,7 +143,7 @@ pub fn renderText(
 ) !void {
     if (text.len == 0) return;
 
-    // Prepare vertices - one TextVertex per glyph (shader will expand to 4 corners)
+    // Prepare vertices - 1 vertex per glyph (instanced drawing)
     const max_glyphs = self.max_vertices / 4;
     if (text.len > max_glyphs) return error.TextTooLong;
 
@@ -138,13 +153,13 @@ pub fn renderText(
     var cursor_x = x;
 
     for (text, 0..) |char, i| {
-        const codepoint: u21 = char; // Simple ASCII for now
+        const codepoint: u21 = char;
 
         // Get or create glyph
         const glyph_id = try self.font.getGlyphID(codepoint);
         const glyph = try self.getOrRenderGlyph(glyph_id);
 
-        // Store one vertex per glyph
+        // Create 1 vertex per glyph (instanced drawing generates 4 corners)
         vertices[i] = .{
             .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
             .glyph_size = .{ glyph.width, glyph.height },
@@ -156,54 +171,55 @@ pub fn renderText(
         cursor_x += glyph.advance_x;
     }
 
+    // DEBUG: Print struct layout
+    std.debug.print("TextVertex size: {} bytes\n", .{@sizeOf(TextVertex)});
+    std.debug.print("  glyph_pos offset: {}\n", .{@offsetOf(TextVertex, "glyph_pos")});
+    std.debug.print("  glyph_size offset: {}\n", .{@offsetOf(TextVertex, "glyph_size")});
+    std.debug.print("  bearings offset: {}\n", .{@offsetOf(TextVertex, "bearings")});
+    std.debug.print("  screen_pos offset: {}\n", .{@offsetOf(TextVertex, "screen_pos")});
+    std.debug.print("  color offset: {}\n", .{@offsetOf(TextVertex, "color")});
+    std.debug.print("Vertex[0]: glyph_pos=({},{}), glyph_size=({},{}), screen_pos=({d:.1},{d:.1})\n", .{
+        vertices[0].glyph_pos[0],
+        vertices[0].glyph_pos[1],
+        vertices[0].glyph_size[0],
+        vertices[0].glyph_size[1],
+        vertices[0].screen_pos[0],
+        vertices[0].screen_pos[1],
+    });
+
     // Upload vertices to GPU
     self.vertex_buffer.upload(std.mem.sliceAsBytes(vertices));
 
-    // Generate indices for quads (2 triangles per quad)
-    // Each quad: 0,1,2, 0,2,3 where 0=TL, 1=TR, 2=BR, 3=BL
-    const glyph_count = text.len;
-    const indices = try self.allocator.alloc(u16, glyph_count * 6);
-    defer self.allocator.free(indices);
-
-    var idx: usize = 0;
-    var i: u32 = 0;
-    while (i < glyph_count) : (i += 1) {
-        const base: u16 = @intCast(i * 4);
-        // Triangle 1: TL, TR, BR
-        indices[idx + 0] = base + 0;
-        indices[idx + 1] = base + 1;
-        indices[idx + 2] = base + 2;
-        // Triangle 2: TL, BR, BL
-        indices[idx + 3] = base + 0;
-        indices[idx + 4] = base + 2;
-        indices[idx + 5] = base + 3;
-        idx += 6;
-    }
-
-    // Upload indices to GPU
-    self.index_buffer.upload(std.mem.sliceAsBytes(indices));
+    // DEBUG: Always upload atlas texture to ensure all glyphs are present
+    self.atlas_texture.upload(
+        self.atlas.data,
+        self.atlas.size,
+        self.atlas.size,
+        self.atlas.size, // bytes per row for grayscale
+    );
 
     // Update atlas texture if modified
-    const atlas_modified = self.atlas.modified.load(.monotonic);
-    if (atlas_modified != self.atlas_modified) {
-        self.atlas_texture.upload(
-            self.atlas.data,
-            self.atlas.size,
-            self.atlas.size,
-            self.atlas.size, // bytes per row for grayscale
-        );
-        self.atlas_modified = atlas_modified;
-    }
+    // const atlas_modified = self.atlas.modified.load(.monotonic);
+    // if (atlas_modified != self.atlas_modified) {
+    //     self.atlas_texture.upload(
+    //         self.atlas.data,
+    //         self.atlas.size,
+    //         self.atlas.size,
+    //         self.atlas.size, // bytes per row for grayscale
+    //     );
+    //     self.atlas_modified = atlas_modified;
+    // }
 
-    // Render using indexed triangles
+    // Render using instanced indexed drawing (like Ghostty)
     encoder.setPipeline(&self.pipeline);
     encoder.setVertexBuffer(&self.vertex_buffer, 0, 0);
     encoder.setVertexBuffer(&self.screen_size_buffer, 0, 1);
     encoder.setFragmentTexture(&self.atlas_texture, 0);
 
-    // Draw all glyphs in one call
-    const index_count: u32 = @intCast(glyph_count * 6);
-    encoder.drawIndexedPrimitives(.triangle, index_count, &self.index_buffer, 0);
+    // Draw all glyphs: 6 indices per quad, text.len instances
+    const glyph_count: u32 = @intCast(text.len);
+    std.debug.print("Drawing {} instances, 6 indices each\n", .{glyph_count});
+    encoder.drawIndexedPrimitivesInstanced(.triangle, 6, &self.index_buffer, 0, glyph_count);
 }
 
 /// Get glyph from cache or render and cache it

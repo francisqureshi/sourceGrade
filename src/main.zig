@@ -131,6 +131,13 @@ fn renderThread(ctx: *RenderContext) void {
 
         var drawable_texture = metal.MetalTexture.initFromPtr(texture_ptr);
 
+        // Get actual drawable size (may be 2x on Retina)
+        const drawable_width = drawable_texture.getWidth();
+        const drawable_height = drawable_texture.getHeight();
+
+        // Update text renderer screen size with actual drawable dimensions
+        ctx.imgui_ctx.setTextScreenSize(@floatFromInt(drawable_width), @floatFromInt(drawable_height));
+
         // Create render pass
         var render_pass = metal.MetalRenderPassDescriptor.init();
         defer render_pass.deinit();
@@ -177,7 +184,7 @@ fn renderThread(ctx: *RenderContext) void {
         }
 
         // Layer 3: Text overlays
-        ctx.imgui_ctx.text(&render_encoder, "Test", 100, 100, .{ 0, 0, 0, 255 }) catch |err| {
+        ctx.imgui_ctx.text(&render_encoder, "Test", 100, 100, .{ 255, 255, 255, 255 }) catch |err| {
             std.debug.print("Text render error: {}\n", .{err});
         };
 
@@ -395,7 +402,6 @@ pub fn main() !void {
     defer imgui_ctx.deinit();
     imgui_ctx.display_width = 800;
     imgui_ctx.display_height = 600;
-    imgui_ctx.setTextScreenSize(800, 600);
     std.debug.print("✓ Created IMGUI context (triple-buffered)\n\n", .{});
 
     // Initialize NSApplication (this must happen before showing window)
