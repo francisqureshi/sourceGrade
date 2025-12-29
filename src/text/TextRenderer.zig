@@ -190,7 +190,25 @@ pub fn renderText(
     // Upload vertices to GPU
     self.vertex_buffer.upload(std.mem.sliceAsBytes(vertices));
 
+    // DEBUG: Check atlas data at first glyph position
+    const first_glyph_x = vertices[0].glyph_pos[0];
+    const first_glyph_y = vertices[0].glyph_pos[1];
+    std.debug.print("Atlas sample at glyph ({},{}):\n", .{ first_glyph_x, first_glyph_y });
+    var sample_count: u32 = 0;
+    var y: u32 = first_glyph_y;
+    while (y < first_glyph_y + @min(vertices[0].glyph_size[1], 5)) : (y += 1) {
+        var x: u32 = first_glyph_x;
+        while (x < first_glyph_x + @min(vertices[0].glyph_size[0], 5)) : (x += 1) {
+            const pixel = self.atlas.data[y * self.atlas.size + x];
+            std.debug.print("{x:0>2} ", .{pixel});
+            if (pixel > 0) sample_count += 1;
+        }
+        std.debug.print("\n", .{});
+    }
+    std.debug.print("Non-zero pixels in sample: {}\n", .{sample_count});
+
     // DEBUG: Always upload atlas texture to ensure all glyphs are present
+    std.debug.print("Uploading atlas: size={}, bytes_per_row={}, data.len={}\n", .{ self.atlas.size, self.atlas.size, self.atlas.data.len });
     self.atlas_texture.upload(
         self.atlas.data,
         self.atlas.size,
