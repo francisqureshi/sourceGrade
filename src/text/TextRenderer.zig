@@ -20,6 +20,7 @@ atlas_texture: metal.MetalTexture,
 font: Font,
 glyph_cache: GlyphCache,
 vertex_buffer: metal.MetalBuffer,
+index_buffer: metal.MetalBuffer,
 screen_size_buffer: metal.MetalBuffer,
 max_vertices: usize,
 atlas_modified: usize = 0,
@@ -48,6 +49,11 @@ pub fn init(
     const max_vertices = max_glyphs * 4;
     var vertex_buffer = try device.createBuffer(@intCast(@sizeOf(TextVertex) * max_vertices));
     errdefer vertex_buffer.deinit();
+
+    // Create index buffer (6 indices per glyph: 2 triangles)
+    const max_indices = max_glyphs * 6;
+    var index_buffer = try device.createBuffer(@intCast(@sizeOf(u16) * max_indices));
+    errdefer index_buffer.deinit();
 
     // Create screen size buffer
     var screen_size_buffer = try device.createBuffer(@sizeOf([2]f32));
@@ -88,6 +94,7 @@ pub fn init(
         .font = font,
         .glyph_cache = GlyphCache.init(),
         .vertex_buffer = vertex_buffer,
+        .index_buffer = index_buffer,
         .screen_size_buffer = screen_size_buffer,
         .max_vertices = max_vertices,
     };
@@ -99,6 +106,7 @@ pub fn deinit(self: *TextRenderer) void {
     self.atlas.deinit(self.allocator);
     self.atlas_texture.deinit();
     self.vertex_buffer.deinit();
+    self.index_buffer.deinit();
     self.screen_size_buffer.deinit();
     self.pipeline.deinit();
 }
@@ -155,6 +163,30 @@ pub fn renderText(
     // Upload vertices to GPU
     self.vertex_buffer.upload(std.mem.sliceAsBytes(vertices));
 
+    // Generate indices for quads (2 triangles per quad)
+    // Each quad: 0,1,2, 0,2,3 where 0=TL, 1=TR, 2=BR, 3=BL
+    const glyph_count = vertex_idx / 4;
+    const indices = try self.allocator.alloc(u16, glyph_count * 6);
+    defer self.allocator.free(indices);
+
+    var idx: usize = 0;
+    var i: u32 = 0;
+    while (i < glyph_count) : (i += 1) {
+        const base: u16 = @intCast(i * 4);
+        // Triangle 1: TL, TR, BR
+        indices[idx + 0] = base + 0;
+        indices[idx + 1] = base + 1;
+        indices[idx + 2] = base + 2;
+        // Triangle 2: TL, BR, BL
+        indices[idx + 3] = base + 0;
+        indices[idx + 4] = base + 2;
+        indices[idx + 5] = base + 3;
+        idx += 6;
+    }
+
+    // Upload indices to GPU
+    self.index_buffer.upload(std.mem.sliceAsBytes(indices));
+
     // Update atlas texture if modified
     const atlas_modified = self.atlas.modified.load(.monotonic);
     if (atlas_modified != self.atlas_modified) {
@@ -167,19 +199,15 @@ pub fn renderText(
         self.atlas_modified = atlas_modified;
     }
 
-    // Render - each glyph is 4 vertices forming a quad (triangle strip)
-    // We need to draw each glyph separately since triangle_strip connects them
+    // Render using indexed triangles
     encoder.setPipeline(&self.pipeline);
     encoder.setVertexBuffer(&self.vertex_buffer, 0, 0);
     encoder.setVertexBuffer(&self.screen_size_buffer, 0, 1);
     encoder.setFragmentTexture(&self.atlas_texture, 0);
 
-    // Draw each glyph as a separate triangle strip
-    const glyph_count = vertex_idx / 4;
-    var i: u32 = 0;
-    while (i < glyph_count) : (i += 1) {
-        encoder.drawPrimitives(.triangle_strip, i * 4, 4);
-    }
+    // Draw all glyphs in one call
+    const index_count: u32 = @intCast(glyph_count * 6);
+    encoder.drawIndexedPrimitives(.triangle, index_count, &self.index_buffer, 0);
 }
 
 /// Get glyph from cache or render and cache it

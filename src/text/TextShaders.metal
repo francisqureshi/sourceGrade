@@ -20,15 +20,17 @@ vertex TextFragmentIn textVertexShader(
     device const TextVertex* vertices [[buffer(0)]],
     constant float2& screen_size [[buffer(1)]]
 ) {
-    // Each glyph uses 4 vertices for a quad
-    TextVertex in = vertices[vid / 4];
+    // For indexed rendering: each glyph has 4 vertices, but they all share the same TextVertex data
+    // We read the glyph data based on which glyph this vertex belongs to
+    uint glyph_idx = vid / 4;
+    TextVertex in = vertices[glyph_idx];
 
-    // Calculate which corner of the quad for triangle strip
-    // Triangle strip order: 0=TL, 1=TR, 2=BL, 3=BR
+    // Calculate which corner of the quad (indexed triangles)
+    // Vertex order per quad: 0=TL, 1=TR, 2=BR, 3=BL
     uint corner_idx = vid % 4;
     float2 corner;
-    corner.x = (corner_idx == 1 || corner_idx == 3) ? 1.0 : 0.0;  // Right side: 1, 3
-    corner.y = (corner_idx == 2 || corner_idx == 3) ? 1.0 : 0.0;  // Bottom: 2, 3
+    corner.x = (corner_idx == 1 || corner_idx == 2) ? 1.0 : 0.0;  // Right side: TR(1), BR(2)
+    corner.y = (corner_idx == 2 || corner_idx == 3) ? 1.0 : 0.0;  // Bottom: BR(2), BL(3)
 
     // Calculate glyph quad position
     float2 size = float2(in.glyph_size);

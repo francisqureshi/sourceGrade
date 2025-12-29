@@ -90,7 +90,7 @@ fn renderThread(ctx: *RenderContext) void {
         ctx.imgui_ctx.addRect(650, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
         ctx.imgui_ctx.addRect(0, 0, 800, 600, imgui.ImGuiContext.packColor(0.5, 0.5, 0.5, 1.0)) catch {};
         // ctx.imgui_ctx.addTri(100, 50, 0, 100, 100, 100, imgui.ImGuiContext.packColor(0.5, 0.5, 0.5, 1.0)) catch {};
-        ctx.imgui_ctx.addCircle(200, 300, circle_slider, 360, imgui.ImGuiContext.packColor(255, 200, 150, 1)) catch {};
+        // ctx.imgui_ctx.addCircle(200, 300, circle_slider, 360, imgui.ImGuiContext.packColor(255, 200, 150, 1)) catch {};
         ctx.imgui_ctx.addLine(0, 599, 800, 599, imgui.ImGuiContext.packColor(1, 0, 0, 1.0), 2.0) catch {};
 
         ctx.imgui_ctx.render();
@@ -177,7 +177,7 @@ fn renderThread(ctx: *RenderContext) void {
         }
 
         // Layer 3: Text overlays
-        ctx.imgui_ctx.text(&render_encoder, "Test", 100, 100, .{ 255, 0, 0, 255 }) catch |err| {
+        ctx.imgui_ctx.text(&render_encoder, "Test", 100, 100, .{ 0, 0, 0, 255 }) catch |err| {
             std.debug.print("Text render error: {}\n", .{err});
         };
 
