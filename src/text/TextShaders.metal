@@ -68,7 +68,7 @@ fragment float4 textFragmentShader(
     if (alpha > 0.01) {
         return float4(alpha, alpha, alpha, 1.0);  // Show grayscale
     } else {
-        return float4(1.0, 0.0, 0.0, 0.3);  // Red tint where alpha is 0
+        return float4(0.5, 0.0, 0.0, 0.3);  // Red tint where alpha is 0
     }
 
     // Apply alpha to color
