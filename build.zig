@@ -124,6 +124,10 @@ pub fn build(b: *std.Build) void {
         "CoreMedia",
         "-framework",
         "CoreVideo",
+        "-framework",
+        "CoreText",
+        "-framework",
+        "CoreGraphics",
         // Export all C-callable symbols directly
         "-Xlinker",
         "-exported_symbol",
@@ -226,6 +230,10 @@ pub fn build(b: *std.Build) void {
     // Link the Swift dylib
     exe.root_module.addLibraryPath(swift_dylib.dirname());
     exe.root_module.linkSystemLibrary("MetalWindow", .{});
+
+    // Link CoreText and CoreGraphics frameworks for text rendering
+    exe.root_module.linkFramework("CoreText", .{});
+    exe.root_module.linkFramework("CoreGraphics", .{});
 
     // This declares intent for the executable to be installed into the
     // install prefix when running `zig build` (i.e. when executing the default

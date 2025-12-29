@@ -1,5 +1,6 @@
 const std = @import("std");
 const metal = @import("metal");
+const TextRenderer = @import("text/TextRenderer.zig");
 
 /// Vertex format for immediate-mode GUI rendering
 /// Optimized for batched drawing with indexed triangles
@@ -58,8 +59,22 @@ pub const ImGuiContext = struct {
     display_width: f32,
     display_height: f32,
 
+    // Text rendering
+    text_renderer: TextRenderer,
+
     /// Initialize the IMGUI context with triple-buffered GPU resources
     pub fn init(allocator: std.mem.Allocator, device: *metal.MetalDevice) !ImGuiContext {
+        // Initialize text renderer first
+        var text_renderer = try TextRenderer.init(
+            allocator,
+            device,
+            "IBM Plex Mono", // Monospace font (built-in macOS)
+            128.0, // Font size (massive for testing)
+            2048, // Atlas size (larger for big glyphs)
+            256, // Max glyphs per frame
+        );
+        errdefer text_renderer.deinit();
+
         var ctx = ImGuiContext{
             .allocator = allocator,
             .vertex_buffers = undefined,
@@ -76,6 +91,7 @@ pub const ImGuiContext = struct {
             .mouse_two_down = false,
             .display_width = 1920,
             .display_height = 1080,
+            .text_renderer = text_renderer,
         };
 
         // Pre-allocate capacity to avoid reallocations during frame construction
@@ -97,6 +113,7 @@ pub const ImGuiContext = struct {
 
     /// Clean up GPU resources
     pub fn deinit(self: *ImGuiContext) void {
+        self.text_renderer.deinit();
         for (0..FRAMES_IN_FLIGHT) |i| {
             self.vertex_buffers[i].deinit();
             self.index_buffers[i].deinit();
@@ -350,5 +367,16 @@ pub const ImGuiContext = struct {
     /// Get the number of indices to render
     pub fn getIndexCount(self: *ImGuiContext) u32 {
         return @intCast(self.indices.items.len);
+    }
+
+    /// Render text at the specified position
+    /// Call this during the IMGUI render pass (after shapes are drawn)
+    pub fn text(self: *ImGuiContext, encoder: *metal.MetalRenderEncoder, str: []const u8, x: f32, y: f32, color: [4]u8) !void {
+        try self.text_renderer.renderText(encoder, str, x, y, color);
+    }
+
+    /// Update text renderer screen size when window resizes
+    pub fn setTextScreenSize(self: *ImGuiContext, width: f32, height: f32) void {
+        self.text_renderer.setScreenSize(width, height);
     }
 };

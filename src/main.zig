@@ -175,6 +175,11 @@ fn renderThread(ctx: *RenderContext) void {
             render_encoder.drawIndexedPrimitives(.triangle, imgui_index_count, imgui_ib, 0);
         }
 
+        // Layer 3: Text overlays
+        ctx.imgui_ctx.text(&render_encoder, "Test", 100, 100, .{ 255, 0, 0, 255 }) catch |err| {
+            std.debug.print("Text render error: {}\n", .{err});
+        };
+
         render_encoder.end();
 
         command_buffer.present(drawable_ptr);
@@ -389,6 +394,7 @@ pub fn main() !void {
     defer imgui_ctx.deinit();
     imgui_ctx.display_width = 800;
     imgui_ctx.display_height = 600;
+    imgui_ctx.setTextScreenSize(800, 600);
     std.debug.print("✓ Created IMGUI context (triple-buffered)\n\n", .{});
 
     // Initialize NSApplication (this must happen before showing window)
