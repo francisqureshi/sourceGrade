@@ -128,36 +128,32 @@ pub fn renderText(
 ) !void {
     if (text.len == 0) return;
 
-    // Prepare vertices for all glypph quads
+    // Prepare vertices - one TextVertex per glyph (shader will expand to 4 corners)
     const max_glyphs = self.max_vertices / 4;
     if (text.len > max_glyphs) return error.TextTooLong;
 
-    var vertices = try self.allocator.alloc(TextVertex, text.len * 4);
+    var vertices = try self.allocator.alloc(TextVertex, text.len);
     defer self.allocator.free(vertices);
 
     var cursor_x = x;
-    var vertex_idx: usize = 0;
 
-    for (text) |char| {
+    for (text, 0..) |char, i| {
         const codepoint: u21 = char; // Simple ASCII for now
 
         // Get or create glyph
         const glyph_id = try self.font.getGlyphID(codepoint);
         const glyph = try self.getOrRenderGlyph(glyph_id);
 
-        // Create 4 vertices for this glyph quad
-        for (0..4) |i| {
-            vertices[vertex_idx + i] = .{
-                .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
-                .glyph_size = .{ glyph.width, glyph.height },
-                .bearings = .{ @intCast(glyph.bearing_x), @intCast(glyph.bearing_y) },
-                .screen_pos = .{ cursor_x, y },
-                .color = color,
-            };
-        }
+        // Store one vertex per glyph
+        vertices[i] = .{
+            .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
+            .glyph_size = .{ glyph.width, glyph.height },
+            .bearings = .{ @intCast(glyph.bearing_x), @intCast(glyph.bearing_y) },
+            .screen_pos = .{ cursor_x, y },
+            .color = color,
+        };
 
         cursor_x += glyph.advance_x;
-        vertex_idx += 4;
     }
 
     // Upload vertices to GPU
@@ -165,7 +161,7 @@ pub fn renderText(
 
     // Generate indices for quads (2 triangles per quad)
     // Each quad: 0,1,2, 0,2,3 where 0=TL, 1=TR, 2=BR, 3=BL
-    const glyph_count = vertex_idx / 4;
+    const glyph_count = text.len;
     const indices = try self.allocator.alloc(u16, glyph_count * 6);
     defer self.allocator.free(indices);
 

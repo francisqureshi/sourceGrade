@@ -32,15 +32,20 @@ vertex TextFragmentIn textVertexShader(
     corner.x = (corner_idx == 1 || corner_idx == 2) ? 1.0 : 0.0;  // Right side: TR(1), BR(2)
     corner.y = (corner_idx == 2 || corner_idx == 3) ? 1.0 : 0.0;  // Bottom: BR(2), BL(3)
 
-    // Calculate glyph quad position
-    float2 size = float2(in.glyph_size);
-    float2 offset = float2(in.bearings);
+    // DEBUG: Mix hardcoded position with actual glyph size to isolate the issue
+    float2 glyph_size = float2(in.glyph_size);
 
-    // Build the quad: top-left to bottom-right
-    float2 pos = in.screen_pos + offset + size * corner;
+    // If glyph_size is 0, use fallback
+    if (glyph_size.x == 0.0 || glyph_size.y == 0.0) {
+        glyph_size = float2(50.0, 50.0);  // Fallback size
+    }
 
-    // DEBUG: Force position to be visible
-    pos = float2(100, 100) + size * corner;
+    // Use hardcoded base position for now
+    float2 base_pos = float2(100.0, 100.0);
+    float2 spacing = float2(60.0, 0.0);
+
+    // Build the quad with actual size but hardcoded position
+    float2 pos = base_pos + spacing * float(glyph_idx) + glyph_size * corner;
 
     // Convert to NDC (-1 to 1)
     float2 ndc = (pos / screen_size) * 2.0 - 1.0;
@@ -57,6 +62,10 @@ vertex TextFragmentIn textVertexShader(
     out.color = float4(in.color) / 255.0;
     out.tex_coord = tex_coord;
 
+    // DEBUG: Pass glyph index as color to visualize separate glyphs
+    float glyph_hue = float(glyph_idx) / 4.0;  // 0.0, 0.25, 0.5, 0.75 for 4 glyphs
+    out.color = float4(glyph_hue, 1.0 - glyph_hue, 0.5, 1.0);
+
     return out;
 }
 
@@ -66,9 +75,13 @@ fragment float4 textFragmentShader(
 ) {
     constexpr sampler texSampler(coord::pixel, filter::linear, address::clamp_to_zero);
 
-    // Sample alpha from grayscale atlas
+    // Sample the atlas texture
     float alpha = atlas.sample(texSampler, in.tex_coord).r;
 
-    // Apply alpha to text color
-    return float4(in.color.rgb, alpha);
+    // Show white where glyph is, background color where not
+    if (alpha > 0.01) {
+        return float4(1.0, 1.0, 1.0, 1.0);  // White glyph
+    } else {
+        return in.color;  // Colored background to see the quad bounds
+    }
 }
