@@ -88,7 +88,8 @@ fn renderThread(ctx: *RenderContext) void {
 
         ctx.imgui_ctx.addRect(600, 50, 100, 100, imgui.ImGuiContext.packColor(slider_value, 1, 0, 1.0)) catch {};
         ctx.imgui_ctx.addRect(650, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
-        ctx.imgui_ctx.addTriangle(100, 50, 0, 100, 100, 100, imgui.ImGuiContext.packColor(1, 1, 0, 1.0)) catch {};
+        ctx.imgui_ctx.addRect(0, 0, 800, 600, imgui.ImGuiContext.packColor(0.5, 0.5, 0.5, 1.0)) catch {};
+        // ctx.imgui_ctx.addTri(100, 50, 0, 100, 100, 100, imgui.ImGuiContext.packColor(0.5, 0.5, 0.5, 1.0)) catch {};
         ctx.imgui_ctx.addCircle(200, 300, circle_slider, 360, imgui.ImGuiContext.packColor(255, 200, 150, 1)) catch {};
         ctx.imgui_ctx.addLine(0, 599, 800, 599, imgui.ImGuiContext.packColor(1, 0, 0, 1.0), 2.0) catch {};
 
