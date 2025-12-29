@@ -69,16 +69,6 @@ fragment float4 textFragmentShader(
     // Sample alpha from grayscale atlas
     float alpha = atlas.sample(texSampler, in.tex_coord).r;
 
-    // DEBUG: Show alpha value
-    if (alpha > 0.01) {
-        return float4(alpha, alpha, alpha, 1.0);  // Show grayscale
-    // } else {
-    //     return float4(1.0, 0.0, 0.0, 0.3);  // Red tint where alpha is 0
-    }
-
-    // Apply alpha to color
-    float4 color = in.color;
-    color.a *= alpha;
-
-    return color;
+    // Apply alpha to text color
+    return float4(in.color.rgb, alpha);
 }
