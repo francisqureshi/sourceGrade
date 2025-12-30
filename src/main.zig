@@ -86,9 +86,13 @@ fn renderThread(ctx: *RenderContext) void {
         // ctx.imgui_ctx.slider(4, 100, 500, 600, 32, &circle_slider, 0.0, 400) catch {};
         // ctx.imgui_ctx.slider(5, 100, 550, 600, 16, &playback_speed, 0.1, 2.0) catch {}; // Video playback speed
 
+        // Use fullscreen rect (works on Retina too)
+        const full_w = ctx.imgui_ctx.display_width;
+        const full_h = ctx.imgui_ctx.display_height;
+
         ctx.imgui_ctx.addRect(600, 50, 100, 100, imgui.ImGuiContext.packColor(slider_value, 1, 0, 1.0)) catch {};
         ctx.imgui_ctx.addRect(650, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
-        ctx.imgui_ctx.addRect(0, 0, 800, 600, imgui.ImGuiContext.packColor(0.5, 0.5, 0.5, 1.0)) catch {};
+        ctx.imgui_ctx.addRect(0, 0, full_w, full_h, imgui.ImGuiContext.packColor(1, 1, 1, 1.0)) catch {};
         // ctx.imgui_ctx.addTri(100, 50, 0, 100, 100, 100, imgui.ImGuiContext.packColor(0.5, 0.5, 0.5, 1.0)) catch {};
         // ctx.imgui_ctx.addCircle(200, 300, circle_slider, 360, imgui.ImGuiContext.packColor(255, 200, 150, 1)) catch {};
         // ctx.imgui_ctx.addLine(0, 599, 800, 599, imgui.ImGuiContext.packColor(1, 0, 0, 1.0), 2.0) catch {};
@@ -135,7 +139,9 @@ fn renderThread(ctx: *RenderContext) void {
         const drawable_width = drawable_texture.getWidth();
         const drawable_height = drawable_texture.getHeight();
 
-        // Update text renderer screen size with actual drawable dimensions
+        // Update IMGUI and text renderer screen size with actual drawable dimensions
+        ctx.imgui_ctx.display_width = @floatFromInt(drawable_width);
+        ctx.imgui_ctx.display_height = @floatFromInt(drawable_height);
         ctx.imgui_ctx.setTextScreenSize(@floatFromInt(drawable_width), @floatFromInt(drawable_height));
 
         // Create render pass
@@ -234,10 +240,16 @@ pub fn testSourceMedia() !void {
     };
     defer file.close(io);
 
-    const ctx = media.MediaContext{ .io = io, .file = file, .allocator = allocator };
-    var test_source = try media.SourceMedia.init(filepath, ctx);
+    var out_buffer: [std.fs.max_path_bytes]u8 = undefined;
+    const path_len = try file.realPath(io, &out_buffer);
+    std.debug.print("got path from file: {s}\n", .{out_buffer[0..path_len]});
+
+    const mctx = media.MediaContext{ .file = file, .io = io, .allocator = allocator };
+    var test_source = try media.SourceMedia.init(mctx);
     defer test_source.deinit(allocator);
 
+    std.debug.print("FileName: {s} \n", .{test_source.file_name});
+    std.debug.print("Path: {s}\n", .{test_source.file_path});
     std.debug.print("Resolution: {d}x{d}\n", .{ test_source.resolution.width, test_source.resolution.height });
     std.debug.print("Frame Rate: {d}/{d} = {d:.2} fps\n", .{ test_source.frame_rate.num, test_source.frame_rate.den, test_source.frame_rate_float });
     std.debug.print("Drop Frame: {}\n", .{test_source.drop_frame});
@@ -257,7 +269,7 @@ pub fn testSourceMedia() !void {
         const buffer = try allocator.alloc(u8, frame_size);
         defer allocator.free(buffer);
 
-        const bytes_read = try test_source.readFrame(ctx, 0, buffer);
+        const bytes_read = try test_source.readFrame(mctx, 0, buffer);
         std.debug.print("Read {d} bytes from frame 0\n", .{bytes_read});
         // std.debug.print("buffer: {any}\n", .{buffer});
     }
@@ -330,7 +342,7 @@ pub fn main() !void {
 
     // Create render pipeline descriptor
     const pipeline_desc = metal.RenderPipelineDescriptor{
-        .pixel_format = .bgra8_unorm,
+        .pixel_format = .bgra8_unorm_srgb, // Auto gamma-encode after blending (linear → sRGB)
         .blend_enabled = false,
     };
 
@@ -346,8 +358,8 @@ pub fn main() !void {
     defer imgui_fragment_fn.deinit();
 
     const imgui_pipeline_desc = metal.RenderPipelineDescriptor{
-        .pixel_format = .bgra8_unorm,
-        .blend_enabled = true, // Premultiplied alpha blending (same as text)
+        .pixel_format = .bgra8_unorm_srgb, // Auto gamma-encode after blending (linear → sRGB)
+        .blend_enabled = true, // Premultiplied alpha blending (same as Ghostty)
         .source_rgb_blend_factor = .one,
         .destination_rgb_blend_factor = .one_minus_source_alpha,
         .rgb_blend_operation = .add,
@@ -368,7 +380,7 @@ pub fn main() !void {
     defer video_fragment_fn.deinit();
 
     const video_pipeline_desc = metal.RenderPipelineDescriptor{
-        .pixel_format = .bgra8_unorm,
+        .pixel_format = .bgra8_unorm_srgb, // Auto gamma-encode after blending (linear → sRGB)
         .blend_enabled = false,
     };
 

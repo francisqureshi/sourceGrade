@@ -6,8 +6,8 @@ const Allocator = std.mem.Allocator;
 const Io = std.Io;
 
 pub const MediaContext = struct {
-    io: Io,
     file: Io.File,
+    io: Io,
     allocator: Allocator,
 };
 
@@ -38,7 +38,13 @@ pub const SourceMedia = struct {
     reel_name: ?[]const u8,
     frames: []mov.FrameInfo,
 
-    pub fn init(file_path: []const u8, ctx: MediaContext) !SourceMedia {
+    pub fn init(ctx: MediaContext) !SourceMedia {
+        // file path and file name
+        var out_buffer: [std.fs.max_path_bytes]u8 = undefined;
+        const path_len = try ctx.file.realPath(ctx.io, &out_buffer);
+        const file_path = out_buffer[0..path_len];
+        const file_name = std.fs.path.basename(file_path);
+
         const tracks = try mov.parseMovFile(ctx.io, ctx.allocator, ctx.file, false);
         defer {
             for (tracks) |*track| {
@@ -105,7 +111,7 @@ pub const SourceMedia = struct {
         const end_timecode = try ctx.allocator.dupe(u8, end_timecode_slice);
 
         return .{
-            .file_name = "none",
+            .file_name = file_name,
             .file_path = file_path,
             .resolution = resolution,
             .container_resolution = resolution, // Same as resolution for now
@@ -169,20 +175,25 @@ pub fn main() !void {
     defer argv.deinit();
 
     _ = argv.next();
-    const filepath = argv.next() orelse {
+    const file_path = argv.next() orelse {
         std.debug.print("Usage: mov_parser <file.mov> [-v]\n", .{});
         return error.MissingArgument;
     };
 
-    // Open file
-    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const abs_path = try std.fs.cwd().realpath(filepath, &path_buf);
-
-    const file = try Io.File.openAbsolute(io, abs_path, .{});
+    // Open file - if filepath is already absolute, use it; otherwise resolve it
+    const file = if (std.fs.path.isAbsolute(file_path))
+        try Io.Dir.openFileAbsolute(io, file_path, .{})
+    else blk: {
+        var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+        const cwd = std.Io.Dir.cwd();
+        const cwd_len = try cwd.realPath(io, &path_buf);
+        const abs_path = try std.fmt.bufPrint(path_buf[cwd_len..], "/{s}", .{file_path});
+        break :blk try Io.Dir.openFileAbsolute(io, path_buf[0 .. cwd_len + abs_path.len], .{});
+    };
     defer file.close(io);
 
-    const ctx = MediaContext{ .io = io, .file = file, .allocator = allocator };
-    var test_source = try SourceMedia.init(filepath, ctx);
+    const ctx = MediaContext{ .file = file, .io = io, .allocator = allocator };
+    var test_source = try SourceMedia.init(ctx);
     defer test_source.deinit(allocator);
 
     std.debug.print("Resolution: {d}x{d}\n", .{ test_source.resolution.width, test_source.resolution.height });

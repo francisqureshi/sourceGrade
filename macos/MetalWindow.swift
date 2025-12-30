@@ -29,9 +29,12 @@ class MetalView: NSView {
         // Create the Metal layer
         metalLayer = CAMetalLayer()
         metalLayer.device = MTLCreateSystemDefaultDevice()
-        metalLayer.pixelFormat = .bgra8Unorm
+        metalLayer.pixelFormat = .bgra8Unorm_srgb  // Auto gamma-encode (linear → sRGB)
         metalLayer.framebufferOnly = false
         metalLayer.isOpaque = true  // CRITICAL: Tell CA this layer is fully opaque
+
+        // Set Display P3 colorspace (like Ghostty) for Apple-style rendering
+        metalLayer.colorspace = CGColorSpace(name: CGColorSpace.displayP3)
 
         // Make the layer update when bounds change
         self.wantsLayer = true

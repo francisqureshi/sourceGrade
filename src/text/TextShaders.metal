@@ -1,6 +1,30 @@
 #include <metal_stdlib>
 using namespace metal;
 
+//-------------------------------------------------------------------
+// Color Space Conversion (Linear RGB ↔ sRGB)
+//-------------------------------------------------------------------
+
+// Converts a color from sRGB gamma encoding to linear RGB
+// NOTE: Alpha is NOT gamma corrected - it stays linear!
+float4 linearize(float4 srgb) {
+    bool3 cutoff = srgb.rgb <= 0.04045;
+    float3 lower = srgb.rgb / 12.92;
+    float3 higher = pow((srgb.rgb + 0.055) / 1.055, 2.4);
+    float4 result = srgb;
+    result.rgb = mix(higher, lower, float3(cutoff));
+    return result;  // Alpha unchanged
+}
+
+// Converts a color from linear RGB to sRGB gamma encoding
+float4 unlinearize(float4 linear) {
+    bool3 cutoff = linear.rgb <= 0.0031308;
+    float3 lower = linear.rgb * 12.92;
+    float3 higher = pow(linear.rgb, 1.0 / 2.4) * 1.055 - 0.055;
+    linear.rgb = mix(higher, lower, float3(cutoff));
+    return linear;
+}
+
 struct TextVertex {
     uint2 glyph_pos;      // Position in atlas (8 bytes, offset 0)
     uint2 glyph_size;     // Size in atlas (8 bytes, offset 8)
@@ -55,7 +79,11 @@ vertex TextFragmentIn textVertexShader(
 
     TextFragmentIn out;
     out.position = float4(ndc, 0.0, 1.0);
-    out.color = float4(in.color) / 255.0;
+
+    // Convert color from sRGB (0-255) to linear RGB (0-1)
+    float4 srgb_color = float4(in.color) / 255.0;
+    out.color = linearize(srgb_color);  // Linearize for correct blending
+
     out.tex_coord = tex_coord;
 
     return out;
@@ -72,16 +100,14 @@ fragment float4 textFragmentShader(
     );
 
     // Sample the atlas (grayscale R8) - tex_coord is in pixel coordinates
+    // Atlas contains LINEAR alpha values (rendered by CoreText with kCGColorSpaceLinearGray)
     float alpha = atlas.sample(textureSampler, in.tex_coord).r;
 
-    // // Discard nearly-transparent fragments to avoid darkening background
-    // if (alpha < 0.01) {
-    //     discard_fragment();
-    // }
-
-    // Multiply color by alpha for premultiplied alpha
+    // Input color is linear (linearized in vertex shader)
+    // Multiply by alpha for premultiplied alpha blending in linear space
     float4 color = in.color;
     color *= alpha;
 
+    // Output linear RGB directly to linear framebuffer
     return color;
 }

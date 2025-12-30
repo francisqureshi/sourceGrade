@@ -80,7 +80,7 @@ pub fn init(
 
     // Create pipeline with premultiplied alpha blending (like Ghostty)
     const pipeline_desc = metal.RenderPipelineDescriptor{
-        .pixel_format = .bgra8_unorm,
+        .pixel_format = .bgra8_unorm_srgb, // Auto gamma-encode after blending (linear → sRGB)
         .blend_enabled = true,
         .source_rgb_blend_factor = .one,
         .destination_rgb_blend_factor = .one_minus_source_alpha,
