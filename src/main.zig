@@ -213,11 +213,16 @@ pub fn testSourceMedia() !void {
         return error.MissingArgument;
     };
 
-    // Open file
-    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const abs_path = try std.fs.cwd().realpath(filepath, &path_buf);
-
-    const file = try Io.File.openAbsolute(io, abs_path, .{});
+    // Open file - if filepath is already absolute, use it; otherwise resolve it
+    const file = if (std.fs.path.isAbsolute(filepath))
+        try Io.Dir.openFileAbsolute(io, filepath, .{})
+    else blk: {
+        var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+        const cwd = std.Io.Dir.cwd();
+        const cwd_len = try cwd.realPath(io, &path_buf);
+        const abs_path = try std.fmt.bufPrint(path_buf[cwd_len..], "/{s}", .{filepath});
+        break :blk try Io.Dir.openFileAbsolute(io, path_buf[0 .. cwd_len + abs_path.len], .{});
+    };
     defer file.close(io);
 
     const ctx = media.MediaContext{ .io = io, .file = file, .allocator = allocator };
@@ -333,11 +338,13 @@ pub fn main() !void {
 
     const imgui_pipeline_desc = metal.RenderPipelineDescriptor{
         .pixel_format = .bgra8_unorm,
-        .blend_enabled = false, // Disable blending - IMGUI elements are fully opaque
+        .blend_enabled = true, // Premultiplied alpha blending (same as text)
         .source_rgb_blend_factor = .one,
-        .destination_rgb_blend_factor = .zero,
+        .destination_rgb_blend_factor = .one_minus_source_alpha,
+        .rgb_blend_operation = .add,
         .source_alpha_blend_factor = .one,
-        .destination_alpha_blend_factor = .zero,
+        .destination_alpha_blend_factor = .one_minus_source_alpha,
+        .alpha_blend_operation = .add,
     };
 
     var imgui_pipeline = try imgui_vertex_fn.createRenderPipeline(&device, &imgui_fragment_fn, imgui_pipeline_desc);

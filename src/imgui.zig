@@ -69,7 +69,7 @@ pub const ImGuiContext = struct {
             allocator,
             device,
             "IBM Plex Mono", // Monospace font (built-in macOS)
-            24.0, // Font size (normal reading size)
+            256.0, // Font size
             2048, // Atlas size
             256, // Max glyphs per frame
         );

@@ -76,11 +76,11 @@ pub fn init(
     var fragment_fn = try library.createFunction("textFragmentShader");
     defer fragment_fn.deinit();
 
-    // Create pipeline with alpha blending
+    // Create pipeline with premultiplied alpha blending (like Ghostty)
     const pipeline_desc = metal.RenderPipelineDescriptor{
         .pixel_format = .bgra8_unorm,
         .blend_enabled = true,
-        .source_rgb_blend_factor = .source_alpha,
+        .source_rgb_blend_factor = .one,
         .destination_rgb_blend_factor = .one_minus_source_alpha,
         .rgb_blend_operation = .add,
         .source_alpha_blend_factor = .one,
@@ -120,16 +120,7 @@ pub fn deinit(self: *TextRenderer) void {
 /// Update screen size for coordinate transformation
 pub fn setScreenSize(self: *TextRenderer, width: f32, height: f32) void {
     const screen_size = [2]f32{ width, height };
-    std.debug.print("TextRenderer.setScreenSize: uploading {d:.1}x{d:.1} ({} bytes)\n", .{ width, height, @sizeOf([2]f32) });
     self.screen_size_buffer.upload(std.mem.asBytes(&screen_size));
-
-    // DEBUG: Verify what we uploaded
-    const bytes = std.mem.asBytes(&screen_size);
-    std.debug.print("  Buffer bytes: ", .{});
-    for (bytes) |b| {
-        std.debug.print("{x:0>2} ", .{b});
-    }
-    std.debug.print("\n", .{});
 }
 
 /// Render text at the specified position with color
@@ -171,64 +162,42 @@ pub fn renderText(
         cursor_x += glyph.advance_x;
     }
 
-    // DEBUG: Print struct layout
-    std.debug.print("TextVertex size: {} bytes\n", .{@sizeOf(TextVertex)});
-    std.debug.print("  glyph_pos offset: {}\n", .{@offsetOf(TextVertex, "glyph_pos")});
-    std.debug.print("  glyph_size offset: {}\n", .{@offsetOf(TextVertex, "glyph_size")});
-    std.debug.print("  bearings offset: {}\n", .{@offsetOf(TextVertex, "bearings")});
-    std.debug.print("  screen_pos offset: {}\n", .{@offsetOf(TextVertex, "screen_pos")});
-    std.debug.print("  color offset: {}\n", .{@offsetOf(TextVertex, "color")});
-    std.debug.print("Vertex[0]: glyph_pos=({},{}), glyph_size=({},{}), screen_pos=({d:.1},{d:.1})\n", .{
-        vertices[0].glyph_pos[0],
-        vertices[0].glyph_pos[1],
+    // DEBUG: Check what's in the atlas at first glyph position (AFTER trimming)
+    const first_glyph_x = vertices[0].glyph_pos[0];
+    const first_glyph_y = vertices[0].glyph_pos[1];
+    std.debug.print("Vertices[0] using atlas pos ({},{}) size ({},{})\n", .{
+        first_glyph_x,
+        first_glyph_y,
         vertices[0].glyph_size[0],
         vertices[0].glyph_size[1],
-        vertices[0].screen_pos[0],
-        vertices[0].screen_pos[1],
     });
+    std.debug.print("Atlas at ({},{}) first 5x5:\n", .{ first_glyph_x, first_glyph_y });
+    var sample_y: u32 = 0;
+    while (sample_y < 5) : (sample_y += 1) {
+        var sample_x: u32 = 0;
+        while (sample_x < 5) : (sample_x += 1) {
+            const px = self.atlas.data[(first_glyph_y + sample_y) * self.atlas.size + (first_glyph_x + sample_x)];
+            std.debug.print("{x:0>2} ", .{px});
+        }
+        std.debug.print("\n", .{});
+    }
 
     // Upload vertices to GPU
     self.vertex_buffer.upload(std.mem.sliceAsBytes(vertices));
 
-    // DEBUG: Check atlas data at first glyph position
-    const first_glyph_x = vertices[0].glyph_pos[0];
-    const first_glyph_y = vertices[0].glyph_pos[1];
-    std.debug.print("Atlas sample at glyph ({},{}):\n", .{ first_glyph_x, first_glyph_y });
-    var sample_count: u32 = 0;
-    var y: u32 = first_glyph_y;
-    while (y < first_glyph_y + @min(vertices[0].glyph_size[1], 5)) : (y += 1) {
-        var x: u32 = first_glyph_x;
-        while (x < first_glyph_x + @min(vertices[0].glyph_size[0], 5)) : (x += 1) {
-            const pixel = self.atlas.data[y * self.atlas.size + x];
-            std.debug.print("{x:0>2} ", .{pixel});
-            if (pixel > 0) sample_count += 1;
-        }
-        std.debug.print("\n", .{});
+    // Upload atlas texture (only if modified)
+    const atlas_modified = self.atlas.modified.load(.monotonic);
+    if (atlas_modified != self.atlas_modified) {
+        self.atlas_texture.upload(
+            self.atlas.data,
+            self.atlas.size,
+            self.atlas.size,
+            self.atlas.size, // bytes per row for grayscale
+        );
+        self.atlas_modified = atlas_modified;
     }
-    std.debug.print("Non-zero pixels in sample: {}\n", .{sample_count});
 
-    // DEBUG: Always upload atlas texture to ensure all glyphs are present
-    std.debug.print("Uploading atlas: size={}, bytes_per_row={}, data.len={}\n", .{ self.atlas.size, self.atlas.size, self.atlas.data.len });
-    self.atlas_texture.upload(
-        self.atlas.data,
-        self.atlas.size,
-        self.atlas.size,
-        self.atlas.size, // bytes per row for grayscale
-    );
-
-    // Update atlas texture if modified
-    // const atlas_modified = self.atlas.modified.load(.monotonic);
-    // if (atlas_modified != self.atlas_modified) {
-    //     self.atlas_texture.upload(
-    //         self.atlas.data,
-    //         self.atlas.size,
-    //         self.atlas.size,
-    //         self.atlas.size, // bytes per row for grayscale
-    //     );
-    //     self.atlas_modified = atlas_modified;
-    // }
-
-    // Render using instanced indexed drawing (like Ghostty)
+    // Render using instanced indexed drawing
     encoder.setPipeline(&self.pipeline);
     encoder.setVertexBuffer(&self.vertex_buffer, 0, 0);
     encoder.setVertexBuffer(&self.screen_size_buffer, 0, 1);
@@ -236,7 +205,6 @@ pub fn renderText(
 
     // Draw all glyphs: 6 indices per quad, text.len instances
     const glyph_count: u32 = @intCast(text.len);
-    std.debug.print("Drawing {} instances, 6 indices each\n", .{glyph_count});
     encoder.drawIndexedPrimitivesInstanced(.triangle, 6, &self.index_buffer, 0, glyph_count);
 }
 
@@ -250,7 +218,53 @@ fn getOrRenderGlyph(self: *TextRenderer, glyph_id: u16) !Glyph {
     // Get metrics
     var glyph = try self.font.getGlyphMetrics(glyph_id);
 
-    // Reserve space in atlas
+    // Render glyph to buffer first (to determine trimmed size)
+    const buffer_size = glyph.width * glyph.height;
+    const buffer = try self.allocator.alloc(u8, buffer_size);
+    defer self.allocator.free(buffer);
+
+    try self.font.renderGlyph(glyph_id, buffer, glyph.width, glyph.height);
+
+    // DEBUG: Check buffer content
+    var has_content = false;
+    var max_val: u8 = 0;
+    for (buffer) |px| {
+        if (px > 0) has_content = true;
+        if (px > max_val) max_val = px;
+    }
+    std.debug.print("Buffer after render: has_content={}, max_val={}\n", .{ has_content, max_val });
+
+    // DEBUG: Find where the pixels actually are
+    var first_pixel_x: ?u32 = null;
+    var first_pixel_y: ?u32 = null;
+    var scan_y: u32 = 0;
+    while (scan_y < glyph.height and first_pixel_x == null) : (scan_y += 1) {
+        var scan_x: u32 = 0;
+        while (scan_x < glyph.width) : (scan_x += 1) {
+            if (buffer[scan_y * glyph.width + scan_x] > 0) {
+                first_pixel_x = scan_x;
+                first_pixel_y = scan_y;
+                break;
+            }
+        }
+    }
+    if (first_pixel_x) |fx| {
+        std.debug.print("First pixel at ({},{})\n", .{ fx, first_pixel_y.? });
+        std.debug.print("Buffer at first pixel (5x5):\n", .{});
+        var dbg_y: u32 = 0;
+        while (dbg_y < 5 and first_pixel_y.? + dbg_y < glyph.height) : (dbg_y += 1) {
+            var dbg_x: u32 = 0;
+            while (dbg_x < 5 and fx + dbg_x < glyph.width) : (dbg_x += 1) {
+                const px = buffer[(first_pixel_y.? + dbg_y) * glyph.width + (fx + dbg_x)];
+                std.debug.print("{x:0>2} ", .{px});
+            }
+            std.debug.print("\n", .{});
+        }
+    } else {
+        std.debug.print("No pixels found in buffer!\n", .{});
+    }
+
+    // Reserve space in atlas (full size, no trimming like Ghostty)
     const region = self.atlas.reserve(
         self.allocator,
         glyph.width,
@@ -271,49 +285,21 @@ fn getOrRenderGlyph(self: *TextRenderer, glyph_id: u16) !Glyph {
         return err;
     };
 
-    // Render glyph to buffer
-    const buffer_size = glyph.width * glyph.height;
-    const buffer = try self.allocator.alloc(u8, buffer_size);
-    defer self.allocator.free(buffer);
-
-    try self.font.renderGlyph(glyph_id, buffer, glyph.width, glyph.height);
-
-    // Upload to atlas
+    // Upload full buffer to atlas (no trimming, like Ghostty)
     self.atlas.set(region, buffer);
 
-    // Find the actual glyph content bounds within the buffer
-    // (CoreGraphics adds padding based on the glyph's bounding box origin)
-    var min_x: u32 = glyph.width;
-    var max_x: u32 = 0;
-    var min_y: u32 = glyph.height;
-    var max_y: u32 = 0;
-    var found_pixel = false;
+    // Update glyph atlas position
+    glyph.atlas_x = region.x;
+    glyph.atlas_y = region.y;
 
-    var y: u32 = 0;
-    while (y < glyph.height) : (y += 1) {
-        var x: u32 = 0;
-        while (x < glyph.width) : (x += 1) {
-            if (buffer[y * glyph.width + x] > 0) {
-                found_pixel = true;
-                if (x < min_x) min_x = x;
-                if (x > max_x) max_x = x;
-                if (y < min_y) min_y = y;
-                if (y > max_y) max_y = y;
-            }
-        }
-    }
-
-    if (found_pixel) {
-        // Adjust atlas position and size to actual content
-        glyph.atlas_x = region.x + min_x;
-        glyph.atlas_y = region.y + min_y;
-        glyph.width = max_x - min_x + 1;
-        glyph.height = max_y - min_y + 1;
-    } else {
-        // Empty glyph (space character)
-        glyph.atlas_x = region.x;
-        glyph.atlas_y = region.y;
-    }
+    std.debug.print("Glyph: atlas_pos=({},{}), size={}x{}, bearings=({},{})\n", .{
+        glyph.atlas_x,
+        glyph.atlas_y,
+        glyph.width,
+        glyph.height,
+        glyph.bearing_x,
+        glyph.bearing_y,
+    });
 
     // Cache it
     try self.glyph_cache.put(self.allocator, glyph);

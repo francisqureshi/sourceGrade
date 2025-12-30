@@ -32,9 +32,16 @@ vertex TextFragmentIn textVertexShader(
 
     // Use actual glyph data
     float2 glyph_size = float2(in.glyph_size);
-    float2 base_pos = in.screen_pos;
+    float2 base_pos = in.screen_pos;  // baseline position
+    float2 bearings = float2(in.bearings);  // x0, y0
 
-    float2 pos = base_pos + glyph_size * corner;
+    // Position glyph - glyphs are now rendered correctly in buffer,
+    // just position boxes at base_pos with bearing offsets
+    float2 offset;
+    offset.x = bearings.x;
+    offset.y = bearings.y;
+
+    float2 pos = base_pos + offset + glyph_size * corner;
 
     // Convert to NDC (-1 to 1)
     float2 ndc = (pos / screen_size) * 2.0 - 1.0;
@@ -57,17 +64,23 @@ fragment float4 textFragmentShader(
     TextFragmentIn in [[stage_in]],
     texture2d<float> atlas [[texture(0)]]
 ) {
-    constexpr sampler smp(coord::pixel, address::clamp_to_edge, filter::linear);
+    constexpr sampler textureSampler(
+        coord::pixel,
+        address::clamp_to_edge,
+        filter::linear
+    );
 
-    // Sample the atlas (grayscale R8)
-    float alpha = atlas.sample(smp, in.tex_coord).r;
+    // Sample the atlas (grayscale R8) - tex_coord is in pixel coordinates
+    float alpha = atlas.sample(textureSampler, in.tex_coord).r;
 
-    // DEBUG: Show texture coordinates as color to verify they're correct
-    // Expected: very dark (tex_coord around 1-20 for small glyphs at atlas origin)
-    if (alpha > 0.01) {
-        return float4(1.0, 1.0, 1.0, 1.0); // White if we got glyph data
-    }
+    // // Discard nearly-transparent fragments to avoid darkening background
+    // if (alpha < 0.01) {
+    //     discard_fragment();
+    // }
 
-    // Show tex_coord values as colors (divide by 50 to see range 0-50)
-    return float4(in.tex_coord.x / 50.0, in.tex_coord.y / 50.0, 0.0, 1.0);
+    // Multiply color by alpha for premultiplied alpha
+    float4 color = in.color;
+    color *= alpha;
+
+    return color;
 }

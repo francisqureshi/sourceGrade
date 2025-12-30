@@ -49,8 +49,14 @@ pub const kCFStringEncodingUTF8: u32 = 0x08000100;
 // CoreGraphics constants
 pub const kCGImageAlphaNone: u32 = 0;
 pub const kCGImageAlphaPremultipliedFirst: u32 = 2;
+pub const kCGImageAlphaOnly: u32 = 7;
 pub const kCGBitmapByteOrderDefault: u32 = 0;
 pub const kCGRenderingIntentDefault: u32 = 0;
+
+// CoreGraphics color space names
+pub extern var kCGColorSpaceLinearGray: *const anyopaque;
+
+pub extern "c" fn CGColorSpaceCreateWithName(name: *const anyopaque) ?CGColorSpaceRef;
 
 // Font orientation
 pub const kCTFontOrientationDefault: u32 = 0;
@@ -120,6 +126,14 @@ pub extern "c" fn CGColorSpaceCreateDeviceRGB() ?CGColorSpaceRef;
 
 pub extern "c" fn CGContextClearRect(context: CGContextRef, rect: CGRect) void;
 pub extern "c" fn CGContextFillRect(context: CGContextRef, rect: CGRect) void;
+pub extern "c" fn CGContextSetAllowsAntialiasing(context: CGContextRef, allows: bool) void;
+pub extern "c" fn CGContextSetShouldAntialias(context: CGContextRef, should: bool) void;
+pub extern "c" fn CGContextSetAllowsFontSmoothing(context: CGContextRef, allows: bool) void;
+pub extern "c" fn CGContextSetShouldSmoothFonts(context: CGContextRef, should: bool) void;
+pub extern "c" fn CGContextSetAllowsFontSubpixelPositioning(context: CGContextRef, allows: bool) void;
+pub extern "c" fn CGContextSetShouldSubpixelPositionFonts(context: CGContextRef, should: bool) void;
+pub extern "c" fn CGContextSetAllowsFontSubpixelQuantization(context: CGContextRef, allows: bool) void;
+pub extern "c" fn CGContextSetShouldSubpixelQuantizeFonts(context: CGContextRef, should: bool) void;
 pub extern "c" fn CGContextSetGrayFillColor(context: CGContextRef, gray: CGFloat, alpha: CGFloat) void;
 pub extern "c" fn CGContextSetRGBFillColor(context: CGContextRef, red: CGFloat, green: CGFloat, blue: CGFloat, alpha: CGFloat) void;
 pub extern "c" fn CGContextSetTextMatrix(context: CGContextRef, transform: CGAffineTransform) void;
