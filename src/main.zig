@@ -188,6 +188,10 @@ fn renderThread(ctx: *RenderContext) void {
             std.debug.print("Text render error: {}\n", .{err});
         };
 
+        ctx.imgui_ctx.text(&render_encoder, "Test2", 150, 450, .{ 255, 0, 0, 255 }) catch |err| {
+            std.debug.print("Text2 render error: {}\n", .{err});
+        };
+
         render_encoder.end();
 
         command_buffer.present(drawable_ptr);
