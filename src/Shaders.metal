@@ -53,9 +53,7 @@ vertex VertexOut vertexShaderBuffered(
 
     // Read position and color from the vertex buffer
     float2 position = vertices[vertexID].position;
-
-    // Linearize color (assume input is sRGB)
-    out.color = linearize(vertices[vertexID].color);
+    out.color = vertices[vertexID].color;  // No gamma conversion
 
     // Apply 2D rotation matrix
     float cosAngle = cos(rotationAngle);
@@ -75,8 +73,7 @@ vertex VertexOut vertexShaderBuffered(
 // Fragment shader
 fragment float4 fragmentShader(VertexOut in [[stage_in]])
 {
-    // Input color is linear (linearized in vertex shader)
-    // Output linear RGB directly to linear framebuffer
+    // Native blending: no gamma conversion
     return in.color;
 }
 
@@ -110,15 +107,14 @@ vertex ImGuiVertexOut imguiVertexShader(
     float2 pos = vertices[vertexID].position;
     out.uv = vertices[vertexID].uv;
 
-    // Unpack RGBA8 color to float4 and linearize (sRGB → linear RGB)
+    // Unpack RGBA8 color to float4 (no gamma conversion for native blending)
     uint packed = vertices[vertexID].color;
-    float4 srgb_color = float4(
+    out.color = float4(
         float(packed & 0xFF) / 255.0,          // R
         float((packed >> 8) & 0xFF) / 255.0,   // G
         float((packed >> 16) & 0xFF) / 255.0,  // B
         float((packed >> 24) & 0xFF) / 255.0   // A
     );
-    out.color = linearize(srgb_color);  // Convert to linear RGB
 
     // Convert screen coordinates [0, screen_size] to clip space [-1, 1]
     // Note: Y is flipped (Metal's origin is top-left, clip space origin is center)
@@ -134,12 +130,9 @@ vertex ImGuiVertexOut imguiVertexShader(
 // IMGUI Fragment shader - simple textured + colored output
 fragment float4 imguiFragmentShader(ImGuiVertexOut in [[stage_in]])
 {
-    // Input color is linear (linearized in vertex shader)
-    // Premultiply alpha in linear space
+    // Native blending: just premultiply (no gamma conversion)
     float4 color = in.color;
-    color.rgb *= color.a;
-
-    // Output linear RGB directly to linear framebuffer
+    color.rgb *= color.a;  // Premultiply
     return color;
 }
 

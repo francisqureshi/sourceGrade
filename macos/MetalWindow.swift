@@ -29,7 +29,7 @@ class MetalView: NSView {
         // Create the Metal layer
         metalLayer = CAMetalLayer()
         metalLayer.device = MTLCreateSystemDefaultDevice()
-        metalLayer.pixelFormat = .bgra8Unorm_srgb  // Auto gamma-encode (linear → sRGB)
+        metalLayer.pixelFormat = .bgra8Unorm  // Native blending (Ghostty default)
         metalLayer.framebufferOnly = false
         metalLayer.isOpaque = true  // CRITICAL: Tell CA this layer is fully opaque
 

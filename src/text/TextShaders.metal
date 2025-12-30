@@ -80,9 +80,8 @@ vertex TextFragmentIn textVertexShader(
     TextFragmentIn out;
     out.position = float4(ndc, 0.0, 1.0);
 
-    // Convert color from sRGB (0-255) to linear RGB (0-1)
-    float4 srgb_color = float4(in.color) / 255.0;
-    out.color = linearize(srgb_color);  // Linearize for correct blending
+    // Convert color from 0-255 to 0-1 (no gamma conversion)
+    out.color = float4(in.color) / 255.0;
 
     out.tex_coord = tex_coord;
 
@@ -99,15 +98,11 @@ fragment float4 textFragmentShader(
         filter::linear
     );
 
-    // Sample the atlas (grayscale R8) - tex_coord is in pixel coordinates
-    // Atlas contains LINEAR alpha values (rendered by CoreText with kCGColorSpaceLinearGray)
+    // Sample the atlas (grayscale R8)
     float alpha = atlas.sample(textureSampler, in.tex_coord).r;
 
-    // Input color is linear (linearized in vertex shader)
-    // Multiply by alpha for premultiplied alpha blending in linear space
+    // Native blending: multiply by atlas alpha, then premultiply
     float4 color = in.color;
-    color *= alpha;
-
-    // Output linear RGB directly to linear framebuffer
+    color *= alpha;        // Multiply by atlas alpha
     return color;
 }

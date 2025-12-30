@@ -87,12 +87,12 @@ fn renderThread(ctx: *RenderContext) void {
         // ctx.imgui_ctx.slider(5, 100, 550, 600, 16, &playback_speed, 0.1, 2.0) catch {}; // Video playback speed
 
         // Use fullscreen rect (works on Retina too)
-        const full_w = ctx.imgui_ctx.display_width;
-        const full_h = ctx.imgui_ctx.display_height;
+        // const full_w = ctx.imgui_ctx.display_width;
+        // const full_h = ctx.imgui_ctx.display_height;
 
         ctx.imgui_ctx.addRect(600, 50, 100, 100, imgui.ImGuiContext.packColor(slider_value, 1, 0, 1.0)) catch {};
         ctx.imgui_ctx.addRect(650, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
-        ctx.imgui_ctx.addRect(0, 0, full_w, full_h, imgui.ImGuiContext.packColor(1, 1, 1, 1.0)) catch {};
+        // ctx.imgui_ctx.addRect(0, 0, full_w, full_h, imgui.ImGuiContext.packColor(0.5, 0.5, 0.5, 1.0)) catch {};
         // ctx.imgui_ctx.addTri(100, 50, 0, 100, 100, 100, imgui.ImGuiContext.packColor(0.5, 0.5, 0.5, 1.0)) catch {};
         // ctx.imgui_ctx.addCircle(200, 300, circle_slider, 360, imgui.ImGuiContext.packColor(255, 200, 150, 1)) catch {};
         // ctx.imgui_ctx.addLine(0, 599, 800, 599, imgui.ImGuiContext.packColor(1, 0, 0, 1.0), 2.0) catch {};
@@ -190,11 +190,11 @@ fn renderThread(ctx: *RenderContext) void {
         }
 
         // Layer 3: Text overlays
-        ctx.imgui_ctx.text(&render_encoder, "Test", 100, 400, .{ 255, 255, 255, 255 }) catch |err| {
+        ctx.imgui_ctx.text(&render_encoder, "Hello", 100, 400, .{ 255, 255, 255, 255 }) catch |err| {
             std.debug.print("Text render error: {}\n", .{err});
         };
 
-        ctx.imgui_ctx.text(&render_encoder, "Test2", 150, 450, .{ 255, 0, 0, 255 }) catch |err| {
+        ctx.imgui_ctx.text(&render_encoder, "beef", 150, 450, .{ 255, 0, 0, 255 }) catch |err| {
             std.debug.print("Text2 render error: {}\n", .{err});
         };
 
@@ -342,7 +342,7 @@ pub fn main() !void {
 
     // Create render pipeline descriptor
     const pipeline_desc = metal.RenderPipelineDescriptor{
-        .pixel_format = .bgra8_unorm_srgb, // Auto gamma-encode after blending (linear → sRGB)
+        .pixel_format = .bgra8_unorm, // Native blending (matches layer)
         .blend_enabled = false,
     };
 
@@ -358,14 +358,12 @@ pub fn main() !void {
     defer imgui_fragment_fn.deinit();
 
     const imgui_pipeline_desc = metal.RenderPipelineDescriptor{
-        .pixel_format = .bgra8_unorm_srgb, // Auto gamma-encode after blending (linear → sRGB)
-        .blend_enabled = true, // Premultiplied alpha blending (same as Ghostty)
+        .pixel_format = .bgra8_unorm, // Native blending (matches layer)
+        .blend_enabled = true,
         .source_rgb_blend_factor = .one,
-        .destination_rgb_blend_factor = .one_minus_source_alpha,
-        .rgb_blend_operation = .add,
         .source_alpha_blend_factor = .one,
+        .destination_rgb_blend_factor = .one_minus_source_alpha,
         .destination_alpha_blend_factor = .one_minus_source_alpha,
-        .alpha_blend_operation = .add,
     };
 
     var imgui_pipeline = try imgui_vertex_fn.createRenderPipeline(&device, &imgui_fragment_fn, imgui_pipeline_desc);
@@ -380,7 +378,7 @@ pub fn main() !void {
     defer video_fragment_fn.deinit();
 
     const video_pipeline_desc = metal.RenderPipelineDescriptor{
-        .pixel_format = .bgra8_unorm_srgb, // Auto gamma-encode after blending (linear → sRGB)
+        .pixel_format = .bgra8_unorm, // Native blending (matches layer)
         .blend_enabled = false,
     };
 
