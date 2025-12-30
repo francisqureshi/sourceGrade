@@ -40,11 +40,11 @@ const RenderContext = struct {
 // Render thread entry point
 fn renderThread(ctx: *RenderContext) void {
     var frame: u64 = 0;
-    var button_click_count: u32 = 0;
-    var speed: f32 = 3000;
-    var slider_value: f32 = 0.5;
-    var circle_slider: f32 = 100;
-    var playback_speed: f32 = 1.0; // 1.0 = normal speed, 0.5 = half speed, 2.0 = double speed
+    // var button_click_count: u32 = 0;
+    const speed: f32 = 3000;
+    const slider_value: f32 = 0.5;
+    // var circle_slider: f32 = 100;
+    const playback_speed: f32 = 1.0; // 1.0 = normal speed, 0.5 = half speed, 2.0 = double speed
 
     // Video frame timing - let CVMetalTextureCache manage texture lifecycle
     const base_frame_duration_ns = if (ctx.video_fps > 0) @as(u64, @intFromFloat(std.time.ns_per_s / ctx.video_fps)) else 0;
@@ -76,22 +76,22 @@ fn renderThread(ctx: *RenderContext) void {
         ctx.imgui_ctx.mouse_down = mouse_down;
 
         // UI elements
-        if (ctx.imgui_ctx.button(1, 300, 250, 200, 60, "Click Me!") catch false) {
-            button_click_count += 1;
-            std.debug.print("Button clicked! Count: {}\n", .{button_click_count});
-        }
+        // if (ctx.imgui_ctx.button(1, 300, 250, 200, 60, "Click Me!") catch false) {
+        //     button_click_count += 1;
+        //     std.debug.print("Button clicked! Count: {}\n", .{button_click_count});
+        // }
 
-        ctx.imgui_ctx.slider(2, 100, 400, 600, 16, &slider_value, 0.0, 1.0) catch {};
-        ctx.imgui_ctx.slider(3, 100, 450, 600, 16, &speed, 3000, 0.00001) catch {};
-        ctx.imgui_ctx.slider(4, 100, 500, 600, 32, &circle_slider, 0.0, 400) catch {};
-        ctx.imgui_ctx.slider(5, 100, 550, 600, 16, &playback_speed, 0.1, 2.0) catch {}; // Video playback speed
+        // ctx.imgui_ctx.slider(2, 100, 400, 600, 16, &slider_value, 0.0, 1.0) catch {};
+        // ctx.imgui_ctx.slider(3, 100, 450, 600, 16, &speed, 3000, 0.00001) catch {};
+        // ctx.imgui_ctx.slider(4, 100, 500, 600, 32, &circle_slider, 0.0, 400) catch {};
+        // ctx.imgui_ctx.slider(5, 100, 550, 600, 16, &playback_speed, 0.1, 2.0) catch {}; // Video playback speed
 
         ctx.imgui_ctx.addRect(600, 50, 100, 100, imgui.ImGuiContext.packColor(slider_value, 1, 0, 1.0)) catch {};
         ctx.imgui_ctx.addRect(650, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
         ctx.imgui_ctx.addRect(0, 0, 800, 600, imgui.ImGuiContext.packColor(0.5, 0.5, 0.5, 1.0)) catch {};
         // ctx.imgui_ctx.addTri(100, 50, 0, 100, 100, 100, imgui.ImGuiContext.packColor(0.5, 0.5, 0.5, 1.0)) catch {};
         // ctx.imgui_ctx.addCircle(200, 300, circle_slider, 360, imgui.ImGuiContext.packColor(255, 200, 150, 1)) catch {};
-        ctx.imgui_ctx.addLine(0, 599, 800, 599, imgui.ImGuiContext.packColor(1, 0, 0, 1.0), 2.0) catch {};
+        // ctx.imgui_ctx.addLine(0, 599, 800, 599, imgui.ImGuiContext.packColor(1, 0, 0, 1.0), 2.0) catch {};
 
         ctx.imgui_ctx.render();
 
@@ -184,7 +184,7 @@ fn renderThread(ctx: *RenderContext) void {
         }
 
         // Layer 3: Text overlays
-        ctx.imgui_ctx.text(&render_encoder, "Test", 100, 100, .{ 255, 255, 255, 255 }) catch |err| {
+        ctx.imgui_ctx.text(&render_encoder, "Test", 100, 400, .{ 255, 255, 255, 255 }) catch |err| {
             std.debug.print("Text render error: {}\n", .{err});
         };
 
@@ -436,8 +436,8 @@ pub fn main() !void {
     const start_time = try std.time.Instant.now();
 
     // Create video reader with ProRes file
-    const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
-    // const video_path = "";
+    // const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
+    const video_path = "";
     const video_reader = c.video_reader_create(video_path, device_ptr);
     var video_fps: f64 = 0;
     if (video_reader == null) {

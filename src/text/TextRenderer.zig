@@ -162,25 +162,25 @@ pub fn renderText(
         cursor_x += glyph.advance_x;
     }
 
-    // DEBUG: Check what's in the atlas at first glyph position (AFTER trimming)
-    const first_glyph_x = vertices[0].glyph_pos[0];
-    const first_glyph_y = vertices[0].glyph_pos[1];
-    std.debug.print("Vertices[0] using atlas pos ({},{}) size ({},{})\n", .{
-        first_glyph_x,
-        first_glyph_y,
-        vertices[0].glyph_size[0],
-        vertices[0].glyph_size[1],
-    });
-    std.debug.print("Atlas at ({},{}) first 5x5:\n", .{ first_glyph_x, first_glyph_y });
-    var sample_y: u32 = 0;
-    while (sample_y < 5) : (sample_y += 1) {
-        var sample_x: u32 = 0;
-        while (sample_x < 5) : (sample_x += 1) {
-            const px = self.atlas.data[(first_glyph_y + sample_y) * self.atlas.size + (first_glyph_x + sample_x)];
-            std.debug.print("{x:0>2} ", .{px});
-        }
-        std.debug.print("\n", .{});
-    }
+    // // DEBUG: Check what's in the atlas at first glyph position (AFTER trimming)
+    // const first_glyph_x = vertices[0].glyph_pos[0];
+    // const first_glyph_y = vertices[0].glyph_pos[1];
+    // std.debug.print("Vertices[0] using atlas pos ({},{}) size ({},{})\n", .{
+    //     first_glyph_x,
+    //     first_glyph_y,
+    //     vertices[0].glyph_size[0],
+    //     vertices[0].glyph_size[1],
+    // });
+    // std.debug.print("Atlas at ({},{}) first 5x5:\n", .{ first_glyph_x, first_glyph_y });
+    // var sample_y: u32 = 0;
+    // while (sample_y < 5) : (sample_y += 1) {
+    //     var sample_x: u32 = 0;
+    //     while (sample_x < 5) : (sample_x += 1) {
+    //         const px = self.atlas.data[(first_glyph_y + sample_y) * self.atlas.size + (first_glyph_x + sample_x)];
+    //         std.debug.print("{x:0>2} ", .{px});
+    //     }
+    //     std.debug.print("\n", .{});
+    // }
 
     // Upload vertices to GPU
     self.vertex_buffer.upload(std.mem.sliceAsBytes(vertices));

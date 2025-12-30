@@ -35,11 +35,12 @@ vertex TextFragmentIn textVertexShader(
     float2 base_pos = in.screen_pos;  // baseline position
     float2 bearings = float2(in.bearings);  // x0, y0
 
-    // Position glyph - glyphs are now rendered correctly in buffer,
-    // just position boxes at base_pos with bearing offsets
+    // Position glyph at baseline
+    // bearings.y is y0 (bottom of glyph), we need y1 (top) for screen positioning
+    // In screen coords (Y-down): top_left = baseline - y1 = baseline - (y0 + height)
     float2 offset;
-    offset.x = bearings.x;
-    offset.y = bearings.y;
+    offset.x = bearings.x;  // x0: left bearing
+    offset.y = -(bearings.y + glyph_size.y);  // -(y0 + height) = -y1
 
     float2 pos = base_pos + offset + glyph_size * corner;
 
