@@ -69,7 +69,7 @@ pub const ImGuiContext = struct {
             allocator,
             device,
             "IBM Plex Mono", // Monospace font (built-in macOS)
-            256.0, // Font size
+            128.0, // Font size
             2048, // Atlas size
             256, // Max glyphs per frame
         );
@@ -373,6 +373,11 @@ pub const ImGuiContext = struct {
     /// Call this during the IMGUI render pass (after shapes are drawn)
     pub fn text(self: *ImGuiContext, encoder: *metal.MetalRenderEncoder, str: []const u8, x: f32, y: f32, color: [4]u8) !void {
         try self.text_renderer.renderText(encoder, str, x, y, color);
+    }
+
+    /// Flush all pending text rendering (call after all text() calls)
+    pub fn flushText(self: *ImGuiContext, encoder: *metal.MetalRenderEncoder) !void {
+        try self.text_renderer.flush(encoder);
     }
 
     /// Update text renderer screen size when window resizes

@@ -192,6 +192,11 @@ fn renderThread(ctx: *RenderContext) void {
             std.debug.print("Text2 render error: {}\n", .{err});
         };
 
+        // Flush all text rendering
+        ctx.imgui_ctx.flushText(&render_encoder) catch |err| {
+            std.debug.print("Text flush error: {}\n", .{err});
+        };
+
         render_encoder.end();
 
         command_buffer.present(drawable_ptr);

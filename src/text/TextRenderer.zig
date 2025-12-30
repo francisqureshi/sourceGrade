@@ -24,6 +24,8 @@ index_buffer: metal.MetalBuffer,
 screen_size_buffer: metal.MetalBuffer,
 max_vertices: usize,
 atlas_modified: usize = 0,
+// Vertex accumulation for batching multiple text calls
+pending_vertices: std.ArrayList(TextVertex),
 
 pub fn init(
     allocator: Allocator,
@@ -103,10 +105,12 @@ pub fn init(
         .index_buffer = index_buffer,
         .screen_size_buffer = screen_size_buffer,
         .max_vertices = max_vertices,
+        .pending_vertices = std.ArrayList(TextVertex).empty,
     };
 }
 
 pub fn deinit(self: *TextRenderer) void {
+    self.pending_vertices.deinit(self.allocator);
     self.glyph_cache.deinit(self.allocator);
     self.font.deinit();
     self.atlas.deinit(self.allocator);
@@ -123,7 +127,7 @@ pub fn setScreenSize(self: *TextRenderer, width: f32, height: f32) void {
     self.screen_size_buffer.upload(std.mem.asBytes(&screen_size));
 }
 
-/// Render text at the specified position with color
+/// Add text to the rendering batch (doesn't draw yet - call flush() to render)
 pub fn renderText(
     self: *TextRenderer,
     encoder: *metal.MetalRenderEncoder,
@@ -132,58 +136,37 @@ pub fn renderText(
     y: f32,
     color: [4]u8,
 ) !void {
+    _ = encoder; // Will be used in flush()
     if (text.len == 0) return;
-
-    // Prepare vertices - 1 vertex per glyph (instanced drawing)
-    const max_glyphs = self.max_vertices / 4;
-    if (text.len > max_glyphs) return error.TextTooLong;
-
-    var vertices = try self.allocator.alloc(TextVertex, text.len);
-    defer self.allocator.free(vertices);
 
     var cursor_x = x;
 
-    for (text, 0..) |char, i| {
+    for (text) |char| {
         const codepoint: u21 = char;
 
         // Get or create glyph
         const glyph_id = try self.font.getGlyphID(codepoint);
         const glyph = try self.getOrRenderGlyph(glyph_id);
 
-        // Create 1 vertex per glyph (instanced drawing generates 4 corners)
-        vertices[i] = .{
+        // Add vertex to pending batch
+        try self.pending_vertices.append(self.allocator, .{
             .glyph_pos = .{ glyph.atlas_x, glyph.atlas_y },
             .glyph_size = .{ glyph.width, glyph.height },
             .bearings = .{ @intCast(glyph.bearing_x), @intCast(glyph.bearing_y) },
             .screen_pos = .{ cursor_x, y },
             .color = color,
-        };
+        });
 
         cursor_x += glyph.advance_x;
     }
+}
 
-    // // DEBUG: Check what's in the atlas at first glyph position (AFTER trimming)
-    // const first_glyph_x = vertices[0].glyph_pos[0];
-    // const first_glyph_y = vertices[0].glyph_pos[1];
-    // std.debug.print("Vertices[0] using atlas pos ({},{}) size ({},{})\n", .{
-    //     first_glyph_x,
-    //     first_glyph_y,
-    //     vertices[0].glyph_size[0],
-    //     vertices[0].glyph_size[1],
-    // });
-    // std.debug.print("Atlas at ({},{}) first 5x5:\n", .{ first_glyph_x, first_glyph_y });
-    // var sample_y: u32 = 0;
-    // while (sample_y < 5) : (sample_y += 1) {
-    //     var sample_x: u32 = 0;
-    //     while (sample_x < 5) : (sample_x += 1) {
-    //         const px = self.atlas.data[(first_glyph_y + sample_y) * self.atlas.size + (first_glyph_x + sample_x)];
-    //         std.debug.print("{x:0>2} ", .{px});
-    //     }
-    //     std.debug.print("\n", .{});
-    // }
+/// Flush all pending text to the GPU and render it
+pub fn flush(self: *TextRenderer, encoder: *metal.MetalRenderEncoder) !void {
+    if (self.pending_vertices.items.len == 0) return;
 
-    // Upload vertices to GPU
-    self.vertex_buffer.upload(std.mem.sliceAsBytes(vertices));
+    // Upload all pending vertices to GPU
+    self.vertex_buffer.upload(std.mem.sliceAsBytes(self.pending_vertices.items));
 
     // Upload atlas texture (only if modified)
     const atlas_modified = self.atlas.modified.load(.monotonic);
@@ -203,9 +186,12 @@ pub fn renderText(
     encoder.setVertexBuffer(&self.screen_size_buffer, 0, 1);
     encoder.setFragmentTexture(&self.atlas_texture, 0);
 
-    // Draw all glyphs: 6 indices per quad, text.len instances
-    const glyph_count: u32 = @intCast(text.len);
+    // Draw all glyphs: 6 indices per quad, N instances
+    const glyph_count: u32 = @intCast(self.pending_vertices.items.len);
     encoder.drawIndexedPrimitivesInstanced(.triangle, 6, &self.index_buffer, 0, glyph_count);
+
+    // Clear pending vertices for next frame
+    self.pending_vertices.clearRetainingCapacity();
 }
 
 /// Get glyph from cache or render and cache it
@@ -234,35 +220,35 @@ fn getOrRenderGlyph(self: *TextRenderer, glyph_id: u16) !Glyph {
     }
     std.debug.print("Buffer after render: has_content={}, max_val={}\n", .{ has_content, max_val });
 
-    // DEBUG: Find where the pixels actually are
-    var first_pixel_x: ?u32 = null;
-    var first_pixel_y: ?u32 = null;
-    var scan_y: u32 = 0;
-    while (scan_y < glyph.height and first_pixel_x == null) : (scan_y += 1) {
-        var scan_x: u32 = 0;
-        while (scan_x < glyph.width) : (scan_x += 1) {
-            if (buffer[scan_y * glyph.width + scan_x] > 0) {
-                first_pixel_x = scan_x;
-                first_pixel_y = scan_y;
-                break;
-            }
-        }
-    }
-    if (first_pixel_x) |fx| {
-        std.debug.print("First pixel at ({},{})\n", .{ fx, first_pixel_y.? });
-        std.debug.print("Buffer at first pixel (5x5):\n", .{});
-        var dbg_y: u32 = 0;
-        while (dbg_y < 5 and first_pixel_y.? + dbg_y < glyph.height) : (dbg_y += 1) {
-            var dbg_x: u32 = 0;
-            while (dbg_x < 5 and fx + dbg_x < glyph.width) : (dbg_x += 1) {
-                const px = buffer[(first_pixel_y.? + dbg_y) * glyph.width + (fx + dbg_x)];
-                std.debug.print("{x:0>2} ", .{px});
-            }
-            std.debug.print("\n", .{});
-        }
-    } else {
-        std.debug.print("No pixels found in buffer!\n", .{});
-    }
+    // // DEBUG: Find where the pixels actually are
+    // var first_pixel_x: ?u32 = null;
+    // var first_pixel_y: ?u32 = null;
+    // var scan_y: u32 = 0;
+    // while (scan_y < glyph.height and first_pixel_x == null) : (scan_y += 1) {
+    //     var scan_x: u32 = 0;
+    //     while (scan_x < glyph.width) : (scan_x += 1) {
+    //         if (buffer[scan_y * glyph.width + scan_x] > 0) {
+    //             first_pixel_x = scan_x;
+    //             first_pixel_y = scan_y;
+    //             break;
+    //         }
+    //     }
+    // }
+    // if (first_pixel_x) |fx| {
+    //     std.debug.print("First pixel at ({},{})\n", .{ fx, first_pixel_y.? });
+    //     std.debug.print("Buffer at first pixel (5x5):\n", .{});
+    //     var dbg_y: u32 = 0;
+    //     while (dbg_y < 5 and first_pixel_y.? + dbg_y < glyph.height) : (dbg_y += 1) {
+    //         var dbg_x: u32 = 0;
+    //         while (dbg_x < 5 and fx + dbg_x < glyph.width) : (dbg_x += 1) {
+    //             const px = buffer[(first_pixel_y.? + dbg_y) * glyph.width + (fx + dbg_x)];
+    //             std.debug.print("{x:0>2} ", .{px});
+    //         }
+    //         std.debug.print("\n", .{});
+    //     }
+    // } else {
+    //     std.debug.print("No pixels found in buffer!\n", .{});
+    // }
 
     // Reserve space in atlas (full size, no trimming like Ghostty)
     const region = self.atlas.reserve(
