@@ -213,6 +213,12 @@ public func metal_window_get_mouse_state(
     outDown.pointee = metalView.mouseDown
 }
 
+@_cdecl("metal_layer_set_pixel_format")
+public func metal_layer_set_pixel_format(_ layerPtr: UnsafeMutableRawPointer, _ pixelFormat: UInt) {
+    let layer = Unmanaged<CAMetalLayer>.fromOpaque(layerPtr).takeUnretainedValue()
+    layer.pixelFormat = MTLPixelFormat(rawValue: pixelFormat) ?? .bgra8Unorm
+}
+
 // MARK: - CVDisplayLink
 
 /// Wrapper class to hold CVDisplayLink and callback

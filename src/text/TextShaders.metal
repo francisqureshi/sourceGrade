@@ -25,6 +25,38 @@ float4 unlinearize(float4 linear) {
     return linear;
 }
 
+//-------------------------------------------------------------------
+// Display P3 Color Space Conversion
+//-------------------------------------------------------------------
+
+// D50-adapted sRGB to XYZ conversion matrix
+constant float3x3 sRGB_XYZ = transpose(float3x3(
+  0.4360747, 0.3850649, 0.1430804,
+  0.2225045, 0.7168786, 0.0606169,
+  0.0139322, 0.0971045, 0.7141733
+));
+
+// XYZ to Display P3 conversion matrix
+constant float3x3 XYZ_DP3 = transpose(float3x3(
+  2.40414768,-0.99010704,-0.39759019,
+ -0.84239098, 1.79905954, 0.01597023,
+  0.04838763,-0.09752546, 1.27393636
+));
+
+// Composed sRGB to Display P3 conversion matrix
+constant float3x3 sRGB_DP3 = XYZ_DP3 * sRGB_XYZ;
+
+// Converts a color in linear sRGB to linear Display P3
+float3 srgb_to_display_p3(float3 srgb) {
+  return sRGB_DP3 * srgb;
+}
+
+// Text rendering uniforms
+struct TextUniforms {
+    float2 screen_size;      // Screen dimensions
+    bool use_display_p3;     // Convert sRGB to Display P3
+};
+
 struct TextVertex {
     uint2 glyph_pos;      // Position in atlas (8 bytes, offset 0)
     uint2 glyph_size;     // Size in atlas (8 bytes, offset 8)
@@ -37,13 +69,14 @@ struct TextFragmentIn {
     float4 position [[position]];
     float4 color;
     float2 tex_coord;
+    bool use_display_p3 [[flat]];
 };
 
 vertex TextFragmentIn textVertexShader(
     uint vid [[vertex_id]],
     uint iid [[instance_id]],
     constant TextVertex* vertices [[buffer(0)]],
-    constant float2& screen_size [[buffer(1)]]
+    constant TextUniforms& uniforms [[buffer(1)]]
 ) {
     // Get the glyph data from instance (1 vertex per glyph)
     TextVertex in = vertices[iid];
@@ -69,7 +102,7 @@ vertex TextFragmentIn textVertexShader(
     float2 pos = base_pos + offset + glyph_size * corner;
 
     // Convert to NDC (-1 to 1)
-    float2 ndc = (pos / screen_size) * 2.0 - 1.0;
+    float2 ndc = (pos / uniforms.screen_size) * 2.0 - 1.0;
     ndc.y = -ndc.y;  // Flip Y for Metal coordinate system
 
     // Calculate texture coordinates
@@ -80,10 +113,11 @@ vertex TextFragmentIn textVertexShader(
     TextFragmentIn out;
     out.position = float4(ndc, 0.0, 1.0);
 
-    // Convert color from 0-255 to 0-1 (no gamma conversion)
+    // Convert color from 0-255 to 0-1 (sRGB gamma-encoded input)
     out.color = float4(in.color) / 255.0;
 
     out.tex_coord = tex_coord;
+    out.use_display_p3 = uniforms.use_display_p3;
 
     return out;
 }
@@ -101,8 +135,19 @@ fragment float4 textFragmentShader(
     // Sample the atlas (grayscale R8)
     float alpha = atlas.sample(textureSampler, in.tex_coord).r;
 
-    // Native blending: multiply by atlas alpha, then premultiply
     float4 color = in.color;
-    color *= alpha;        // Multiply by atlas alpha
+
+    // If Display P3 is enabled, convert color space
+    if (in.use_display_p3) {
+        // Linearize sRGB input
+        color = linearize(color);
+
+        // Convert from linear sRGB to linear Display P3
+        color.rgb = srgb_to_display_p3(color.rgb);
+    }
+
+    // Multiply by atlas alpha (coverage), then premultiply
+    color *= alpha;
+
     return color;
 }

@@ -12,16 +12,35 @@ const TextVertex = @import("TextVertex.zig");
 
 const Allocator = std.mem.Allocator;
 
+/// Entry for each font size, containing Font and GlyphCache
+const FontEntry = struct {
+    font: Font,
+    glyph_cache: GlyphCache,
+
+    fn init(font: Font) FontEntry {
+        return .{
+            .font = font,
+            .glyph_cache = GlyphCache.init(),
+        };
+    }
+
+    fn deinit(self: *FontEntry, allocator: Allocator) void {
+        self.glyph_cache.deinit(allocator);
+        var font = self.font;
+        font.deinit();
+    }
+};
+
 allocator: Allocator,
 device: *metal.MetalDevice,
 pipeline: metal.MetalRenderPipelineState,
 atlas: Atlas,
 atlas_texture: metal.MetalTexture,
-font: Font,
-glyph_cache: GlyphCache,
+font_name: [:0]const u8,
+font_entries: std.AutoHashMap(u32, FontEntry), // font_size -> FontEntry
 vertex_buffer: metal.MetalBuffer,
 index_buffer: metal.MetalBuffer,
-screen_size_buffer: metal.MetalBuffer,
+uniforms_buffer: metal.MetalBuffer,
 max_vertices: usize,
 atlas_modified: usize = 0,
 // Vertex accumulation for batching multiple text calls
@@ -31,13 +50,22 @@ pub fn init(
     allocator: Allocator,
     device: *metal.MetalDevice,
     font_name: [:0]const u8,
-    font_size: f32,
+    default_font_size: f32,
     atlas_size: u32,
     max_glyphs: usize,
+    pixel_format: metal.PixelFormat,
 ) !TextRenderer {
-    // Create font
-    var font = try Font.init(font_name, font_size);
-    errdefer font.deinit();
+    // Create default font
+    var default_font = try Font.init(font_name, default_font_size);
+    errdefer default_font.deinit();
+
+    // Create font entries map
+    var font_entries = std.AutoHashMap(u32, FontEntry).init(allocator);
+    errdefer font_entries.deinit();
+
+    // Add default font size
+    const size_key: u32 = @intFromFloat(default_font_size);
+    try font_entries.put(size_key, FontEntry.init(default_font));
 
     // Create atlas
     var atlas = try Atlas.init(allocator, atlas_size, .grayscale);
@@ -59,13 +87,16 @@ pub fn init(
     errdefer index_buffer.deinit();
     index_buffer.upload(std.mem.sliceAsBytes(&quad_indices));
 
-    // Create screen size buffer and initialize it
-    var screen_size_buffer = try device.createBuffer(@sizeOf([2]f32));
-    errdefer screen_size_buffer.deinit();
+    // Create uniforms buffer and initialize it (matches TextUniforms in shader)
+    var uniforms_buffer = try device.createBuffer(@sizeOf(TextUniforms));
+    errdefer uniforms_buffer.deinit();
 
-    // Initialize with default size (will be updated by setScreenSize)
-    const initial_size = [2]f32{ 800.0, 600.0 };
-    screen_size_buffer.upload(std.mem.asBytes(&initial_size));
+    // Initialize with default values (will be updated by setScreenSize and setDisplayP3)
+    const initial_uniforms = TextUniforms{
+        .screen_size = .{ 800.0, 600.0 },
+        .use_display_p3 = true,
+    };
+    uniforms_buffer.upload(std.mem.asBytes(&initial_uniforms));
 
     // Load shaders
     const shader_source = @embedFile("TextShaders.metal");
@@ -80,7 +111,7 @@ pub fn init(
 
     // Create pipeline with premultiplied alpha blending (like Ghostty)
     const pipeline_desc = metal.RenderPipelineDescriptor{
-        .pixel_format = .bgra8_unorm, // Native blending (matches layer)
+        .pixel_format = pixel_format, // Use provided pixel format (8-bit or 10-bit)
         .blend_enabled = true,
         .source_rgb_blend_factor = .one,
         .destination_rgb_blend_factor = .one_minus_source_alpha,
@@ -99,11 +130,11 @@ pub fn init(
         .pipeline = pipeline,
         .atlas = atlas,
         .atlas_texture = atlas_texture,
-        .font = font,
-        .glyph_cache = GlyphCache.init(),
+        .font_name = font_name,
+        .font_entries = font_entries,
         .vertex_buffer = vertex_buffer,
         .index_buffer = index_buffer,
-        .screen_size_buffer = screen_size_buffer,
+        .uniforms_buffer = uniforms_buffer,
         .max_vertices = max_vertices,
         .pending_vertices = std.ArrayList(TextVertex).empty,
     };
@@ -111,20 +142,41 @@ pub fn init(
 
 pub fn deinit(self: *TextRenderer) void {
     self.pending_vertices.deinit(self.allocator);
-    self.glyph_cache.deinit(self.allocator);
-    self.font.deinit();
+
+    // Deinit all font entries
+    var iter = self.font_entries.iterator();
+    while (iter.next()) |kv| {
+        var entry = kv.value_ptr.*;
+        entry.deinit(self.allocator);
+    }
+    self.font_entries.deinit();
+
     self.atlas.deinit(self.allocator);
     self.atlas_texture.deinit();
     self.vertex_buffer.deinit();
     self.index_buffer.deinit();
-    self.screen_size_buffer.deinit();
+    self.uniforms_buffer.deinit();
     self.pipeline.deinit();
 }
 
-/// Update screen size for coordinate transformation
+/// Uniforms struct (matches shader)
+const TextUniforms = extern struct {
+    screen_size: [2]f32,
+    use_display_p3: bool,
+};
+
+/// Update screen size and Display P3 settings for coordinate transformation
+pub fn setUniforms(self: *TextRenderer, width: f32, height: f32, use_display_p3: bool) void {
+    const uniforms = TextUniforms{
+        .screen_size = .{ width, height },
+        .use_display_p3 = use_display_p3,
+    };
+    self.uniforms_buffer.upload(std.mem.asBytes(&uniforms));
+}
+
+/// Update screen size for coordinate transformation (keeps existing Display P3 setting)
 pub fn setScreenSize(self: *TextRenderer, width: f32, height: f32) void {
-    const screen_size = [2]f32{ width, height };
-    self.screen_size_buffer.upload(std.mem.asBytes(&screen_size));
+    self.setUniforms(width, height, true); // Default to Display P3 enabled
 }
 
 /// Add text to the rendering batch (doesn't draw yet - call flush() to render)
@@ -134,10 +186,14 @@ pub fn renderText(
     text: []const u8,
     x: f32,
     y: f32,
+    font_size: f32,
     color: [4]u8,
 ) !void {
     _ = encoder; // Will be used in flush()
     if (text.len == 0) return;
+
+    // Get or create font entry for this size
+    const entry = try self.getOrCreateFontEntry(font_size);
 
     var cursor_x = x;
 
@@ -145,8 +201,8 @@ pub fn renderText(
         const codepoint: u21 = char;
 
         // Get or create glyph
-        const glyph_id = try self.font.getGlyphID(codepoint);
-        const glyph = try self.getOrRenderGlyph(glyph_id);
+        const glyph_id = try entry.font.getGlyphID(codepoint);
+        const glyph = try self.getOrRenderGlyph(entry, glyph_id);
 
         // Add vertex to pending batch
         try self.pending_vertices.append(self.allocator, .{
@@ -183,7 +239,7 @@ pub fn flush(self: *TextRenderer, encoder: *metal.MetalRenderEncoder) !void {
     // Render using instanced indexed drawing
     encoder.setPipeline(&self.pipeline);
     encoder.setVertexBuffer(&self.vertex_buffer, 0, 0);
-    encoder.setVertexBuffer(&self.screen_size_buffer, 0, 1);
+    encoder.setVertexBuffer(&self.uniforms_buffer, 0, 1);
     encoder.setFragmentTexture(&self.atlas_texture, 0);
 
     // Draw all glyphs: 6 indices per quad, N instances
@@ -194,22 +250,41 @@ pub fn flush(self: *TextRenderer, encoder: *metal.MetalRenderEncoder) !void {
     self.pending_vertices.clearRetainingCapacity();
 }
 
+/// Get or create font entry for a given size
+fn getOrCreateFontEntry(self: *TextRenderer, font_size: f32) !*FontEntry {
+    const size_key: u32 = @intFromFloat(font_size);
+
+    // Check if we already have this size
+    if (self.font_entries.getPtr(size_key)) |entry| {
+        return entry;
+    }
+
+    // Create new font for this size
+    var font = try Font.init(self.font_name, font_size);
+    errdefer font.deinit();
+
+    // Add to map
+    try self.font_entries.put(size_key, FontEntry.init(font));
+
+    return self.font_entries.getPtr(size_key).?;
+}
+
 /// Get glyph from cache or render and cache it
-fn getOrRenderGlyph(self: *TextRenderer, glyph_id: u16) !Glyph {
+fn getOrRenderGlyph(self: *TextRenderer, entry: *FontEntry, glyph_id: u16) !Glyph {
     // Check cache first
-    if (self.glyph_cache.get(glyph_id)) |cached| {
+    if (entry.glyph_cache.get(glyph_id)) |cached| {
         return cached;
     }
 
     // Get metrics
-    var glyph = try self.font.getGlyphMetrics(glyph_id);
+    var glyph = try entry.font.getGlyphMetrics(glyph_id);
 
     // Render glyph to buffer first (to determine trimmed size)
     const buffer_size = glyph.width * glyph.height;
     const buffer = try self.allocator.alloc(u8, buffer_size);
     defer self.allocator.free(buffer);
 
-    try self.font.renderGlyph(glyph_id, buffer, glyph.width, glyph.height);
+    try entry.font.renderGlyph(glyph_id, buffer, glyph.width, glyph.height);
 
     // DEBUG: Check buffer content
     var has_content = false;
@@ -266,7 +341,7 @@ fn getOrRenderGlyph(self: *TextRenderer, glyph_id: u16) !Glyph {
             self.atlas_texture = try self.device.createTextureWithFormat(new_size, new_size, .r8_unorm, false);
 
             // Try reserve again
-            return self.getOrRenderGlyph(glyph_id);
+            return self.getOrRenderGlyph(entry, glyph_id);
         }
         return err;
     };
@@ -288,7 +363,7 @@ fn getOrRenderGlyph(self: *TextRenderer, glyph_id: u16) !Glyph {
     });
 
     // Cache it
-    try self.glyph_cache.put(self.allocator, glyph);
+    try entry.glyph_cache.put(self.allocator, glyph);
 
     return glyph;
 }

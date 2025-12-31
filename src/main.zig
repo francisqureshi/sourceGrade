@@ -19,6 +19,12 @@ export fn displayLinkCallback(_: ?*anyopaque) callconv(.c) void {
     frame_semaphore.post(); // Signal: frame ready!
 }
 
+// Rendering configuration
+const RenderConfig = struct {
+    use_display_p3: bool = true, // Enable Display P3 color space
+    use_10bit: bool = true, // Enable 10-bit color depth
+};
+
 // Render context - all state needed for rendering
 const RenderContext = struct {
     window: *anyopaque,
@@ -35,6 +41,7 @@ const RenderContext = struct {
     video_reader: ?*anyopaque,
     device_ptr: *anyopaque,
     video_fps: f64,
+    config: RenderConfig,
 };
 
 // Render thread entry point
@@ -90,8 +97,24 @@ fn renderThread(ctx: *RenderContext) void {
         // const full_w = ctx.imgui_ctx.display_width;
         // const full_h = ctx.imgui_ctx.display_height;
 
-        ctx.imgui_ctx.addRect(600, 50, 100, 100, imgui.ImGuiContext.packColor(slider_value, 1, 0, 1.0)) catch {};
-        ctx.imgui_ctx.addRect(650, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
+        // Draw comparison: 10-bit (top) vs simulated 8-bit (bottom)
+        var i: usize = 0;
+        while (i < 1024) : (i += 1) {
+            const x = 50 + i * 3;
+            const brightness = 0.0 + (@as(f32, @floatFromInt(i)) / 1024.0) * 1.0; // 0.3 to 1.0 range
+
+            // Top gradient: Full 10-bit precision (smooth)
+            ctx.imgui_ctx.addRect(
+                @floatFromInt(x),
+                100,
+                3,
+                200,
+                imgui.ImGuiContext.packColor(brightness, brightness, brightness, 1.0),
+            ) catch {};
+        }
+
+        ctx.imgui_ctx.addRect(1400, 50, 100, 100, imgui.ImGuiContext.packColor(slider_value, 1, 0, 1.0)) catch {};
+        ctx.imgui_ctx.addRect(1450, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
         // ctx.imgui_ctx.addRect(0, 0, full_w, full_h, imgui.ImGuiContext.packColor(0.5, 0.5, 0.5, 1.0)) catch {};
         // ctx.imgui_ctx.addTri(100, 50, 0, 100, 100, 100, imgui.ImGuiContext.packColor(0.5, 0.5, 0.5, 1.0)) catch {};
         // ctx.imgui_ctx.addCircle(200, 300, circle_slider, 360, imgui.ImGuiContext.packColor(255, 200, 150, 1)) catch {};
@@ -142,7 +165,11 @@ fn renderThread(ctx: *RenderContext) void {
         // Update IMGUI and text renderer screen size with actual drawable dimensions
         ctx.imgui_ctx.display_width = @floatFromInt(drawable_width);
         ctx.imgui_ctx.display_height = @floatFromInt(drawable_height);
-        ctx.imgui_ctx.setTextScreenSize(@floatFromInt(drawable_width), @floatFromInt(drawable_height));
+        ctx.imgui_ctx.setTextUniforms(
+            @floatFromInt(drawable_width),
+            @floatFromInt(drawable_height),
+            ctx.config.use_display_p3,
+        );
 
         // Create render pass
         var render_pass = metal.MetalRenderPassDescriptor.init();
@@ -183,19 +210,31 @@ fn renderThread(ctx: *RenderContext) void {
             const imgui_ib = ctx.imgui_ctx.getIndexBuffer();
             render_encoder.setVertexBuffer(imgui_vb, 0, 0);
 
-            const screen_size = [2]f32{ ctx.imgui_ctx.display_width, ctx.imgui_ctx.display_height };
-            render_encoder.setVertexBytes(@ptrCast(&screen_size), @sizeOf([2]f32), 1);
+            // IMGUI uniforms (matches ImGuiUniforms in shader)
+            const ImGuiUniforms = extern struct {
+                screen_size: [2]f32,
+                use_display_p3: bool,
+            };
+            const imgui_uniforms = ImGuiUniforms{
+                .screen_size = .{ ctx.imgui_ctx.display_width, ctx.imgui_ctx.display_height },
+                .use_display_p3 = ctx.config.use_display_p3,
+            };
+            render_encoder.setVertexBytes(@ptrCast(&imgui_uniforms), @sizeOf(ImGuiUniforms), 1);
 
             render_encoder.drawIndexedPrimitives(.triangle, imgui_index_count, imgui_ib, 0);
         }
 
-        // Layer 3: Text overlays
-        ctx.imgui_ctx.text(&render_encoder, "Hello", 100, 400, .{ 255, 255, 255, 255 }) catch |err| {
+        // Layer 3: Text overlays - test different font sizes
+        ctx.imgui_ctx.addText(&render_encoder, "Large-96pt", 50, 200, 96.0, .{ 255, 255, 255, 255 }) catch |err| {
             std.debug.print("Text render error: {}\n", .{err});
         };
 
-        ctx.imgui_ctx.text(&render_encoder, "beef", 150, 450, .{ 255, 0, 0, 255 }) catch |err| {
+        ctx.imgui_ctx.addText(&render_encoder, "Medium-48pt", 50, 300, 48.0, .{ 200, 200, 255, 255 }) catch |err| {
             std.debug.print("Text2 render error: {}\n", .{err});
+        };
+
+        ctx.imgui_ctx.addText(&render_encoder, "Small-24pt", 50, 400, 24.0, .{ 255, 200, 200, 255 }) catch |err| {
+            std.debug.print("Text3 render error: {}\n", .{err});
         };
 
         // Flush all text rendering
@@ -289,8 +328,25 @@ pub fn main() !void {
         return error.MetalNotAvailable;
     }
 
-    // Create window (800x600, normal window with title bar)
-    const window = c.metal_window_create(800, 600, false);
+    // Create rendering configuration
+    const render_config = RenderConfig{
+        .use_display_p3 = true,
+        .use_10bit = true,
+    };
+
+    // Determine pixel format based on configuration
+    const pixel_format: metal.PixelFormat = if (render_config.use_10bit)
+        .rgb10a2_unorm // 10-bit RGB + 2-bit alpha
+    else
+        .bgra8_unorm; // Standard 8-bit
+
+    std.debug.print("✓ Using pixel format: {s}, Display P3: {}\n", .{
+        if (render_config.use_10bit) "rgb10a2_unorm (10-bit)" else "bgra8_unorm (8-bit)",
+        render_config.use_display_p3,
+    });
+
+    // Create window (1600x900, normal window with title bar)
+    const window = c.metal_window_create(1600, 900, false);
     if (window == null) {
         std.debug.print("Failed to create window\n", .{});
         return error.WindowCreationFailed;
@@ -305,6 +361,9 @@ pub fn main() !void {
         std.debug.print("Failed to get Metal layer\n", .{});
         return error.LayerNotFound;
     }
+
+    // Set the layer's pixel format to match our pipelines
+    c.metal_layer_set_pixel_format(layer, @intFromEnum(pixel_format));
 
     std.debug.print("✓ Got CAMetalLayer from window\n", .{});
 
@@ -342,7 +401,7 @@ pub fn main() !void {
 
     // Create render pipeline descriptor
     const pipeline_desc = metal.RenderPipelineDescriptor{
-        .pixel_format = .bgra8_unorm, // Native blending (matches layer)
+        .pixel_format = pixel_format,
         .blend_enabled = false,
     };
 
@@ -358,7 +417,7 @@ pub fn main() !void {
     defer imgui_fragment_fn.deinit();
 
     const imgui_pipeline_desc = metal.RenderPipelineDescriptor{
-        .pixel_format = .bgra8_unorm, // Native blending (matches layer)
+        .pixel_format = pixel_format,
         .blend_enabled = true,
         .source_rgb_blend_factor = .one,
         .source_alpha_blend_factor = .one,
@@ -378,7 +437,7 @@ pub fn main() !void {
     defer video_fragment_fn.deinit();
 
     const video_pipeline_desc = metal.RenderPipelineDescriptor{
-        .pixel_format = .bgra8_unorm, // Native blending (matches layer)
+        .pixel_format = pixel_format,
         .blend_enabled = false,
     };
 
@@ -424,10 +483,10 @@ pub fn main() !void {
     std.debug.print("✓ Created index buffer ({} bytes, {} indices)\n", .{ index_data_bytes.len, quad_indices.len });
 
     // Initialize IMGUI context with ring buffers
-    var imgui_ctx = try imgui.ImGuiContext.init(allocator, &device);
+    var imgui_ctx = try imgui.ImGuiContext.init(allocator, &device, pixel_format);
     defer imgui_ctx.deinit();
-    imgui_ctx.display_width = 800;
-    imgui_ctx.display_height = 600;
+    imgui_ctx.display_width = 1600;
+    imgui_ctx.display_height = 900;
     std.debug.print("✓ Created IMGUI context (triple-buffered)\n\n", .{});
 
     // Initialize NSApplication (this must happen before showing window)
@@ -485,6 +544,7 @@ pub fn main() !void {
         .video_reader = video_reader,
         .device_ptr = device_ptr.?,
         .video_fps = video_fps,
+        .config = render_config,
     };
 
     // Spawn render thread

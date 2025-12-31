@@ -49,6 +49,9 @@ void metal_window_release(void* window);
 /// Get current mouse state
 void metal_window_get_mouse_state(void* window, float* out_x, float* out_y, bool* out_down);
 
+/// Set the pixel format for the CAMetalLayer
+void metal_layer_set_pixel_format(void* layer, uint32_t pixel_format);
+
 /// CVDisplayLink functions for vsync
 /// Runs on separate thread, independent of runloop
 /// Callback signature: void (*callback)(void* userdata)
