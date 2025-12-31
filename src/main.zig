@@ -237,6 +237,7 @@ fn renderThread(ctx: *RenderContext) void {
             std.debug.print("Text3 render error: {}\n", .{err});
         };
 
+        ctx.imgui_ctx.addCircle(900, 450, 200, 30, imgui.ImGuiContext.packColor(255, 200, 150, 1));
         // Flush all text rendering
         ctx.imgui_ctx.flushText(&render_encoder) catch |err| {
             std.debug.print("Text flush error: {}\n", .{err});
