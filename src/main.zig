@@ -120,7 +120,7 @@ fn renderThread(ctx: *RenderContext) void {
         // ctx.imgui_ctx.addCircle(200, 300, circle_slider, 360, imgui.ImGuiContext.packColor(255, 200, 150, 1)) catch {};
         // ctx.imgui_ctx.addLine(0, 599, 800, 599, imgui.ImGuiContext.packColor(1, 0, 0, 1.0), 2.0) catch {};
 
-        ctx.imgui_ctx.render();
+        // DON'T call render() here - let shapes accumulate until just before draw
 
         // Video frame timing - only advance frame when enough time has elapsed
         var video_texture_ptr: ?*anyopaque = null;
@@ -202,6 +202,9 @@ fn renderThread(ctx: *RenderContext) void {
         }
 
         // Layer 2: IMGUI
+        // Finalize IMGUI vertex/index buffers (upload to GPU)
+        ctx.imgui_ctx.render();
+
         const imgui_index_count = ctx.imgui_ctx.getIndexCount();
         if (imgui_index_count > 0) {
             render_encoder.setPipeline(&ctx.imgui_pipeline);
@@ -237,11 +240,35 @@ fn renderThread(ctx: *RenderContext) void {
             std.debug.print("Text3 render error: {}\n", .{err});
         };
 
-        ctx.imgui_ctx.addCircle(900, 450, 200, 30, imgui.ImGuiContext.packColor(255, 200, 150, 1));
-        // Flush all text rendering
+        // Flush text rendering
         ctx.imgui_ctx.flushText(&render_encoder) catch |err| {
             std.debug.print("Text flush error: {}\n", .{err});
         };
+
+        // Layer 4: Shapes on top of text
+        ctx.imgui_ctx.addCircle(900, 450, 200, 30, imgui.ImGuiContext.packColor(255, 200, 150, 1)) catch {};
+        ctx.imgui_ctx.render();
+
+        const overlay_index_count = ctx.imgui_ctx.getIndexCount();
+        if (overlay_index_count > 0) {
+            render_encoder.setPipeline(&ctx.imgui_pipeline);
+
+            const overlay_vb = ctx.imgui_ctx.getVertexBuffer();
+            const overlay_ib = ctx.imgui_ctx.getIndexBuffer();
+            render_encoder.setVertexBuffer(overlay_vb, 0, 0);
+
+            const ImGuiUniforms = extern struct {
+                screen_size: [2]f32,
+                use_display_p3: bool,
+            };
+            const overlay_uniforms = ImGuiUniforms{
+                .screen_size = .{ ctx.imgui_ctx.display_width, ctx.imgui_ctx.display_height },
+                .use_display_p3 = ctx.config.use_display_p3,
+            };
+            render_encoder.setVertexBytes(@ptrCast(&overlay_uniforms), @sizeOf(ImGuiUniforms), 1);
+
+            render_encoder.drawIndexedPrimitives(.triangle, overlay_index_count, overlay_ib, 0);
+        }
 
         render_encoder.end();
 
