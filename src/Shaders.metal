@@ -163,10 +163,19 @@ vertex ImGuiVertexOut imguiVertexShader(
     return out;
 }
 
-// IMGUI Fragment shader - simple textured + colored output
-fragment float4 imguiFragmentShader(ImGuiVertexOut in [[stage_in]])
+// IMGUI Fragment shader - supports both shapes and text
+fragment float4 imguiFragmentShader(
+    ImGuiVertexOut in [[stage_in]],
+    texture2d<float> atlas [[texture(0)]])
 {
     float4 color = in.color;
+
+    // If UV is non-zero, sample font atlas (text rendering)
+    if (in.uv.x > 0.0 || in.uv.y > 0.0) {
+        constexpr sampler textureSampler(filter::linear);
+        float alpha = atlas.sample(textureSampler, in.uv).r;  // Grayscale atlas
+        color *= alpha;  // Multiply by atlas alpha
+    }
 
     // If Display P3 is enabled, convert color space
     if (in.use_display_p3) {

@@ -1,6 +1,9 @@
 const std = @import("std");
 const metal = @import("metal");
-const TextRenderer = @import("text/TextRenderer.zig");
+const Font = @import("text/font/Font.zig");
+const Atlas = @import("text/font/Atlas.zig");
+const Glyph = @import("text/font/Glyph.zig");
+const GlyphCache = @import("text/font/GlyphCache.zig");
 
 /// Vertex format for immediate-mode GUI rendering
 /// Optimized for batched drawing with indexed triangles
@@ -32,6 +35,25 @@ const FRAMES_IN_FLIGHT = 3;
 const MAX_VERTICES = 65536; // 64K vertices per frame
 const MAX_INDICES = 131072; // 128K indices per frame (2x vertices for typical UI)
 
+/// Entry for each font size, containing Font and GlyphCache
+const FontEntry = struct {
+    font: Font,
+    glyph_cache: GlyphCache,
+
+    fn init(font: Font) FontEntry {
+        return .{
+            .font = font,
+            .glyph_cache = GlyphCache.init(),
+        };
+    }
+
+    fn deinit(self: *FontEntry, allocator: std.mem.Allocator) void {
+        self.glyph_cache.deinit(allocator);
+        var font = self.font;
+        font.deinit();
+    }
+};
+
 /// Main immediate-mode GUI context
 /// Manages dynamic vertex/index buffers and UI state
 pub const ImGuiContext = struct {
@@ -59,22 +81,42 @@ pub const ImGuiContext = struct {
     display_width: f32,
     display_height: f32,
 
-    // Text rendering
-    text_renderer: TextRenderer,
+    // Font rendering (integrated)
+    device: *metal.MetalDevice,
+    font_name: [:0]const u8,
+    font_entries: std.AutoHashMap(u32, FontEntry), // font_size -> FontEntry
+    atlas: Atlas,
+    atlas_texture: metal.MetalTexture,
+    atlas_modified: usize,
 
     /// Initialize the IMGUI context with triple-buffered GPU resources
     pub fn init(allocator: std.mem.Allocator, device: *metal.MetalDevice, pixel_format: metal.PixelFormat) !ImGuiContext {
-        // Initialize text renderer first
-        var text_renderer = try TextRenderer.init(
-            allocator,
-            device,
-            "IBM Plex Mono", // Monospace font (built-in macOS)
-            48.0, // Font size
-            2048, // Atlas size
-            256, // Max glyphs per frame
-            pixel_format,
-        );
-        errdefer text_renderer.deinit();
+        _ = pixel_format;
+
+        // Initialize font system
+        const font_name: [:0]const u8 = "IBM Plex Mono";
+        const default_font_size: f32 = 48.0;
+        const atlas_size: u32 = 2048;
+
+        // Create default font
+        var default_font = try Font.init(font_name, default_font_size);
+        errdefer default_font.deinit();
+
+        // Create font entries map
+        var font_entries = std.AutoHashMap(u32, FontEntry).init(allocator);
+        errdefer font_entries.deinit();
+
+        // Add default font size
+        const size_key: u32 = @intFromFloat(default_font_size);
+        try font_entries.put(size_key, FontEntry.init(default_font));
+
+        // Create atlas
+        var atlas = try Atlas.init(allocator, atlas_size, .grayscale);
+        errdefer atlas.deinit(allocator);
+
+        // Create atlas texture (grayscale R8)
+        var atlas_texture = try device.createTextureWithFormat(atlas_size, atlas_size, .r8_unorm, false);
+        errdefer atlas_texture.deinit();
 
         var ctx = ImGuiContext{
             .allocator = allocator,
@@ -92,7 +134,12 @@ pub const ImGuiContext = struct {
             .mouse_two_down = false,
             .display_width = 1920,
             .display_height = 1080,
-            .text_renderer = text_renderer,
+            .device = device,
+            .font_name = font_name,
+            .font_entries = font_entries,
+            .atlas = atlas,
+            .atlas_texture = atlas_texture,
+            .atlas_modified = 0,
         };
 
         // Pre-allocate capacity to avoid reallocations during frame construction
@@ -114,7 +161,16 @@ pub const ImGuiContext = struct {
 
     /// Clean up GPU resources
     pub fn deinit(self: *ImGuiContext) void {
-        self.text_renderer.deinit();
+        // Clean up font system
+        var iter = self.font_entries.iterator();
+        while (iter.next()) |kv| {
+            var entry = kv.value_ptr.*;
+            entry.deinit(self.allocator);
+        }
+        self.font_entries.deinit();
+        self.atlas.deinit(self.allocator);
+        self.atlas_texture.deinit();
+
         for (0..FRAMES_IN_FLIGHT) |i| {
             self.vertex_buffers[i].deinit();
             self.index_buffers[i].deinit();
@@ -137,6 +193,18 @@ pub const ImGuiContext = struct {
     /// Call after building UI, before rendering
     pub fn render(self: *ImGuiContext) void {
         if (self.vertices.items.len == 0) return;
+
+        // Upload atlas texture if modified
+        const atlas_modified = self.atlas.modified.load(.monotonic);
+        if (atlas_modified != self.atlas_modified) {
+            self.atlas_texture.upload(
+                self.atlas.data,
+                self.atlas.size,
+                self.atlas.size,
+                self.atlas.size, // bytes per row for grayscale
+            );
+            self.atlas_modified = atlas_modified;
+        }
 
         // Get current frame's buffers from ring
         var vb = &self.vertex_buffers[self.current_frame];
@@ -173,11 +241,11 @@ pub const ImGuiContext = struct {
     pub fn addRect(self: *ImGuiContext, x: f32, y: f32, w: f32, h: f32, color: u32) !void {
         const base = @as(u16, @intCast(self.vertices.items.len));
 
-        // Add 4 vertices (clockwise from top-left)
+        // Add 4 vertices with UVs at (0,0) to skip texture sampling
         try self.vertices.append(self.allocator, ImVertex.init(x, y, 0, 0, color));
-        try self.vertices.append(self.allocator, ImVertex.init(x + w, y, 1, 0, color));
-        try self.vertices.append(self.allocator, ImVertex.init(x + w, y + h, 1, 1, color));
-        try self.vertices.append(self.allocator, ImVertex.init(x, y + h, 0, 1, color));
+        try self.vertices.append(self.allocator, ImVertex.init(x + w, y, 0, 0, color));
+        try self.vertices.append(self.allocator, ImVertex.init(x + w, y + h, 0, 0, color));
+        try self.vertices.append(self.allocator, ImVertex.init(x, y + h, 0, 0, color));
 
         // Add 6 indices (2 triangles)
         try self.indices.appendSlice(self.allocator, &[6]u16{
@@ -257,6 +325,11 @@ pub const ImGuiContext = struct {
         const bi = @as(u32, @intFromFloat(@min(b * 255.0, 255.0)));
         const ai = @as(u32, @intFromFloat(@min(a * 255.0, 255.0)));
         return (ai << 24) | (bi << 16) | (gi << 8) | ri;
+    }
+
+    /// Pack byte color (0-255) into u32 RGBA
+    pub fn packColorBytes(color: [4]u8) u32 {
+        return @as(u32, color[0]) | (@as(u32, color[1]) << 8) | (@as(u32, color[2]) << 16) | (@as(u32, color[3]) << 24);
     }
 
     /// Unpack u32 color to RGBA floats (0-1)
@@ -370,24 +443,145 @@ pub const ImGuiContext = struct {
         return @intCast(self.indices.items.len);
     }
 
-    /// Render text at the specified position
-    /// Call this during the IMGUI render pass (after shapes are drawn)
-    pub fn addText(self: *ImGuiContext, encoder: *metal.MetalRenderEncoder, str: []const u8, x: f32, y: f32, font_size: f32, color: [4]u8) !void {
-        try self.text_renderer.renderText(encoder, str, x, y, font_size, color);
+    // ========================================================================
+    // Text Rendering (Unified with shapes)
+    // ========================================================================
+
+    /// Get or create font entry for a given size
+    fn getOrCreateFontEntry(self: *ImGuiContext, font_size: f32) !*FontEntry {
+        const size_key: u32 = @intFromFloat(font_size);
+
+        // Check if we already have this size
+        if (self.font_entries.getPtr(size_key)) |entry| {
+            return entry;
+        }
+
+        // Create new font for this size
+        var font = try Font.init(self.font_name, font_size);
+        errdefer font.deinit();
+
+        // Add to map
+        try self.font_entries.put(size_key, FontEntry.init(font));
+
+        return self.font_entries.getPtr(size_key).?;
     }
 
-    /// Flush all pending text rendering (call after all text() calls)
-    pub fn flushText(self: *ImGuiContext, encoder: *metal.MetalRenderEncoder) !void {
-        try self.text_renderer.flush(encoder);
+    /// Get glyph from cache or render and cache it
+    fn getOrRenderGlyph(self: *ImGuiContext, entry: *FontEntry, glyph_id: u16) !Glyph {
+        // Check cache first
+        if (entry.glyph_cache.get(glyph_id)) |cached| {
+            return cached;
+        }
+
+        // Get metrics
+        var glyph = try entry.font.getGlyphMetrics(glyph_id);
+
+        // Render glyph to buffer
+        const buffer_size = glyph.width * glyph.height;
+        const buffer = try self.allocator.alloc(u8, buffer_size);
+        defer self.allocator.free(buffer);
+
+        try entry.font.renderGlyph(glyph_id, buffer, glyph.width, glyph.height);
+
+        // Reserve space in atlas
+        const region = self.atlas.reserve(
+            self.allocator,
+            glyph.width,
+            glyph.height,
+        ) catch |err| {
+            if (err == Atlas.Error.AtlasFull) {
+                // Try to grow atlas
+                const new_size = self.atlas.size * 2;
+                try self.atlas.grow(self.allocator, new_size);
+
+                // Recreate texture with new size
+                self.atlas_texture.deinit();
+                self.atlas_texture = try self.device.createTextureWithFormat(new_size, new_size, .r8_unorm, false);
+
+                // Try reserve again
+                return self.getOrRenderGlyph(entry, glyph_id);
+            }
+            return err;
+        };
+
+        // Upload buffer to atlas
+        self.atlas.set(region, buffer);
+
+        // Update glyph atlas position
+        glyph.atlas_x = region.x;
+        glyph.atlas_y = region.y;
+
+        // Cache it
+        try entry.glyph_cache.put(self.allocator, glyph);
+
+        return glyph;
     }
 
-    /// Update text renderer screen size when window resizes
-    pub fn setTextScreenSize(self: *ImGuiContext, width: f32, height: f32) void {
-        self.text_renderer.setScreenSize(width, height);
+    /// Add text to the rendering batch (generates quads, integrated with shapes)
+    /// Text will be drawn in the order it's added relative to shapes
+    pub fn addTextNew(
+        self: *ImGuiContext,
+        text: []const u8,
+        x: f32,
+        y: f32,
+        font_size: f32,
+        color: [4]u8,
+    ) !void {
+        if (text.len == 0) return;
+
+        // Get or create font entry for this size
+        const entry = try self.getOrCreateFontEntry(font_size);
+
+        var cursor_x = x;
+        const packed_color = packColorBytes(color);
+
+        for (text) |char| {
+            const codepoint: u21 = char;
+
+            // Get or create glyph
+            const glyph_id = try entry.font.getGlyphID(codepoint);
+            const glyph = try self.getOrRenderGlyph(entry, glyph_id);
+
+            // Calculate screen quad
+            // bearing_y is y0 (bottom of glyph), we need to position relative to baseline
+            // Top of glyph: baseline - (y0 + height) = baseline - y1
+            const bearing_x_f = @as(f32, @floatFromInt(glyph.bearing_x));
+            const bearing_y_f = @as(f32, @floatFromInt(glyph.bearing_y));
+            const width_f = @as(f32, @floatFromInt(glyph.width));
+            const height_f = @as(f32, @floatFromInt(glyph.height));
+
+            const x1 = cursor_x + bearing_x_f;
+            const y1 = y - (bearing_y_f + height_f);  // Top of glyph
+            const x2 = x1 + width_f;
+            const y2 = y1 + height_f;  // Bottom of glyph
+
+            // Calculate atlas UVs (flip V coordinate for texture sampling)
+            const atlas_size_f: f32 = @floatFromInt(self.atlas.size);
+            const uv0_x = @as(f32, @floatFromInt(glyph.atlas_x)) / atlas_size_f;
+            const uv0_y = @as(f32, @floatFromInt(glyph.atlas_y)) / atlas_size_f;
+            const uv1_x = @as(f32, @floatFromInt(glyph.atlas_x + glyph.width)) / atlas_size_f;
+            const uv1_y = @as(f32, @floatFromInt(glyph.atlas_y + glyph.height)) / atlas_size_f;
+
+            // Add quad (4 vertices + 6 indices)
+            // Note: V coordinates are flipped (bottom UV at top vertex, top UV at bottom vertex)
+            const base_idx: u16 = @intCast(self.vertices.items.len);
+
+            // Add 4 vertices (TL, TR, BR, BL) with flipped V
+            try self.vertices.append(self.allocator, ImVertex.init(x1, y1, uv0_x, uv1_y, packed_color)); // TL: bottom V
+            try self.vertices.append(self.allocator, ImVertex.init(x2, y1, uv1_x, uv1_y, packed_color)); // TR: bottom V
+            try self.vertices.append(self.allocator, ImVertex.init(x2, y2, uv1_x, uv0_y, packed_color)); // BR: top V
+            try self.vertices.append(self.allocator, ImVertex.init(x1, y2, uv0_x, uv0_y, packed_color)); // BL: top V
+
+            // Add 6 indices (0,1,2, 0,2,3)
+            try self.indices.append(self.allocator, base_idx + 0);
+            try self.indices.append(self.allocator, base_idx + 1);
+            try self.indices.append(self.allocator, base_idx + 2);
+            try self.indices.append(self.allocator, base_idx + 0);
+            try self.indices.append(self.allocator, base_idx + 2);
+            try self.indices.append(self.allocator, base_idx + 3);
+
+            cursor_x += glyph.advance_x;
+        }
     }
 
-    /// Update text renderer uniforms (screen size + Display P3)
-    pub fn setTextUniforms(self: *ImGuiContext, width: f32, height: f32, use_display_p3: bool) void {
-        self.text_renderer.setUniforms(width, height, use_display_p3);
-    }
 };

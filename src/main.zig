@@ -115,12 +115,19 @@ fn renderThread(ctx: *RenderContext) void {
 
         ctx.imgui_ctx.addRect(1400, 50, 100, 100, imgui.ImGuiContext.packColor(slider_value, 1, 0, 1.0)) catch {};
         ctx.imgui_ctx.addRect(1450, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
+
+        // Add text using new unified system (generates quads in same buffer as shapes)
+        ctx.imgui_ctx.addTextNew("Large-96pt", 50, 200, 96.0, .{ 255, 255, 255, 255 }) catch {};
+        ctx.imgui_ctx.addTextNew("Medium-48pt", 50, 300, 48.0, .{ 200, 200, 255, 255 }) catch {};
+        ctx.imgui_ctx.addTextNew("Small-24pt", 50, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
+
         // ctx.imgui_ctx.addRect(0, 0, full_w, full_h, imgui.ImGuiContext.packColor(0.5, 0.5, 0.5, 1.0)) catch {};
         // ctx.imgui_ctx.addTri(100, 50, 0, 100, 100, 100, imgui.ImGuiContext.packColor(0.5, 0.5, 0.5, 1.0)) catch {};
+        ctx.imgui_ctx.addCircle(200, 300, 100, 360, imgui.ImGuiContext.packColor(255, 200, 150, 1)) catch {};
         // ctx.imgui_ctx.addCircle(200, 300, circle_slider, 360, imgui.ImGuiContext.packColor(255, 200, 150, 1)) catch {};
         // ctx.imgui_ctx.addLine(0, 599, 800, 599, imgui.ImGuiContext.packColor(1, 0, 0, 1.0), 2.0) catch {};
 
-        // DON'T call render() here - let shapes accumulate until just before draw
+        // All shapes and text added - render() will be called just before drawing
 
         // Video frame timing - only advance frame when enough time has elapsed
         var video_texture_ptr: ?*anyopaque = null;
@@ -201,7 +208,7 @@ fn renderThread(ctx: *RenderContext) void {
             render_encoder.drawIndexedPrimitives(.triangle, 12, &ctx.index_buffer, 0);
         }
 
-        // Layer 2: IMGUI
+        // Layer 2: IMGUI (unified shapes + text)
         // Finalize IMGUI vertex/index buffers (upload to GPU)
         ctx.imgui_ctx.render();
 
@@ -224,51 +231,13 @@ fn renderThread(ctx: *RenderContext) void {
             };
             render_encoder.setVertexBytes(@ptrCast(&imgui_uniforms), @sizeOf(ImGuiUniforms), 1);
 
+            // Bind atlas texture for text rendering
+            render_encoder.setFragmentTexture(&ctx.imgui_ctx.atlas_texture, 0);
+
             render_encoder.drawIndexedPrimitives(.triangle, imgui_index_count, imgui_ib, 0);
         }
 
-        // Layer 3: Text overlays - test different font sizes
-        ctx.imgui_ctx.addText(&render_encoder, "Large-96pt", 50, 200, 96.0, .{ 255, 255, 255, 255 }) catch |err| {
-            std.debug.print("Text render error: {}\n", .{err});
-        };
-
-        ctx.imgui_ctx.addText(&render_encoder, "Medium-48pt", 50, 300, 48.0, .{ 200, 200, 255, 255 }) catch |err| {
-            std.debug.print("Text2 render error: {}\n", .{err});
-        };
-
-        ctx.imgui_ctx.addText(&render_encoder, "Small-24pt", 50, 400, 24.0, .{ 255, 200, 200, 255 }) catch |err| {
-            std.debug.print("Text3 render error: {}\n", .{err});
-        };
-
-        // Flush text rendering
-        ctx.imgui_ctx.flushText(&render_encoder) catch |err| {
-            std.debug.print("Text flush error: {}\n", .{err});
-        };
-
-        // Layer 4: Shapes on top of text
-        ctx.imgui_ctx.addCircle(900, 450, 200, 30, imgui.ImGuiContext.packColor(255, 200, 150, 1)) catch {};
-        ctx.imgui_ctx.render();
-
-        const overlay_index_count = ctx.imgui_ctx.getIndexCount();
-        if (overlay_index_count > 0) {
-            render_encoder.setPipeline(&ctx.imgui_pipeline);
-
-            const overlay_vb = ctx.imgui_ctx.getVertexBuffer();
-            const overlay_ib = ctx.imgui_ctx.getIndexBuffer();
-            render_encoder.setVertexBuffer(overlay_vb, 0, 0);
-
-            const ImGuiUniforms = extern struct {
-                screen_size: [2]f32,
-                use_display_p3: bool,
-            };
-            const overlay_uniforms = ImGuiUniforms{
-                .screen_size = .{ ctx.imgui_ctx.display_width, ctx.imgui_ctx.display_height },
-                .use_display_p3 = ctx.config.use_display_p3,
-            };
-            render_encoder.setVertexBytes(@ptrCast(&overlay_uniforms), @sizeOf(ImGuiUniforms), 1);
-
-            render_encoder.drawIndexedPrimitives(.triangle, overlay_index_count, overlay_ib, 0);
-        }
+        // Done! Single unified draw call for all shapes and text
 
         render_encoder.end();
 
