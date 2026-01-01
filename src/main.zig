@@ -169,14 +169,9 @@ fn renderThread(ctx: *RenderContext) void {
         const drawable_width = drawable_texture.getWidth();
         const drawable_height = drawable_texture.getHeight();
 
-        // Update IMGUI and text renderer screen size with actual drawable dimensions
+        // Update IMGUI screen size with actual drawable dimensions
         ctx.imgui_ctx.display_width = @floatFromInt(drawable_width);
         ctx.imgui_ctx.display_height = @floatFromInt(drawable_height);
-        ctx.imgui_ctx.setTextUniforms(
-            @floatFromInt(drawable_width),
-            @floatFromInt(drawable_height),
-            ctx.config.use_display_p3,
-        );
 
         // Create render pass
         var render_pass = metal.MetalRenderPassDescriptor.init();
