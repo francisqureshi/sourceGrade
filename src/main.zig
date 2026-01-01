@@ -117,13 +117,13 @@ fn renderThread(ctx: *RenderContext) void {
         ctx.imgui_ctx.addRect(1450, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
 
         // Add text using new unified system (generates quads in same buffer as shapes)
-        ctx.imgui_ctx.addTextNew("Large-96pt", 50, 200, 96.0, .{ 255, 255, 255, 255 }) catch {};
-        ctx.imgui_ctx.addTextNew("Medium-48pt", 50, 300, 48.0, .{ 200, 200, 255, 255 }) catch {};
-        ctx.imgui_ctx.addTextNew("Small-24pt", 50, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
+        ctx.imgui_ctx.addText("Large-96pt", 50, 200, 96.0, .{ 255, 255, 255, 255 }) catch {};
+        ctx.imgui_ctx.addText("Medium-48pt", 50, 300, 48.0, .{ 200, 200, 255, 255 }) catch {};
+        ctx.imgui_ctx.addText("Small-24pt", 50, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
 
         // ctx.imgui_ctx.addRect(0, 0, full_w, full_h, imgui.ImGuiContext.packColor(0.5, 0.5, 0.5, 1.0)) catch {};
         // ctx.imgui_ctx.addTri(100, 50, 0, 100, 100, 100, imgui.ImGuiContext.packColor(0.5, 0.5, 0.5, 1.0)) catch {};
-        ctx.imgui_ctx.addCircle(200, 300, 100, 360, imgui.ImGuiContext.packColor(255, 200, 150, 1)) catch {};
+        // ctx.imgui_ctx.addCircle(200, 300, 100, 360, imgui.ImGuiContext.packColor(255, 200, 150, 1)) catch {};
         // ctx.imgui_ctx.addCircle(200, 300, circle_slider, 360, imgui.ImGuiContext.packColor(255, 200, 150, 1)) catch {};
         // ctx.imgui_ctx.addLine(0, 599, 800, 599, imgui.ImGuiContext.packColor(1, 0, 0, 1.0), 2.0) catch {};
 

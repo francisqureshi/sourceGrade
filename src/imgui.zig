@@ -519,7 +519,7 @@ pub const ImGuiContext = struct {
 
     /// Add text to the rendering batch (generates quads, integrated with shapes)
     /// Text will be drawn in the order it's added relative to shapes
-    pub fn addTextNew(
+    pub fn addText(
         self: *ImGuiContext,
         text: []const u8,
         x: f32,
@@ -551,9 +551,9 @@ pub const ImGuiContext = struct {
             const height_f = @as(f32, @floatFromInt(glyph.height));
 
             const x1 = cursor_x + bearing_x_f;
-            const y1 = y - (bearing_y_f + height_f);  // Top of glyph
+            const y1 = y - (bearing_y_f + height_f); // Top of glyph
             const x2 = x1 + width_f;
-            const y2 = y1 + height_f;  // Bottom of glyph
+            const y2 = y1 + height_f; // Bottom of glyph
 
             // Calculate atlas UVs (flip V coordinate for texture sampling)
             const atlas_size_f: f32 = @floatFromInt(self.atlas.size);
@@ -583,5 +583,4 @@ pub const ImGuiContext = struct {
             cursor_x += glyph.advance_x;
         }
     }
-
 };
