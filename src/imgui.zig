@@ -80,6 +80,7 @@ pub const ImGuiContext = struct {
     // Screen dimensions for coordinate mapping
     display_width: f32,
     display_height: f32,
+    backing_scale_factor: f32, // HiDPI scale (1.0 = normal, 2.0 = Retina)
 
     // Font rendering (integrated)
     device: *metal.MetalDevice,
@@ -134,6 +135,7 @@ pub const ImGuiContext = struct {
             .mouse_two_down = false,
             .display_width = 1920,
             .display_height = 1080,
+            .backing_scale_factor = 1.0,
             .device = device,
             .font_name = font_name,
             .font_entries = font_entries,
@@ -241,6 +243,7 @@ pub const ImGuiContext = struct {
     pub fn addRect(self: *ImGuiContext, x: f32, y: f32, w: f32, h: f32, color: u32) !void {
         const base = @as(u16, @intCast(self.vertices.items.len));
 
+        // Coordinates in points (shader will convert to clip space using display size)
         // Add 4 vertices with UVs at (0,0) to skip texture sampling
         try self.vertices.append(self.allocator, ImVertex.init(x, y, 0, 0, color));
         try self.vertices.append(self.allocator, ImVertex.init(x + w, y, 0, 0, color));
@@ -529,10 +532,15 @@ pub const ImGuiContext = struct {
     ) !void {
         if (text.len == 0) return;
 
-        // Get or create font entry for this size
-        const entry = try self.getOrCreateFontEntry(font_size);
+        // Scale font size by backing scale factor for HiDPI rendering
+        const scaled_font_size = font_size * self.backing_scale_factor;
 
+        // Get or create font entry for this scaled size
+        const entry = try self.getOrCreateFontEntry(scaled_font_size);
+
+        // Coordinates in points (NOT scaled - shader will handle conversion)
         var cursor_x = x;
+        const base_y = y;
         const packed_color = packColorBytes(color);
 
         for (text) |char| {
@@ -542,18 +550,18 @@ pub const ImGuiContext = struct {
             const glyph_id = try entry.font.getGlyphID(codepoint);
             const glyph = try self.getOrRenderGlyph(entry, glyph_id);
 
-            // Calculate screen quad
-            // bearing_y is y0 (bottom of glyph), we need to position relative to baseline
-            // Top of glyph: baseline - (y0 + height) = baseline - y1
-            const bearing_x_f = @as(f32, @floatFromInt(glyph.bearing_x));
-            const bearing_y_f = @as(f32, @floatFromInt(glyph.bearing_y));
-            const width_f = @as(f32, @floatFromInt(glyph.width));
-            const height_f = @as(f32, @floatFromInt(glyph.height));
+            // Calculate screen quad in points
+            // Glyph metrics are in pixels (rendered at scaled_font_size), convert to points
+            const scale = self.backing_scale_factor;
+            const bearing_x_pts = @as(f32, @floatFromInt(glyph.bearing_x)) / scale;
+            const bearing_y_pts = @as(f32, @floatFromInt(glyph.bearing_y)) / scale;
+            const width_pts = @as(f32, @floatFromInt(glyph.width)) / scale;
+            const height_pts = @as(f32, @floatFromInt(glyph.height)) / scale;
 
-            const x1 = cursor_x + bearing_x_f;
-            const y1 = y - (bearing_y_f + height_f); // Top of glyph
-            const x2 = x1 + width_f;
-            const y2 = y1 + height_f; // Bottom of glyph
+            const x1 = cursor_x + bearing_x_pts;
+            const y1 = base_y - (bearing_y_pts + height_pts); // Top of glyph
+            const x2 = x1 + width_pts;
+            const y2 = y1 + height_pts; // Bottom of glyph
 
             // Calculate atlas UVs (flip V coordinate for texture sampling)
             const atlas_size_f: f32 = @floatFromInt(self.atlas.size);
@@ -580,7 +588,8 @@ pub const ImGuiContext = struct {
             try self.indices.append(self.allocator, base_idx + 2);
             try self.indices.append(self.allocator, base_idx + 3);
 
-            cursor_x += glyph.advance_x;
+            // Advance cursor (glyph.advance_x is in pixels, convert to points)
+            cursor_x += glyph.advance_x / scale;
         }
     }
 };

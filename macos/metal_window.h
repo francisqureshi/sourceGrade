@@ -52,6 +52,9 @@ void metal_window_get_mouse_state(void* window, float* out_x, float* out_y, bool
 /// Set the pixel format for the CAMetalLayer
 void metal_layer_set_pixel_format(void* layer, uint32_t pixel_format);
 
+/// Get the backing scale factor (1.0 for non-Retina, 2.0 for Retina, etc.)
+double metal_window_get_backing_scale(void* window);
+
 /// CVDisplayLink functions for vsync
 /// Runs on separate thread, independent of runloop
 /// Callback signature: void (*callback)(void* userdata)

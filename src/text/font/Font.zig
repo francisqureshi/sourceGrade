@@ -156,11 +156,11 @@ pub fn renderGlyph(
     // For Ghostty, they use strength/255.0 for the gray, we'll use 1.0 (full alpha)
     ct.CGContextSetGrayFillColor(context, 1.0, 1.0);
 
-    // Enable antialiasing and font smoothing (like Ghostty)
+    // Enable antialiasing and font smoothing for better quality
     ct.CGContextSetAllowsAntialiasing(context, true);
     ct.CGContextSetShouldAntialias(context, true);
     ct.CGContextSetAllowsFontSmoothing(context, true);
-    ct.CGContextSetShouldSmoothFonts(context, false);  // No thickening
+    ct.CGContextSetShouldSmoothFonts(context, true);  // Enable subpixel antialiasing
     ct.CGContextSetAllowsFontSubpixelPositioning(context, true);
     ct.CGContextSetShouldSubpixelPositionFonts(context, true);
     ct.CGContextSetAllowsFontSubpixelQuantization(context, true);

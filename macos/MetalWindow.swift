@@ -42,17 +42,27 @@ class MetalView: NSView {
 
         // CRITICAL: Tell the view itself it's opaque (no transparency)
         self.layer?.isOpaque = true
+
+        // Set initial drawable size (will be updated in setFrameSize)
+        let scale = NSScreen.main?.backingScaleFactor ?? 1.0
+        metalLayer.drawableSize = CGSize(
+            width: bounds.width * scale,
+            height: bounds.height * scale
+        )
+        print("[View] setupMetalLayer: bounds=\(bounds.width)x\(bounds.height), scale=\(scale), drawable=\(metalLayer.drawableSize.width)x\(metalLayer.drawableSize.height)")
     }
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
 
         // Update the Metal layer drawable size to match the view
-        let scale = self.window?.backingScaleFactor ?? 1.0
+        // Use screen scale if window not available yet
+        let scale = self.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1.0
         metalLayer.drawableSize = CGSize(
             width: newSize.width * scale,
             height: newSize.height * scale
         )
+        print("[View] setFrameSize: \(newSize.width)x\(newSize.height), scale=\(scale), drawable=\(metalLayer.drawableSize.width)x\(metalLayer.drawableSize.height)")
     }
 
     // Mouse event handling
@@ -219,6 +229,12 @@ public func metal_layer_set_pixel_format(_ layerPtr: UnsafeMutableRawPointer, _ 
     layer.pixelFormat = MTLPixelFormat(rawValue: pixelFormat) ?? .bgra8Unorm
 }
 
+@_cdecl("metal_window_get_backing_scale")
+public func metal_window_get_backing_scale(_ windowPtr: UnsafeMutableRawPointer) -> Double {
+    let window = Unmanaged<MetalWindow>.fromOpaque(windowPtr).takeUnretainedValue()
+    return window.backingScaleFactor
+}
+
 // MARK: - CVDisplayLink
 
 /// Wrapper class to hold CVDisplayLink and callback
@@ -335,6 +351,9 @@ class MetalWindow: NSWindow {
         // Create and set the Metal view
         let metalView = MetalView(frame: contentRect)
         self.contentView = metalView
+
+        // Debug: print actual window size
+        print("[Window] Requested: \(width)x\(height), Actual: \(frame.width)x\(frame.height), ContentView: \(metalView.frame.width)x\(metalView.frame.height)")
 
         // For borderless windows, allow moving by dragging
         if borderless {

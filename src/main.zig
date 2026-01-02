@@ -97,21 +97,21 @@ fn renderThread(ctx: *RenderContext) void {
         // const full_w = ctx.imgui_ctx.display_width;
         // const full_h = ctx.imgui_ctx.display_height;
 
-        // Draw comparison: 10-bit (top) vs simulated 8-bit (bottom)
-        var i: usize = 0;
-        while (i < 1024) : (i += 1) {
-            const x = 50 + i * 3;
-            const brightness = 0.0 + (@as(f32, @floatFromInt(i)) / 1024.0) * 1.0; // 0.3 to 1.0 range
-
-            // Top gradient: Full 10-bit precision (smooth)
-            ctx.imgui_ctx.addRect(
-                @floatFromInt(x),
-                100,
-                3,
-                200,
-                imgui.ImGuiContext.packColor(brightness, brightness, brightness, 1.0),
-            ) catch {};
-        }
+        // // Draw comparison: 10-bit (top) vs simulated 8-bit (bottom)
+        // var i: usize = 0;
+        // while (i < 1024) : (i += 1) {
+        //     const x = 50 + i * 3;
+        //     const brightness = 0.0 + (@as(f32, @floatFromInt(i)) / 1024.0) * 1.0; // 0.3 to 1.0 range
+        //
+        //     // Top gradient: Full 10-bit precision (smooth)
+        //     ctx.imgui_ctx.addRect(
+        //         @floatFromInt(x),
+        //         100,
+        //         3,
+        //         200,
+        //         imgui.ImGuiContext.packColor(brightness, brightness, brightness, 1.0),
+        //     ) catch {};
+        // }
 
         ctx.imgui_ctx.addRect(1400, 50, 100, 100, imgui.ImGuiContext.packColor(slider_value, 1, 0, 1.0)) catch {};
         ctx.imgui_ctx.addRect(1450, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
@@ -169,9 +169,22 @@ fn renderThread(ctx: *RenderContext) void {
         const drawable_width = drawable_texture.getWidth();
         const drawable_height = drawable_texture.getHeight();
 
-        // Update IMGUI screen size with actual drawable dimensions
-        ctx.imgui_ctx.display_width = @floatFromInt(drawable_width);
-        ctx.imgui_ctx.display_height = @floatFromInt(drawable_height);
+        // Get backing scale factor for HiDPI rendering
+        const backing_scale = c.metal_window_get_backing_scale(ctx.window);
+        ctx.imgui_ctx.backing_scale_factor = @floatCast(backing_scale);
+
+        // Update IMGUI screen size in POINTS (not pixels)
+        // Shader converts from points to clip space using these values
+        const display_width_pts = @as(f32, @floatFromInt(drawable_width)) / @as(f32, @floatCast(backing_scale));
+        const display_height_pts = @as(f32, @floatFromInt(drawable_height)) / @as(f32, @floatCast(backing_scale));
+        ctx.imgui_ctx.display_width = display_width_pts;
+        ctx.imgui_ctx.display_height = display_height_pts;
+
+        // Debug: print once per second
+        if (frame % 60 == 0) {
+            std.debug.print("Drawable: {}x{} px, Scale: {d}, Points: {d}x{d}\n",
+                .{drawable_width, drawable_height, backing_scale, display_width_pts, display_height_pts});
+        }
 
         // Create render pass
         var render_pass = metal.MetalRenderPassDescriptor.init();

@@ -174,20 +174,24 @@ fragment float4 imguiFragmentShader(
     if (in.uv.x > 0.0 || in.uv.y > 0.0) {
         constexpr sampler textureSampler(filter::linear);
         float alpha = atlas.sample(textureSampler, in.uv).r;  // Grayscale atlas
-        color *= alpha;  // Multiply by atlas alpha
+        color.a *= alpha;  // Modulate alpha channel only
     }
 
-    // If Display P3 is enabled, convert color space
+    // Premultiply alpha in sRGB space (gamma-correct)
+    color.rgb *= color.a;
+
+    // If Display P3 is enabled, convert color space AFTER premultiplication
     if (in.use_display_p3) {
-        // Linearize sRGB input
-        color = linearize(color);
+        // Linearize premultiplied sRGB
+        color.rgb = float3(
+            linearize(color.r),
+            linearize(color.g),
+            linearize(color.b)
+        );
 
         // Convert from linear sRGB to linear Display P3
         color.rgb = srgb_to_display_p3(color.rgb);
     }
-
-    // Premultiply alpha for blending
-    color.rgb *= color.a;
 
     return color;
 }
