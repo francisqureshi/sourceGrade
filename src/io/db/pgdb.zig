@@ -53,6 +53,28 @@ pub fn listProjects(pool: *pg.Pool) !void {
     }
 }
 
+pub fn deleteProject(pool: *pg.Pool, project_id: i32) !void {
+    var conn = try pool.acquire();
+    defer conn.release();
+
+    const rows = try conn.exec("DELETE FROM projects WHERE id = $1", .{project_id});
+
+    std.debug.print("Deleted project {d} (affected {d} rows)\n", .{ project_id, rows });
+}
+
+pub fn resetDatabase(pool: *pg.Pool) !void {
+    var conn = try pool.acquire();
+    defer conn.release();
+
+    // Delete all projects (cascades to timelines, clips, nodes, versions)
+    _ = try conn.exec("DELETE FROM projects", .{});
+
+    // Optionally delete orphaned sources too
+    _ = try conn.exec("DELETE FROM sources", .{});
+
+    std.debug.print("Database reset complete\n", .{});
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = if (builtin.mode == .Debug) gpa.allocator() else std.heap.c_allocator;

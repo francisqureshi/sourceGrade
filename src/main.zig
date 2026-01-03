@@ -349,6 +349,12 @@ fn testPgsql() !void {
 
     // List all projects
     try pgdb.listProjects(pool);
+
+    // delete project
+    try pgdb.deleteProject(pool, 6);
+
+    // List all projects
+    try pgdb.listProjects(pool);
 }
 
 pub fn main() !void {
