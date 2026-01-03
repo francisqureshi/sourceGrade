@@ -36,14 +36,17 @@ pub const SourceMedia = struct {
     start_frame_number: i64,
     end_frame_number: i64,
     reel_name: ?[]const u8,
+    codec: []u8,
     frames: []mov.FrameInfo,
 
     pub fn init(ctx: MediaContext) !SourceMedia {
         // file path and file name
-        var out_buffer: [std.fs.max_path_bytes]u8 = undefined;
-        const path_len = try ctx.file.realPath(ctx.io, &out_buffer);
-        const file_path = out_buffer[0..path_len];
+        var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+        const path_len = try ctx.file.realPath(ctx.io, &path_buf);
+        const file_path = path_buf[0..path_len];
         const file_name = std.fs.path.basename(file_path);
+
+        ctx.file;
 
         const tracks = try mov.parseMovFile(ctx.io, ctx.allocator, ctx.file, false);
         defer {
@@ -69,6 +72,8 @@ pub const SourceMedia = struct {
         const stts = vt.stts_entries orelse return error.NoStts;
 
         const resolution = Resolution{ .width = vi.width, .height = vi.height };
+
+        const codec = vi.codec;
 
         const frame_duration = if (stts.len > 0) stts[0].sample_duration else return error.NoFrameDuration;
         const frame_rate = Rational{ .num = mdhd.timescale, .den = frame_duration };
@@ -125,6 +130,7 @@ pub const SourceMedia = struct {
             .start_frame_number = start_frame_number,
             .end_frame_number = end_frame_number,
             .reel_name = null,
+            .codec = codec,
             .frames = frames,
         };
     }

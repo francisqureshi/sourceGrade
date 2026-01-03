@@ -344,14 +344,18 @@ fn testPgsql() !void {
     defer pool.deinit();
 
     // Create a new project
-    // const project_id = try pgdb.createProject(pool, "testProject", 23.976);
-    // std.debug.print("Created project ID: {d}\n", .{project_id});
+    const project_id = try pgdb.createProject(pool, "testProject", 23.976);
+    std.debug.print("Created project ID: {d}\n", .{project_id});
 
     // List all projects
     try pgdb.listProjects(pool);
 
+    // Retreive project
+    const project = try pgdb.getProjectById(pool, project_id);
+    std.debug.print("project: {any}\n", .{project});
+
     // delete project
-    try pgdb.deleteProject(pool, 6);
+    try pgdb.deleteProject(pool, project_id);
 
     // List all projects
     try pgdb.listProjects(pool);

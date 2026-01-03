@@ -53,13 +53,34 @@ pub fn listProjects(pool: *pg.Pool) !void {
     }
 }
 
+pub fn getProjectById(pool: *pg.Pool, project_id: i32) !?Project {
+    var conn = try pool.acquire();
+    defer conn.release();
+
+    // row() is perfect for single row lookups
+    var row = (try conn.rowOpts(
+        \\SELECT id, name, default_frame_rate as frame_rate, created_at
+        \\FROM projects
+        \\WHERE id = $1
+    , .{project_id}, .{ .column_names = true })) orelse return null;
+    defer row.deinit() catch {};
+
+    // Manually extract or use .to() for struct mapping
+    return Project{
+        .id = row.getCol(i32, "id"),
+        .name = row.getCol([]const u8, "name"),
+        .frame_rate = row.getCol(?f64, "frame_rate"),
+        .created_at = row.getCol(i64, "created_at"),
+    };
+}
+
 pub fn deleteProject(pool: *pg.Pool, project_id: i32) !void {
     var conn = try pool.acquire();
     defer conn.release();
 
     const rows = try conn.exec("DELETE FROM projects WHERE id = $1", .{project_id});
 
-    std.debug.print("Deleted project {d} (affected {d} rows)\n", .{ project_id, rows });
+    std.debug.print("Deleted project {d} (affected {?d} rows)\n", .{ project_id, rows });
 }
 
 pub fn resetDatabase(pool: *pg.Pool) !void {
@@ -70,42 +91,7 @@ pub fn resetDatabase(pool: *pg.Pool) !void {
     _ = try conn.exec("DELETE FROM projects", .{});
 
     // Optionally delete orphaned sources too
-    _ = try conn.exec("DELETE FROM sources", .{});
+    _ = try conn.exec("DELETE FROM projects", .{});
 
     std.debug.print("Database reset complete\n", .{});
-}
-
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = if (builtin.mode == .Debug) gpa.allocator() else std.heap.c_allocator;
-
-    // Try to avoid std.Io.Threaded due to EAGAIN bug
-    // Initialize std.Io for networking
-    var io_impl = std.Io.Threaded.init(allocator, .{});
-    defer io_impl.deinit();
-    const io = io_impl.io();
-
-    // While a connection can be created directly, pools should be used in most
-    // cases. The pool's `acquire` method, to get a connection is thread-safe.
-    // The pool may start 1 background thread to reconnect disconnected
-    // connections (or connections in an invalid state).
-    var pool = pg.Pool.init(allocator, .{ .io = io, .size = 5, .connect = .{
-        .port = 5433,
-        .host = "127.0.0.1",
-    }, .auth = .{
-        .username = "postgres",
-        .database = "sourcegrade",
-        .timeout = 10_000,
-    } }) catch |err| {
-        log.err("Failed to connect: {}", .{err});
-        std.process.exit(1);
-    };
-    defer pool.deinit();
-
-    // One-off commands can be executed directly using the pool using the
-    // exec, execOpts, query, queryOpts, row, rowOpts functions. But, due to
-    // Zig's lack of error payloads, if these fail, you won't be able to retrieve
-    // a more detailed error
-    const dropped = try pool.exec("drop table if exists projects", .{});
-    std.debug.print("dropped: {any}\n", .{dropped});
 }
