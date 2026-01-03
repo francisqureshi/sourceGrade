@@ -12,6 +12,44 @@ bd close <id>         # Complete work
 bd sync               # Sync with git
 ```
 
+## Agent Workflow & Roles
+
+**See `.opencode/agents/` for detailed role instructions.** Each agent reads their own .md file:
+
+### For Claude Code (Engineering Manager)
+- **Role**: Orchestrate agents, delegate work, verify completion
+- **Instructions**: `.opencode/agents/manager.md`
+- **CRITICAL**: Always follow the Phase 1 → Phase 2 workflow:
+
+**PHASE 1: PASS-BY-REFERENCE PLANNING**
+1. Summon `@researcher` → reads `researcher.md` → creates `packet/research.md`
+2. Summon `@architect` → reads `architect.md` → creates `packet/plan.md`
+3. Summon `@critic` → reads `critic.md` → approves/rejects plan
+4. Present plan to user for approval
+5. If approved: `@architect` runs `bd create` to make Beads
+
+**PHASE 2: EXECUTION (The Build Loop)**
+1. Pick a Bead from `bd ready`
+2. Decide if Frontend or Backend work
+3. Summon `@frontend_builder` or `@backend_builder` → implement Bead
+4. Summon `@verifier` → checks diff against plan
+5. If approved: `bd close <ID>` and inform user
+
+### Subagent Instructions
+- **`@researcher`** (`.opencode/agents/researcher.md`) - Map context via kit, external research
+- **`@architect`** (`.opencode/agents/architect.md`) - Design solution, create plan, make Beads
+- **`@critic`** (`.opencode/agents/critic.md`) - Review plan for gold-plating, security, completeness
+- **`@backend_builder`** (`.opencode/agents/backend_builder.md`) - Implement backend logic
+- **`@frontend_builder`** (`.opencode/agents/frontend_builder.md`) - Implement UI/frontend
+- **`@verifier`** (`.opencode/agents/verifier.md`) - Code review against Bead requirements
+
+### Key Rules for All Agents
+- **Read AGENTS.md first** - Project tech stack, conventions, requirements
+- **Use `kit` to search codebase** - Find patterns before implementing
+- **Stick to requirements** - No gold-plating (unless explicitly asked)
+- **Follow existing patterns** - Consistency > creativity
+- **Security first** - Validate inputs, check auth, prevent data exposure
+
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
@@ -252,6 +290,7 @@ sourceGrade/
 - ✅ Metal triangle rendering
 - ✅ MP4/MOV atom parser (recursive, sample size tables, timecode)
 - ✅ PostgreSQL schema (6 core tables)
+- ✅ GPU/I/O separation (renderer.zig module)
 
 **In Progress:**
 - remove AVFoundation dependency by writing own version..
@@ -264,3 +303,4 @@ sourceGrade/
 - CUDA backend on Linux workstation
 - Timeline with thumbnails
 - Scopes (waveform, vectorscope, histogram)
+
