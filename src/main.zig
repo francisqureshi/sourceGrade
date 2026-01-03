@@ -677,6 +677,9 @@ fn testSourceIntegration() !void {
         std.debug.print("  ID: {d}\n", .{retrieved.id});
         std.debug.print("  File: {s}\n", .{retrieved.filename});
         std.debug.print("  Codec: {s}\n", .{retrieved.codec});
+        std.debug.print("    → Codec bytes: ", .{});
+        for (retrieved.codec) |b| std.debug.print("{c}", .{@as(u8, b)});
+        std.debug.print("\n", .{});
         std.debug.print("  Resolution: {d}x{d}\n", .{ retrieved.width, retrieved.height });
         std.debug.print("  Container: {?d}x{?d}\n", .{ retrieved.container_width, retrieved.container_height });
         std.debug.print("  Frame rate: {d}/{d} = {d:.2}fps\n", .{ 
