@@ -9,23 +9,52 @@ CREATE TABLE projects (
 	default_resolution_height INT,
 	working_color_space TEXT DEFAULT 'rec709'
 );
+
 -- Source media (actual files on disk)
 CREATE TABLE sources (
     id SERIAL PRIMARY KEY,
+    
+    -- File metadata
     path TEXT NOT NULL UNIQUE,
     filename TEXT NOT NULL,
-    codec TEXT,                    -- 'prores_4444', 'h264', etc.
-    duration_frames INT,
-    frame_rate NUMERIC(10,2),
+    file_modified_at TIMESTAMPTZ,
+    file_size_bytes BIGINT,
+    
+    -- Video codec and format
+    codec TEXT,                            -- 'prores_4444', 'h264', etc.
+    
+    -- Resolution (display)
     width INT,
     height INT,
-    color_space TEXT,              -- 'rec709', 'rec2020', etc.
-    timecode_start TEXT,           -- SMPTE timecode
+    container_width INT,
+    container_height INT,
+    
+    -- Frame rate (store as rational to maintain precision)
+    frame_rate_num INT,
+    frame_rate_den INT,
+    frame_rate_float NUMERIC(10,4),
+    
+    -- Time base (for timeline calculations)
+    time_base_num INT,
+    time_base_den INT,
+    
+    -- Timecode and frame info
+    start_timecode TEXT,
+    end_timecode TEXT,
+    drop_frame BOOLEAN DEFAULT FALSE,
+    start_frame_number BIGINT DEFAULT 0,
+    end_frame_number BIGINT,
+    
+    -- Duration
+    duration_frames BIGINT,
+    
+    -- Metadata
+    reel_name TEXT,
+    color_space TEXT,
+    
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    file_modified_at TIMESTAMPTZ,
-    file_size_bytes BIGINT
+    modified_at TIMESTAMPTZ DEFAULT NOW()
 );
-
 
 -- Timelines (one project can have multiple sequences/timelines)
 CREATE TABLE timelines (
@@ -77,9 +106,6 @@ CREATE TABLE grade_nodes (
     position INT NOT NULL,         -- order in serial node graph
     enabled BOOLEAN DEFAULT true,
     
-    -- Future: node graph connections for parallel/layer nodes
-    -- input_node_id INT REFERENCES grade_nodes(id),
-    
     created_at TIMESTAMPTZ DEFAULT NOW(),
     modified_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -121,5 +147,10 @@ CREATE TRIGGER update_timelines_modified_at
 
 CREATE TRIGGER update_timeline_clips_modified_at
     BEFORE UPDATE ON timeline_clips
+    FOR EACH ROW
+    EXECUTE FUNCTION update_modified_at();
+
+CREATE TRIGGER update_sources_modified_at
+    BEFORE UPDATE ON sources
     FOR EACH ROW
     EXECUTE FUNCTION update_modified_at();

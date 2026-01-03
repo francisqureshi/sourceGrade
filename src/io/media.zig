@@ -36,17 +36,18 @@ pub const SourceMedia = struct {
     start_frame_number: i64,
     end_frame_number: i64,
     reel_name: ?[]const u8,
-    codec: []u8,
+    codec: []const u8,
     frames: []mov.FrameInfo,
 
     pub fn init(ctx: MediaContext) !SourceMedia {
         // file path and file name
         var path_buf: [std.fs.max_path_bytes]u8 = undefined;
         const path_len = try ctx.file.realPath(ctx.io, &path_buf);
-        const file_path = path_buf[0..path_len];
-        const file_name = std.fs.path.basename(file_path);
-
-        ctx.file;
+        const file_path_slice = path_buf[0..path_len];
+        const file_path = try ctx.allocator.dupe(u8, file_path_slice);
+        errdefer ctx.allocator.free(file_path);
+        const file_name = try ctx.allocator.dupe(u8, std.fs.path.basename(file_path_slice));
+        errdefer ctx.allocator.free(file_name);
 
         const tracks = try mov.parseMovFile(ctx.io, ctx.allocator, ctx.file, false);
         defer {
@@ -73,7 +74,9 @@ pub const SourceMedia = struct {
 
         const resolution = Resolution{ .width = vi.width, .height = vi.height };
 
-        const codec = vi.codec;
+        const codec_array = vi.codec;
+        const codec = try ctx.allocator.dupe(u8, &codec_array);
+        errdefer ctx.allocator.free(codec);
 
         const frame_duration = if (stts.len > 0) stts[0].sample_duration else return error.NoFrameDuration;
         const frame_rate = Rational{ .num = mdhd.timescale, .den = frame_duration };
@@ -158,6 +161,9 @@ pub const SourceMedia = struct {
     }
 
     pub fn deinit(self: *SourceMedia, allocator: Allocator) void {
+        allocator.free(self.file_path);
+        allocator.free(self.file_name);
+        allocator.free(self.codec);
         allocator.free(self.frames);
         allocator.free(self.start_timecode);
         allocator.free(self.end_timecode);
