@@ -51,10 +51,10 @@ pub const RenderContext = struct {
 pub const InitResult = struct {
     context: RenderContext,
     device: metal.MetalDevice,
-    imgui_ctx: imgui.ImGuiContext,
+    imgui_ctx_owned: *imgui.ImGuiContext,
 };
 
-/// Initialize all GPU resources. Returns context, device, and imgui context.
+/// Initialize all GPU resources. Returns context, device, and heap-allocated imgui context.
 /// Caller is responsible for cleanup via deinitRenderContext.
 pub fn initRenderContext(
     allocator: std.mem.Allocator,
@@ -208,10 +208,11 @@ pub fn initRenderContext(
     std.debug.print("✓ Created vertex buffer ({} bytes, {} vertices)\n", .{ vertex_data_bytes.len, all_vertices.len });
     std.debug.print("✓ Created index buffer ({} bytes, {} indices)\n", .{ index_data_bytes.len, quad_indices.len });
 
-    // Initialize IMGUI context with ring buffers
-    var imgui_ctx = try imgui.ImGuiContext.init(allocator, &device, pixel_format);
-    imgui_ctx.display_width = 1600;
-    imgui_ctx.display_height = 900;
+    // Initialize IMGUI context on heap so pointer stays valid
+    const imgui_ctx_owned = try allocator.create(imgui.ImGuiContext);
+    imgui_ctx_owned.* = try imgui.ImGuiContext.init(allocator, &device, pixel_format);
+    imgui_ctx_owned.display_width = 1600;
+    imgui_ctx_owned.display_height = 900;
     std.debug.print("✓ Created IMGUI context (triple-buffered)\n\n", .{});
 
     // Initialize NSApplication (this must happen before showing window)
@@ -260,7 +261,7 @@ pub fn initRenderContext(
         .video_pipeline = video_pipeline,
         .vertex_buffer = vertex_buffer,
         .index_buffer = index_buffer,
-        .imgui_ctx = &imgui_ctx,
+        .imgui_ctx = imgui_ctx_owned,
         .displaylink = displaylink,
         .start_time = start_time,
         .video_reader = video_reader,
@@ -272,7 +273,7 @@ pub fn initRenderContext(
     return InitResult{
         .context = render_ctx,
         .device = device,
-        .imgui_ctx = imgui_ctx,
+        .imgui_ctx_owned = imgui_ctx_owned,
     };
 }
 
@@ -283,7 +284,9 @@ pub fn deinitRenderContext(result: *InitResult) void {
     result.context.video_pipeline.deinit();
     result.context.vertex_buffer.deinit();
     result.context.index_buffer.deinit();
-    result.imgui_ctx.deinit();
+    result.imgui_ctx_owned.deinit();
+    const allocator = std.heap.c_allocator; // Note: ideally we'd pass this in
+    allocator.destroy(result.imgui_ctx_owned);
     if (result.context.displaylink) |dl| {
         c.metal_displaylink_release(dl);
     }
@@ -459,11 +462,3 @@ pub fn runEventLoop() void {
     // Run NSApplication runloop forever (this never returns)
     c.metal_window_run_app();
 }
-
-const error_union = error{
-    MetalNotAvailable,
-    WindowCreationFailed,
-    LayerNotFound,
-    DeviceNotFound,
-    DisplayLinkCreationFailed,
-};
