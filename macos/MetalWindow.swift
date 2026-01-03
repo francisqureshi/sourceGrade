@@ -49,7 +49,6 @@ class MetalView: NSView {
             width: bounds.width * scale,
             height: bounds.height * scale
         )
-        print("[View] setupMetalLayer: bounds=\(bounds.width)x\(bounds.height), scale=\(scale), drawable=\(metalLayer.drawableSize.width)x\(metalLayer.drawableSize.height)")
     }
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -62,7 +61,6 @@ class MetalView: NSView {
             width: newSize.width * scale,
             height: newSize.height * scale
         )
-        print("[View] setFrameSize: \(newSize.width)x\(newSize.height), scale=\(scale), drawable=\(metalLayer.drawableSize.width)x\(metalLayer.drawableSize.height)")
     }
 
     // Mouse event handling
@@ -351,9 +349,6 @@ class MetalWindow: NSWindow {
         // Create and set the Metal view
         let metalView = MetalView(frame: contentRect)
         self.contentView = metalView
-
-        // Debug: print actual window size
-        print("[Window] Requested: \(width)x\(height), Actual: \(frame.width)x\(frame.height), ContentView: \(metalView.frame.width)x\(metalView.frame.height)")
 
         // For borderless windows, allow moving by dragging
         if borderless {

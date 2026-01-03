@@ -75,10 +75,17 @@ pub fn getGlyphMetrics(self: *Font, glyph_id: u16) !Glyph {
     const advance = advances[0];
 
     // Calculate bounds like Ghostty (x0, x1, y0, y1)
-    const x0: i32 = @intFromFloat(@floor(rect.origin.x));
-    const x1: i32 = @intFromFloat(@ceil(rect.origin.x) + @ceil(rect.size.width));
-    const y0: i32 = @intFromFloat(@floor(rect.origin.y));
-    const y1: i32 = @intFromFloat(@ceil(rect.origin.y) + @ceil(rect.size.height));
+    var x0: i32 = @intFromFloat(@floor(rect.origin.x));
+    var x1: i32 = @intFromFloat(@ceil(rect.origin.x) + @ceil(rect.size.width));
+    var y0: i32 = @intFromFloat(@floor(rect.origin.y));
+    var y1: i32 = @intFromFloat(@ceil(rect.origin.y) + @ceil(rect.size.height));
+
+    // Expand buffer by 1 pixel on each edge for antialiasing (Ghostty approach)
+    // Font smoothing adds up to 1px of blur on each edge
+    x0 -= 1;
+    x1 += 1;
+    y0 -= 1;
+    y1 += 1;
 
     const width: u32 = @intCast(x1 - x0);
     const height: u32 = @intCast(y1 - y0);
@@ -88,7 +95,7 @@ pub fn getGlyphMetrics(self: *Font, glyph_id: u16) !Glyph {
         .width = width,
         .height = height,
         .bearing_x = x0,
-        .bearing_y = y0,  // Store y0, not y1 (we'll handle this in shader)
+        .bearing_y = y0, // Store y0, not y1 (we'll handle this in shader)
         .advance_x = @floatCast(advance.width),
     };
 }
@@ -119,8 +126,9 @@ pub fn renderGlyph(
     );
     const rect = bounds[0];
 
-    const x0: i32 = @intFromFloat(@floor(rect.origin.x));
-    const y0: i32 = @intFromFloat(@floor(rect.origin.y));
+    // Expand buffer by 1 pixel on each edge for antialiasing (same as getGlyphMetrics)
+    const x0: i32 = @as(i32, @intFromFloat(@floor(rect.origin.x))) - 1;
+    const y0: i32 = @as(i32, @intFromFloat(@floor(rect.origin.y))) - 1;
 
     // Create linear grayscale color space (like Ghostty)
     const color_space = ct.CGColorSpaceCreateWithName(ct.kCGColorSpaceLinearGray) orelse
@@ -129,7 +137,6 @@ pub fn renderGlyph(
 
     // Create bitmap context with alpha-only like Ghostty
     // With kCGImageAlphaOnly, buffer contains only alpha values
-    std.debug.print("Creating context: {}x{}, bytes_per_row={}, buffer.len={}\n", .{ width, height, width, buffer.len });
     const context = ct.CGBitmapContextCreate(
         buffer.ptr,
         width,
@@ -143,7 +150,6 @@ pub fn renderGlyph(
         return error.ContextCreateFailed;
     };
     defer ct.releaseCF(context);
-    std.debug.print("Context created successfully\n", .{});
 
     // Clear background with compositing_alpha=0 (doesn't actually write, relies on memset)
     ct.CGContextSetGrayFillColor(context, 1.0, 0.0);
@@ -152,58 +158,28 @@ pub fn renderGlyph(
         .size = .{ .width = @floatFromInt(width), .height = @floatFromInt(height) },
     });
 
-    // Set fill for glyph: gray value is the alpha to write, compositing alpha=1
-    // For Ghostty, they use strength/255.0 for the gray, we'll use 1.0 (full alpha)
-    ct.CGContextSetGrayFillColor(context, 1.0, 1.0);
-
-    // Enable antialiasing and font smoothing for better quality
+    // Enable antialiasing and font smoothing (like Ghostty)
     ct.CGContextSetAllowsAntialiasing(context, true);
     ct.CGContextSetShouldAntialias(context, true);
     ct.CGContextSetAllowsFontSmoothing(context, true);
-    ct.CGContextSetShouldSmoothFonts(context, true);  // Enable subpixel antialiasing
+    ct.CGContextSetShouldSmoothFonts(context, true);
     ct.CGContextSetAllowsFontSubpixelPositioning(context, true);
     ct.CGContextSetShouldSubpixelPositionFonts(context, true);
     ct.CGContextSetAllowsFontSubpixelQuantization(context, true);
     ct.CGContextSetShouldSubpixelQuantizeFonts(context, true);
 
-    // Set text matrix (flip Y coordinate)
-    ct.CGContextSetTextMatrix(context, .{
-        .a = 1.0, .b = 0.0,
-        .c = 0.0, .d = -1.0,
-        .tx = 0.0, .ty = 0.0,
-    });
+    // Set fill color for glyph
+    // Use slightly less than full opacity to trigger better antialiasing
+    // (Ghostty uses thicken_strength/255.0, default 255 = 1.0)
+    const strength: f64 = 255.0 / 255.0; // Full strength
+    ct.CGContextSetGrayFillColor(context, strength, 1.0);
 
-    // Position glyph in buffer
-    // We want the glyph's top edge (y1) at buffer top (y=0)
-    // and bottom edge (y0) at buffer bottom (y=height)
-    // With text matrix d=-1 (Y flip), if we draw at (x, y):
-    //   the baseline ends up at (x, flipped_y)
-    // For the glyph to fill the buffer correctly:
-    //   baseline should be at: buffer_height + y0 (since y0 is negative)
-    const text_pos_x: f64 = @floatFromInt(-x0);
-    const text_pos_y: f64 = @floatFromInt(@as(i32, @intCast(height)) + y0);
+    // Position glyph in buffer (Ghostty approach: simple negation of origin)
+    const positions = [_]ct.CGPoint{.{
+        .x = @floatFromInt(-x0),
+        .y = @floatFromInt(-y0),
+    }};
 
-    // Set the font on the context
-    const cg_font = ct.CTFontCopyGraphicsFont(self.ct_font, null) orelse return error.FontConversionFailed;
-    defer ct.releaseCF(cg_font);
-    ct.CGContextSetFont(context, cg_font);
-    ct.CGContextSetFontSize(context, @floatCast(self.size));
-    ct.CGContextSetTextDrawingMode(context, .fill);
-
-    // Draw using CGContextShowGlyphsAtPoint
-    std.debug.print("Drawing glyph {} at pos ({d:.1}, {d:.1})\n", .{ glyphs[0], text_pos_x, text_pos_y });
-    ct.CGContextShowGlyphsAtPoint(context, text_pos_x, text_pos_y, &glyphs, 1);
-
-    // Flush/synchronize to ensure drawing is complete
-    ct.CGContextSynchronize(context);
-
-    // DEBUG: Check if anything was written
-    var has_pixels = false;
-    for (buffer) |px| {
-        if (px > 0) {
-            has_pixels = true;
-            break;
-        }
-    }
-    std.debug.print("After drawing: buffer has pixels = {}\n", .{has_pixels});
+    // Draw using CTFontDrawGlyphs (higher-level API with better antialiasing)
+    ct.CTFontDrawGlyphs(self.ct_font, &glyphs, &positions, 1, context);
 }

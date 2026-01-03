@@ -177,18 +177,19 @@ fragment float4 imguiFragmentShader(
         color.a *= alpha;  // Modulate alpha channel only
     }
 
-    // Premultiply alpha in sRGB space (gamma-correct)
+    // GAMMA-CORRECT BLENDING: Linearize first, then premultiply
+    // This is critical for proper antialiased text rendering
+    color.rgb = float3(
+        linearize(color.r),
+        linearize(color.g),
+        linearize(color.b)
+    );
+
+    // Premultiply alpha in LINEAR space (gamma-correct)
     color.rgb *= color.a;
 
-    // If Display P3 is enabled, convert color space AFTER premultiplication
+    // If Display P3 is enabled, convert color space
     if (in.use_display_p3) {
-        // Linearize premultiplied sRGB
-        color.rgb = float3(
-            linearize(color.r),
-            linearize(color.g),
-            linearize(color.b)
-        );
-
         // Convert from linear sRGB to linear Display P3
         color.rgb = srgb_to_display_p3(color.rgb);
     }

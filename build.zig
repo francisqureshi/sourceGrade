@@ -91,9 +91,10 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    exe.root_module.addImport("pg", b.dependency("pg", .{}).module("pg"));
     exe.root_module.addImport("metal", metal_dep.module("metal_bindings"));
-
     exe.root_module.addImport("smpte", smpte_dep.module("smpte"));
+
     // Add the Swift AppKit bridge
     exe.root_module.addSystemIncludePath(b.path("macos"));
 

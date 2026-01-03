@@ -563,7 +563,7 @@ pub const ImGuiContext = struct {
             const x2 = x1 + width_pts;
             const y2 = y1 + height_pts; // Bottom of glyph
 
-            // Calculate atlas UVs (flip V coordinate for texture sampling)
+            // Calculate atlas UVs (no flip needed - CTFontDrawGlyphs renders correctly)
             const atlas_size_f: f32 = @floatFromInt(self.atlas.size);
             const uv0_x = @as(f32, @floatFromInt(glyph.atlas_x)) / atlas_size_f;
             const uv0_y = @as(f32, @floatFromInt(glyph.atlas_y)) / atlas_size_f;
@@ -571,14 +571,13 @@ pub const ImGuiContext = struct {
             const uv1_y = @as(f32, @floatFromInt(glyph.atlas_y + glyph.height)) / atlas_size_f;
 
             // Add quad (4 vertices + 6 indices)
-            // Note: V coordinates are flipped (bottom UV at top vertex, top UV at bottom vertex)
             const base_idx: u16 = @intCast(self.vertices.items.len);
 
-            // Add 4 vertices (TL, TR, BR, BL) with flipped V
-            try self.vertices.append(self.allocator, ImVertex.init(x1, y1, uv0_x, uv1_y, packed_color)); // TL: bottom V
-            try self.vertices.append(self.allocator, ImVertex.init(x2, y1, uv1_x, uv1_y, packed_color)); // TR: bottom V
-            try self.vertices.append(self.allocator, ImVertex.init(x2, y2, uv1_x, uv0_y, packed_color)); // BR: top V
-            try self.vertices.append(self.allocator, ImVertex.init(x1, y2, uv0_x, uv0_y, packed_color)); // BL: top V
+            // Add 4 vertices (TL, TR, BR, BL) with correct UVs
+            try self.vertices.append(self.allocator, ImVertex.init(x1, y1, uv0_x, uv0_y, packed_color)); // TL
+            try self.vertices.append(self.allocator, ImVertex.init(x2, y1, uv1_x, uv0_y, packed_color)); // TR
+            try self.vertices.append(self.allocator, ImVertex.init(x2, y2, uv1_x, uv1_y, packed_color)); // BR
+            try self.vertices.append(self.allocator, ImVertex.init(x1, y2, uv0_x, uv1_y, packed_color)); // BL
 
             // Add 6 indices (0,1,2, 0,2,3)
             try self.indices.append(self.allocator, base_idx + 0);
