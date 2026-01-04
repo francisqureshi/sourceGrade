@@ -307,7 +307,7 @@ pub fn build(b: *std.Build) void {
     const vt_test = b.addExecutable(.{
         .name = "video_decoder_test",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/io/video_decoder.zig"),
+            .root_source_file = b.path("src/io/decode/videotoolbox_c.zig"),
             .target = target,
             .optimize = optimize,
         }),
