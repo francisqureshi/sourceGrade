@@ -1,9 +1,9 @@
-import Foundation
 import AVFoundation
-import VideoToolbox
 import CoreMedia
 import CoreVideo
+import Foundation
 import Metal
+import VideoToolbox
 
 // MARK: - ProRes Video Reader
 
@@ -14,7 +14,7 @@ class ProResVideoReader {
     private var videoOutput: AVAssetReaderTrackOutput?
     private var textureCache: CVMetalTextureCache?
     private var metalDevice: MTLDevice?
-    private var currentCVTexture: CVMetalTexture? // Keep texture alive
+    private var currentCVTexture: CVMetalTexture?  // Keep texture alive
 
     var width: Int32 = 0
     var height: Int32 = 0
@@ -65,7 +65,7 @@ class ProResVideoReader {
         // Configure output settings (decompress to BGRA for Metal)
         let outputSettings: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferMetalCompatibilityKey as String: true
+            kCVPixelBufferMetalCompatibilityKey as String: true,
         ]
 
         let output = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: outputSettings)
@@ -89,7 +89,8 @@ class ProResVideoReader {
     /// Read next frame and convert to Metal texture
     func getNextFrame() -> MTLTexture? {
         guard let videoOutput = videoOutput,
-              let assetReader = assetReader else { return nil }
+            let assetReader = assetReader
+        else { return nil }
 
         // Check reader status
         guard assetReader.status == .reading else {
@@ -135,7 +136,8 @@ class ProResVideoReader {
         )
 
         guard result == kCVReturnSuccess,
-              let cvTexture = cvTexture else {
+            let cvTexture = cvTexture
+        else {
             print("[VideoReader] Failed to create texture from pixel buffer")
             return nil
         }
@@ -149,14 +151,15 @@ class ProResVideoReader {
     /// Seek to beginning and restart reading
     func restart() {
         guard let asset = asset,
-              let videoTrack = asset.tracks(withMediaType: .video).first else { return }
+            let videoTrack = asset.tracks(withMediaType: .video).first
+        else { return }
 
         // Create new reader
         guard let reader = try? AVAssetReader(asset: asset) else { return }
 
         let outputSettings: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferMetalCompatibilityKey as String: true
+            kCVPixelBufferMetalCompatibilityKey as String: true,
         ]
 
         let output = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: outputSettings)
@@ -174,7 +177,9 @@ class ProResVideoReader {
 // MARK: - C Bridge Functions
 
 @_cdecl("video_reader_create")
-public func video_reader_create(_ filepath: UnsafePointer<CChar>, _ devicePtr: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer? {
+public func video_reader_create(
+    _ filepath: UnsafePointer<CChar>, _ devicePtr: UnsafeMutableRawPointer
+) -> UnsafeMutableRawPointer? {
     let path = String(cString: filepath)
     let device = Unmanaged<MTLDevice>.fromOpaque(devicePtr).takeUnretainedValue()
 
@@ -186,7 +191,9 @@ public func video_reader_create(_ filepath: UnsafePointer<CChar>, _ devicePtr: U
 }
 
 @_cdecl("video_reader_get_next_frame")
-public func video_reader_get_next_frame(_ readerPtr: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer? {
+public func video_reader_get_next_frame(_ readerPtr: UnsafeMutableRawPointer)
+    -> UnsafeMutableRawPointer?
+{
     let reader = Unmanaged<ProResVideoReader>.fromOpaque(readerPtr).takeUnretainedValue()
 
     guard let texture = reader.getNextFrame() else {

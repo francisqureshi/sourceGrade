@@ -303,6 +303,39 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
 
+    // VideoToolbox decoder test - using NativePaths to detect framework paths
+    const vt_test = b.addExecutable(.{
+        .name = "video_decoder_test",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/io/video_decoder.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // Detect native framework paths and add them
+    var io_instance: std.Io.Threaded = .init_single_threaded;
+    defer io_instance.deinit();
+    const io = io_instance.io();
+    const native_paths = std.zig.system.NativePaths.detect(b.allocator, io, &target.result) catch |err| {
+        std.debug.print("Warning: Failed to detect native paths: {}\n", .{err});
+        @panic("Cannot detect framework paths");
+    };
+    for (native_paths.framework_dirs.items) |dir| {
+        vt_test.root_module.addFrameworkPath(.{ .cwd_relative = dir });
+    }
+
+    // Link frameworks
+    vt_test.root_module.linkSystemLibrary("c", .{});
+    vt_test.root_module.linkFramework("VideoToolbox", .{});
+    vt_test.root_module.linkFramework("CoreMedia", .{});
+    vt_test.root_module.linkFramework("CoreVideo", .{});
+    vt_test.root_module.linkFramework("CoreFoundation", .{});
+
+    const vt_test_run = b.addRunArtifact(vt_test);
+    const vt_test_step = b.step("test-vt", "Test VideoToolbox C API imports");
+    vt_test_step.dependOn(&vt_test_run.step);
+
     // Just like flags, top level steps are also listed in the `--help` menu.
     //
     // The Zig build system is entirely implemented in userland, which means

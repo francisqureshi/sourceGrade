@@ -1,6 +1,6 @@
 const std = @import("std");
 const metal = @import("metal");
-const imgui = @import("../imgui.zig");
+const imgui = @import("../gui/imgui.zig");
 
 // C bridge for Swift window
 const c = @cImport({

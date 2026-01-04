@@ -1,7 +1,7 @@
 ---
 description: Backend Specialist (API/DB/Logic).
 mode: subagent
-model: anthropic/claude-sonnet-4-5
+model: opencode/glm-4.6
 tools:
   edit: true
   bash: true
