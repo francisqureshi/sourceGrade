@@ -98,6 +98,18 @@ pub fn build(b: *std.Build) void {
     // Add the Swift AppKit bridge
     exe.root_module.addSystemIncludePath(b.path("macos"));
 
+    // Detect native framework paths for VideoToolbox linking
+    var io_instance: std.Io.Threaded = .init_single_threaded;
+    defer io_instance.deinit();
+    const io = io_instance.io();
+    const native_paths = std.zig.system.NativePaths.detect(b.allocator, io, &target.result) catch |err| {
+        std.debug.print("Warning: Failed to detect native paths: {}\n", .{err});
+        @panic("Cannot detect framework paths");
+    };
+    for (native_paths.framework_dirs.items) |dir| {
+        exe.root_module.addFrameworkPath(.{ .cwd_relative = dir });
+    }
+
     // Build Swift code as a dynamic library
     const swift_compile = b.addSystemCommand(&.{
         "swiftc",
@@ -244,6 +256,12 @@ pub fn build(b: *std.Build) void {
     exe.root_module.linkFramework("CoreText", .{});
     exe.root_module.linkFramework("CoreGraphics", .{});
 
+    // Link VideoToolbox frameworks for hardware video decoding
+    exe.root_module.linkFramework("VideoToolbox", .{});
+    exe.root_module.linkFramework("CoreMedia", .{});
+    exe.root_module.linkFramework("CoreVideo", .{});
+    exe.root_module.linkFramework("CoreFoundation", .{});
+
     // This declares intent for the executable to be installed into the
     // install prefix when running `zig build` (i.e. when executing the default
     // step). By default the install prefix is `zig-out/` but can be overridden
@@ -303,24 +321,17 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
 
-    // VideoToolbox decoder test - using NativePaths to detect framework paths
+    // VideoToolbox decoder test - reuse framework paths from main exe
     const vt_test = b.addExecutable(.{
         .name = "video_decoder_test",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/io/decode/videotoolbox_c.zig"),
+            .root_source_file = b.path("src/io/decode/vt_decode.zig"),
             .target = target,
             .optimize = optimize,
         }),
     });
 
-    // Detect native framework paths and add them
-    var io_instance: std.Io.Threaded = .init_single_threaded;
-    defer io_instance.deinit();
-    const io = io_instance.io();
-    const native_paths = std.zig.system.NativePaths.detect(b.allocator, io, &target.result) catch |err| {
-        std.debug.print("Warning: Failed to detect native paths: {}\n", .{err});
-        @panic("Cannot detect framework paths");
-    };
+    // Add framework paths (reuse the same detection from above)
     for (native_paths.framework_dirs.items) |dir| {
         vt_test.root_module.addFrameworkPath(.{ .cwd_relative = dir });
     }

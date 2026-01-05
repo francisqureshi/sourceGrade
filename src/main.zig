@@ -3,7 +3,8 @@ const builtin = @import("builtin");
 const pg = @import("pg");
 const media = @import("io/media.zig");
 const pgdb = @import("io/db/pgdb.zig");
-const renderer = @import("gpu/renderer.zig");
+// const renderer = @import("gpu/renderer.zig");
+const vtd = @import("io/decode/vt_decode.zig");
 
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
@@ -139,36 +140,39 @@ fn testSourceIntegration() !void {
     try pgdb.listSources(pool);
 
     std.debug.print("\n✅ Source integration test passed!\n", .{});
+
+    // VideoToolBox Decode test
+    try vtd.decode(source_media);
 }
 
 pub fn main() !void {
     std.debug.print("=== sourceGrade ===\n\n", .{});
 
-    // Setup allocator
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    // Initialize GPU/rendering subsystem
-    const config = renderer.RenderConfig{
-        .use_display_p3 = true,
-        .use_10bit = true,
-    };
-
-    var render_result = try renderer.initRenderContext(allocator, config);
-    defer renderer.deinitRenderContext(&render_result);
-
-    // Spawn render thread
-    const thread = try std.Thread.spawn(.{}, renderer.renderThread, .{&render_result.context});
-    thread.detach();
+    // // Setup allocator
+    // var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // defer _ = gpa.deinit();
+    // const allocator = gpa.allocator();
+    //
+    // // Initialize GPU/rendering subsystem
+    // const config = renderer.RenderConfig{
+    //     .use_display_p3 = true,
+    //     .use_10bit = true,
+    // };
+    //
+    // var render_result = try renderer.initRenderContext(allocator, config);
+    // defer renderer.deinitRenderContext(&render_result);
+    //
+    // // Spawn render thread
+    // const thread = try std.Thread.spawn(.{}, renderer.renderThread, .{&render_result.context});
+    // thread.detach();
 
     // Test PgSQL
     try testPgsql();
     try testSourceIntegration();
 
-    // Run NSApplication runloop forever (this never returns)
-    renderer.runEventLoop();
-
-    // Code below never executes (runloop runs forever)
-    unreachable;
+    // // Run NSApplication runloop forever (this never returns)
+    // renderer.runEventLoop();
+    //
+    // // Code below never executes (runloop runs forever)
+    // unreachable;
 }
