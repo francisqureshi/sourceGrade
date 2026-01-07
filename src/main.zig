@@ -139,7 +139,7 @@ fn testSourceIntegration() !void {
     try pgdb.resetAndInitializeDatabase(pool);
     try pgdb.listSources(pool);
 
-    std.debug.print("\n✅ Source integration test passed!\n", .{});
+    std.debug.print("\nSource integration test passed!\n", .{});
 
     // VideoToolBox Decode test
     try vtd.decode(source_media);
