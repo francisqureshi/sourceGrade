@@ -39,6 +39,10 @@ pub const CFTypeID = usize;
 pub const kCFAllocatorDefault: CFAllocatorRef = null;
 pub const kCFAllocatorNull: CFAllocatorRef = null;
 
+// CFBoolean values - exported symbols from CoreFoundation
+pub extern "c" var kCFBooleanTrue: CFTypeRef;
+pub extern "c" var kCFBooleanFalse: CFTypeRef;
+
 // ============================================================================
 // CMTime structure (from CMTime.h)
 // ============================================================================
@@ -81,20 +85,20 @@ pub const kCVPixelFormatType_32ARGB = 0x41524742; // 'ARGB'
 pub const kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange = 0x34323076; // '420v'
 pub const kCVPixelFormatType_420YpCbCr8BiPlanarFullRange = 0x34323066; // '420f'
 
-// CVPixelBuffer property keys
-pub const kCVPixelBufferPixelFormatTypeKey: CFStringRef = @ptrFromInt(0); // Will be filled by CF at runtime
-pub const kCVPixelBufferWidthKey: CFStringRef = @ptrFromInt(0);
-pub const kCVPixelBufferHeightKey: CFStringRef = @ptrFromInt(0);
-pub const kCVPixelBufferMetalCompatibilityKey: CFStringRef = @ptrFromInt(0);
+// CVPixelBuffer property keys - these are exported symbols from CoreVideo framework
+pub extern "c" var kCVPixelBufferPixelFormatTypeKey: CFStringRef;
+pub extern "c" var kCVPixelBufferWidthKey: CFStringRef;
+pub extern "c" var kCVPixelBufferHeightKey: CFStringRef;
+pub extern "c" var kCVPixelBufferMetalCompatibilityKey: CFStringRef;
 
 // ============================================================================
-// VTDecompressionSession property keys
+// VTDecompressionSession property keys - exported symbols from VideoToolbox framework
 // ============================================================================
-pub const kVTDecompressionPropertyKey_PixelBufferPool: CFStringRef = @ptrFromInt(0);
-pub const kVTDecompressionPropertyKey_OutputPoolRequestedMinimumBufferCount: CFStringRef = @ptrFromInt(0);
-pub const kVTDecompressionPropertyKey_RealTime: CFStringRef = @ptrFromInt(0);
-pub const kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder: CFStringRef = @ptrFromInt(0);
-pub const kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder: CFStringRef = @ptrFromInt(0);
+pub extern "c" var kVTDecompressionPropertyKey_PixelBufferPool: CFStringRef;
+pub extern "c" var kVTDecompressionPropertyKey_OutputPoolRequestedMinimumBufferCount: CFStringRef;
+pub extern "c" var kVTDecompressionPropertyKey_RealTime: CFStringRef;
+pub extern "c" var kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder: CFStringRef;
+pub extern "c" var kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder: CFStringRef;
 
 // ============================================================================
 // VideoToolbox - VTDecompressionSession functions
