@@ -9,6 +9,10 @@ pub const log = std.log.scoped(.videoToolBox);
 const VideoToolboxError = error{
     CreateFormatDescriptionFailed,
     CreateDecompressionSessionFailed,
+    CreateBlockBufferFailed,
+    CreateSampleBufferFailed,
+    DecodeFrameFailed,
+    DecoderWaitFailed,
 };
 
 // Callback that receives decoded frames from VideoToolbox
@@ -194,6 +198,36 @@ fn createSampleBuffer(
     return sample_buffer.?;
 }
 
+fn decompress(
+    session: vtb.VTDecompressionSessionRef,
+    sample_buffer: vtb.CMSampleBufferRef,
+) !void {
+    // Send frame to decoder
+    const status = vtb.VTDecompressionSessionDecodeFrame(
+        session,
+        sample_buffer,
+        0, // decodeFlags: no special options
+        null, // sourceFrameRefCon: context for callback (not needed yet)
+        null, // infoFlagsOut: output flags (not needed yet)
+    );
+
+    if (status != vtb.noErr) {
+        std.debug.print("VTDecompressionSessionDecodeFrame failed: {d}\n", .{status});
+        return error.DecodeFrameFailed;
+    }
+
+    std.debug.print("✅ Frame sent to decoder\n", .{});
+
+    // Wait for decoder to finish (blocks until callback completes)
+    const wait_status = vtb.VTDecompressionSessionWaitForAsynchronousFrames(session);
+    if (wait_status != vtb.noErr) {
+        std.debug.print("VTDecompressionSessionWaitForAsynchronousFrames failed: {d}\n", .{wait_status});
+        return error.DecoderWaitFailed;
+    }
+
+    std.debug.print("✅ Decoder finished, callback was invoked\n", .{});
+}
+
 pub fn decode(source_media: media.SourceMedia, mctx: media.MediaContext) !void {
     std.debug.print("\n=== VideoToolbox Tests ===\n", .{});
 
@@ -232,6 +266,9 @@ pub fn decode(source_media: media.SourceMedia, mctx: media.MediaContext) !void {
     defer vtb.CFRelease(sample_buffer);
 
     std.debug.print("sample_buffer: {*}\n", .{sample_buffer});
+
+    // Phase 4.5: Decode the frame
+    try decompress(session, sample_buffer);
 
     defer mctx.allocator.free(buffer);
 }

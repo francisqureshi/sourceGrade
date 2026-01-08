@@ -139,9 +139,35 @@ sample_buffer: *CMSampleBufferRef@...
 
 ---
 
+### Phase 4.5: Decode Single Frame ✅
+**Completed**: 2026-01-08
+
+**What we accomplished**:
+- ✅ Implemented `decompress()` function calling `VTDecompressionSessionDecodeFrame()`
+- ✅ Added `VTDecompressionSessionWaitForAsynchronousFrames()` to block until decoder finishes
+- ✅ Successfully decoded first ProRes frame (8.7MB compressed → CVPixelBuffer)
+- ✅ Callback invoked with decoded CVPixelBuffer
+
+**Output**:
+```
+✅ Decode callback received frame: *CVPixelBufferRef@...
+✅ Frame sent to decoder
+✅ Decoder finished, callback was invoked
+```
+
+**Key Learning**:
+- `VTDecompressionSessionDecodeFrame()` is async—it returns immediately
+- `VTDecompressionSessionWaitForAsynchronousFrames()` blocks until callback completes
+- Callback fires on background thread with CVPixelBuffer result
+
+**Files Modified**:
+- `src/io/decode/vtb_decode.zig` - Implemented decompress() function, added error types
+
+---
+
 ## 🚧 Current Phase
 
-### Phase 4.5: Decode Single Frame (Next)
+### Phase 4.6: Extract & Verify CVPixelBuffer (Next)
 
 ---
 
