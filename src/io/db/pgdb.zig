@@ -151,11 +151,11 @@ pub fn createSource(pool: *pg.Pool, source_media: *const media.SourceMedia) !i32
 
     // Simplified INSERT - omit optional/complex fields for now
     const result = try conn.query(
-        \\INSERT INTO sources 
-        \\  (path, filename, codec, width, height, 
-        \\   frame_rate_num, frame_rate_den, 
-        \\   start_timecode, drop_frame, duration_frames)
-        \\VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        \\INSERT INTO sources
+        \\  (path, filename, codec, width, height,
+        \\   frame_rate_num, frame_rate_den,
+        \\   start_timecode, end_timecode, drop_frame, duration_frames)
+        \\VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         \\RETURNING id
     , .{
         source_media.file_path,
@@ -166,6 +166,7 @@ pub fn createSource(pool: *pg.Pool, source_media: *const media.SourceMedia) !i32
         @as(i32, @intCast(source_media.frame_rate.num)),
         @as(i32, @intCast(source_media.frame_rate.den)),
         source_media.start_timecode,
+        source_media.end_timecode,
         source_media.drop_frame,
         source_media.duration_in_frames,
     });
@@ -265,10 +266,7 @@ pub fn initializeDatabase(pool: *pg.Pool) !void {
     defer conn.release();
 
     // Drop existing dependent tables if they exist (for development/testing)
-    _ = try conn.exec(
-        "DROP TABLE IF EXISTS timeline_clips, grade_nodes, timelines, sources CASCADE",
-        .{}
-    );
+    _ = try conn.exec("DROP TABLE IF EXISTS timeline_clips, grade_nodes, timelines, sources CASCADE", .{});
 
     // Recreate sources table with full schema
     _ = try conn.exec(
@@ -316,8 +314,7 @@ pub fn initializeDatabase(pool: *pg.Pool) !void {
         \\    created_at TIMESTAMPTZ DEFAULT NOW(),
         \\    modified_at TIMESTAMPTZ DEFAULT NOW()
         \\)
-        , .{}
-    );
+    , .{});
 
     // Create index
     _ = try conn.exec("CREATE INDEX idx_sources_path ON sources(path)", .{});
@@ -331,16 +328,14 @@ pub fn initializeDatabase(pool: *pg.Pool) !void {
         \\    RETURN NEW;
         \\END;
         \\$$ LANGUAGE plpgsql
-        , .{}
-    );
+    , .{});
 
     _ = try conn.exec(
         \\CREATE TRIGGER update_sources_modified_at
         \\    BEFORE UPDATE ON sources
         \\    FOR EACH ROW
         \\    EXECUTE FUNCTION update_modified_at()
-        , .{}
-    );
+    , .{});
 
     std.debug.print("✓ Database initialized with new sources schema\n", .{});
 }
@@ -369,8 +364,7 @@ pub fn resetAndInitializeDatabase(pool: *pg.Pool) !void {
         \\    default_resolution_height INT,
         \\    working_color_space TEXT DEFAULT 'rec709'
         \\)
-        , .{}
-    );
+    , .{});
 
     // Recreate sources table with full schema
     _ = try conn.exec(
@@ -418,8 +412,7 @@ pub fn resetAndInitializeDatabase(pool: *pg.Pool) !void {
         \\    created_at TIMESTAMPTZ DEFAULT NOW(),
         \\    modified_at TIMESTAMPTZ DEFAULT NOW()
         \\)
-        , .{}
-    );
+    , .{});
 
     // Recreate timelines table
     _ = try conn.exec(
@@ -432,8 +425,7 @@ pub fn resetAndInitializeDatabase(pool: *pg.Pool) !void {
         \\    created_at TIMESTAMPTZ DEFAULT NOW(),
         \\    modified_at TIMESTAMPTZ DEFAULT NOW()
         \\)
-        , .{}
-    );
+    , .{});
 
     // Recreate timeline_clips table
     _ = try conn.exec(
@@ -455,8 +447,7 @@ pub fn resetAndInitializeDatabase(pool: *pg.Pool) !void {
         \\    created_at TIMESTAMPTZ DEFAULT NOW(),
         \\    modified_at TIMESTAMPTZ DEFAULT NOW()
         \\)
-        , .{}
-    );
+    , .{});
 
     // Recreate grade_nodes table
     _ = try conn.exec(
@@ -474,8 +465,7 @@ pub fn resetAndInitializeDatabase(pool: *pg.Pool) !void {
         \\    created_at TIMESTAMPTZ DEFAULT NOW(),
         \\    modified_at TIMESTAMPTZ DEFAULT NOW()
         \\)
-        , .{}
-    );
+    , .{});
 
     // Recreate versions table
     _ = try conn.exec(
@@ -487,8 +477,7 @@ pub fn resetAndInitializeDatabase(pool: *pg.Pool) !void {
         \\    created_by TEXT,
         \\    snapshot_data JSONB
         \\)
-        , .{}
-    );
+    , .{});
 
     // Create indexes
     _ = try conn.exec("CREATE INDEX idx_timeline_clips_timeline ON timeline_clips(timeline_id)", .{});
@@ -505,57 +494,48 @@ pub fn resetAndInitializeDatabase(pool: *pg.Pool) !void {
         \\    RETURN NEW;
         \\END;
         \\$$ LANGUAGE plpgsql
-        , .{}
-    );
+    , .{});
 
     // Create triggers
     _ = try conn.exec(
         \\DROP TRIGGER IF EXISTS update_projects_modified_at ON projects
-        , .{}
-    );
+    , .{});
     _ = try conn.exec(
         \\CREATE TRIGGER update_projects_modified_at
         \\    BEFORE UPDATE ON projects
         \\    FOR EACH ROW
         \\    EXECUTE FUNCTION update_modified_at()
-        , .{}
-    );
+    , .{});
 
     _ = try conn.exec(
         \\DROP TRIGGER IF EXISTS update_timelines_modified_at ON timelines
-        , .{}
-    );
+    , .{});
     _ = try conn.exec(
         \\CREATE TRIGGER update_timelines_modified_at
         \\    BEFORE UPDATE ON timelines
         \\    FOR EACH ROW
         \\    EXECUTE FUNCTION update_modified_at()
-        , .{}
-    );
+    , .{});
 
     _ = try conn.exec(
         \\DROP TRIGGER IF EXISTS update_timeline_clips_modified_at ON timeline_clips
-        , .{}
-    );
+    , .{});
     _ = try conn.exec(
         \\CREATE TRIGGER update_timeline_clips_modified_at
         \\    BEFORE UPDATE ON timeline_clips
         \\    FOR EACH ROW
         \\    EXECUTE FUNCTION update_modified_at()
-        , .{}
-    );
+    , .{});
 
     _ = try conn.exec(
         \\DROP TRIGGER IF EXISTS update_sources_modified_at ON sources
-        , .{}
-    );
+    , .{});
     _ = try conn.exec(
         \\CREATE TRIGGER update_sources_modified_at
         \\    BEFORE UPDATE ON sources
         \\    FOR EACH ROW
         \\    EXECUTE FUNCTION update_modified_at()
-        , .{}
-    );
+    , .{});
 
     std.debug.print("✓ Database fully reset and reinitialized with new schema\n", .{});
 }

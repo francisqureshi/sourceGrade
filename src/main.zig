@@ -88,6 +88,7 @@ fn testSourceIntegration() !void {
     std.debug.print("  Resolution: {d}x{d}\n", .{ source_media.resolution.width, source_media.resolution.height });
     std.debug.print("  Duration: {d} frames\n", .{source_media.duration_in_frames});
     std.debug.print("  Frame rate: {d}/{d} = {d:.2}fps\n", .{ source_media.frame_rate.num, source_media.frame_rate.den, source_media.frame_rate_float });
+    std.debug.print("  StartTC: {s} --- End TC: {s}\n", .{ source_media.start_timecode, source_media.end_timecode });
 
     // Initialize database
     var io_impl = std.Io.Threaded.init(allocator, .{});

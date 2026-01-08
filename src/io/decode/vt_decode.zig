@@ -51,13 +51,6 @@ fn createFormatDescription(source_media: media.SourceMedia) !vtb.CMVideoFormatDe
 
     const image_desc_data = source_media.stsd_data[image_desc_offset..];
 
-    std.debug.print("stsd_data size: {d} bytes, image_desc size: {d} bytes\n", .{ source_media.stsd_data.len, image_desc_data.len });
-    std.debug.print("First 16 bytes of image_desc: ", .{});
-    for (image_desc_data[0..@min(16, image_desc_data.len)]) |b| {
-        std.debug.print("{X:0>2} ", .{b});
-    }
-    std.debug.print("\n", .{});
-
     // Use the QuickTime-specific function that takes raw ImageDescription data
     const status = vtb.CMVideoFormatDescriptionCreateFromBigEndianImageDescriptionData(
         null,
@@ -76,19 +69,48 @@ fn createFormatDescription(source_media: media.SourceMedia) !vtb.CMVideoFormatDe
 }
 
 fn createDecompressionSession(format_desc: vtb.CMVideoFormatDescriptionRef) !vtb.VTDecompressionSessionRef {
+    // Create CFNumber for pixel format
+    var pixel_format: u32 = vtb.kCVPixelFormatType_32BGRA;
+    const pixel_format_number = vtb.CFNumberCreate(
+        null,
+        vtb.kCFNumberSInt32Type,
+        &pixel_format,
+    );
+    defer vtb.CFRelease(pixel_format_number);
+
+    // Create arrays for dictionary
+    const keys = [_]?*const anyopaque{
+        @ptrCast(vtb.kCVPixelBufferPixelFormatTypeKey),
+        @ptrCast(vtb.kCVPixelBufferMetalCompatibilityKey),
+    };
+    const values = [_]?*const anyopaque{
+        @ptrCast(pixel_format_number),
+        @ptrCast(vtb.kCFBooleanTrue),
+    };
+
+    const pixel_attrs = vtb.CFDictionaryCreate(
+        null,
+        &keys[0],
+        &values[0],
+        2,
+        null,
+        null,
+    );
+    defer vtb.CFRelease(pixel_attrs);
+
     // Create callback record
     const callback_record = vtb.VTDecompressionOutputCallbackRecord{
         .decompressionOutputCallback = decompressionOutputCallback,
         .decompressionOutputRefCon = null,
     };
 
-    // Create decompression session (use null for pixel_attrs for now to test)
+    // Create decompression session
     var session: vtb.VTDecompressionSessionRef = null;
     const status = vtb.VTDecompressionSessionCreate(
         null, // allocator
         format_desc,
         null, // Let VideoToolbox choose decoder automatically
-        null, // null pixel attrs for testing
+        pixel_attrs, // BGRA + Metal compatible output
         &callback_record,
         &session,
     );
@@ -112,9 +134,10 @@ pub fn decode(source_media: media.SourceMedia) !void {
     try verifyFmtDes(format_desc);
 
     // Check if hardware decode is supported for this codec
-    const codec_type = vtb.CMFormatDescriptionGetMediaSubType(format_desc);
-    const hw_supported = vtb.VTIsHardwareDecodeSupported(codec_type);
-    std.debug.print("Hardware decode supported: {}\n", .{hw_supported != 0});
+    // Note: VTIsHardwareDecodeSupported can be unreliable for ProRes, skip for now
+    // const codec_type = vtb.CMFormatDescriptionGetMediaSubType(format_desc);
+    // const hw_supported = vtb.VTIsHardwareDecodeSupported(codec_type);
+    // std.debug.print("Hardware decode supported: {}\n", .{hw_supported != 0});
 
     const session = try createDecompressionSession(format_desc);
     defer {
