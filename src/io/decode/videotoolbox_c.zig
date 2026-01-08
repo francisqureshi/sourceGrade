@@ -251,6 +251,18 @@ pub extern "c" fn CMSampleBufferCreate(
     sampleBufferOut: *CMSampleBufferRef,
 ) OSStatus;
 
+pub extern "c" fn CMSampleBufferCreateReady(
+    allocator: CFAllocatorRef,
+    dataBuffer: CMBlockBufferRef,
+    formatDescription: CMVideoFormatDescriptionRef,
+    numSamples: i32,
+    numSampleTimingEntries: i32,
+    sampleTimingArray: ?[*]const CMSampleTimingInfo,
+    numSampleSizeEntries: i32,
+    sampleSizeArray: ?[*]const u32,
+    sampleBufferOut: *CMSampleBufferRef,
+) OSStatus;
+
 pub extern "c" fn CMSampleBufferGetImageBuffer(
     sbuf: CMSampleBufferRef,
 ) CVPixelBufferRef;

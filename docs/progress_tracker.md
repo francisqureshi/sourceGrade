@@ -106,24 +106,42 @@ Format description created: *CMVideoFormatDescriptionRef@...
 
 ---
 
+### Phase 4.4: Create CMBlockBuffer & CMSampleBuffer ✅
+**Completed**: 2026-01-08
+
+**What we accomplished**:
+- ✅ Read raw frame data using `SourceMedia.readFrame()` (8.7MB ProRes frame)
+- ✅ Created CMBlockBuffer wrapping compressed frame bytes with `CMBlockBufferCreateWithMemoryBlock()`
+- ✅ Created CMSampleTimingInfo with PTS = frame_index × frame_duration, duration = frame_duration
+- ✅ Created CMSampleBuffer combining block buffer + timing + format description with `CMSampleBufferCreateReady()`
+- ✅ Made `getFrameSize()` and `readFrame()` accept const pointers (they don't mutate)
+- ✅ Added `CMSampleBufferCreateReady` binding to videotoolbox_c.zig
+
+**Key Learnings**:
+- `CMTime` maps directly to `Rational`: value = frame_index × den, timescale = num
+- PTS for frame N: `CMTimeMake(N × frame_rate.den, frame_rate.num)`
+- `@intCast(usize → i32)` needed for timescale conversion
+- Array literals `&[_]Type{val}` convert single pointers to many-pointers for C APIs
+- Zig defer moves cleanup of dependent objects to single block (timing_info depends on frame_rate)
+
+**Output**:
+```
+block_buffer: *CMBlockBufferRef@...
+sample_buffer: *CMSampleBufferRef@...
+```
+
+**Technical Note**: Currently mixing Zig allocator with CoreFoundation (kCFAllocatorNull). Buffer lifetime works for single frame, but should refactor before production use.
+
+**Files Modified**:
+- `src/io/decode/vtb_decode.zig` - Added createSampleTimingInfo() and createSampleBuffer() functions
+- `src/io/decode/videotoolbox_c.zig` - Added CMSampleBufferCreateReady binding
+- `src/io/media.zig` - Made getFrameSize() and readFrame() accept const pointers
+
+---
+
 ## 🚧 Current Phase
 
-### Phase 4.4: Create CMBlockBuffer & CMSampleBuffer (Next)
-
-**Goal**: Prepare compressed frame data for decoding
-
-**What's needed**:
-1. Read raw frame data using `SourceMedia.readFrame()`
-2. Create CMBlockBuffer wrapping the compressed frame bytes
-3. Create CMSampleTimingInfo with PTS and duration
-4. Create CMSampleBuffer combining block buffer + timing + format description
-5. Verify CMSampleBuffer is valid
-
-**Functions to use**:
-- `CMBlockBufferCreateWithMemoryBlock()` - wrap raw frame data
-- `CMTimeMake()` - create presentation timestamps
-- `CMSampleBufferCreate()` - combine everything into sample buffer
-- `CMSampleBufferIsValid()` - verify it worked
+### Phase 4.5: Decode Single Frame (Next)
 
 ---
 
@@ -171,10 +189,11 @@ Format description created: *CMVideoFormatDescriptionRef@...
 ---
 
 **Last Updated**: 2026-01-08
-**Current Status**: Phase 4.3 Complete ✅ → Starting Phase 4.4
+**Current Status**: Phase 4.4 Complete ✅ → Starting Phase 4.5
 
 ## 🎯 Recent Wins
 
-- Successfully created VTDecompressionSession with BGRA + Metal compatible output!
-- ProRes 4444 hardware decoding pipeline initialized
-- Clean error handling and memory management with proper defer order
+- Successfully created CMSampleBuffer with timing info from frame data!
+- Block buffer + timing + format description all working together
+- Ready to feed sample buffer to decoder and receive CVPixelBuffer
+- ProRes 4444 decoding pipeline 80% complete

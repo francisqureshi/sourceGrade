@@ -146,6 +146,54 @@ fn createBlockBuffer(frame_data: []u8) !vtb.CMBlockBufferRef {
     return block_buffer.?;
 }
 
+fn createSampleTimingInfo(
+    frame_index: usize,
+    source_media: media.SourceMedia,
+) vtb.CMSampleTimingInfo {
+    // PTS = frame_index × frame_duration / timescale
+    // For frame 0: PTS = 0
+    const pts_value: i64 = @as(i64, @intCast(frame_index)) * @as(i64, @intCast(source_media.frame_rate.den));
+    const pts = vtb.CMTimeMake(pts_value, @as(i32, @intCast(source_media.frame_rate.num)));
+
+    // Duration = frame_duration / timescale
+    const duration = vtb.CMTimeMake(@as(i64, @intCast(source_media.frame_rate.den)), @as(i32, @intCast(source_media.frame_rate.num)));
+
+    // DTS (decode timestamp) is usually same as PTS for intraframe codecs like ProRes
+    const dts = pts;
+
+    return .{
+        .duration = duration,
+        .presentationTimeStamp = pts,
+        .decodeTimeStamp = dts,
+    };
+}
+
+fn createSampleBuffer(
+    block_buffer: vtb.CMBlockBufferRef,
+    timing_info: vtb.CMSampleTimingInfo,
+    format_desc: vtb.CMVideoFormatDescriptionRef,
+) !vtb.CMSampleBufferRef {
+    var sample_buffer: vtb.CMSampleBufferRef = null;
+
+    const status = vtb.CMSampleBufferCreateReady(
+        vtb.kCFAllocatorDefault, // allocator
+        block_buffer, // dataBuffer (our block buffer)
+        format_desc, // formatDescription
+        1, // numSamples (1 frame)
+        1, // numSampleTimingEntries
+        &[_]vtb.CMSampleTimingInfo{timing_info}, // sampleTimingArray
+        0, // numSampleSizeEntries
+        null, // sampleSizeArray
+        &sample_buffer, // sampleBufferOut
+    );
+
+    if (status != vtb.noErr) {
+        return error.CreateSampleBufferFailed;
+    }
+
+    return sample_buffer.?;
+}
+
 pub fn decode(source_media: media.SourceMedia, mctx: media.MediaContext) !void {
     std.debug.print("\n=== VideoToolbox Tests ===\n", .{});
 
@@ -178,6 +226,12 @@ pub fn decode(source_media: media.SourceMedia, mctx: media.MediaContext) !void {
 
     const block_buffer = try createBlockBuffer(buffer);
     std.debug.print("block_buffer: {*}\n", .{block_buffer});
+
+    const timing_info = createSampleTimingInfo(0, source_media);
+    const sample_buffer = try createSampleBuffer(block_buffer, timing_info, format_desc);
+    defer vtb.CFRelease(sample_buffer);
+
+    std.debug.print("sample_buffer: {*}\n", .{sample_buffer});
 
     defer mctx.allocator.free(buffer);
 }
