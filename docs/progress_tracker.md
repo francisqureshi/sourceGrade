@@ -69,37 +69,70 @@ Created complete manual extern declarations for Apple frameworks:
 
 ---
 
+### Phase 4.3: Create VTDecompressionSession ✅
+**Completed**: 2026-01-08
+
+**What we accomplished**:
+- ✅ Added `stsd_data` field to `SourceMedia` struct (with proper allocation/deallocation)
+- ✅ Used `CMVideoFormatDescriptionCreateFromBigEndianImageDescriptionData` for QuickTime/ProRes
+- ✅ Correctly extracted ImageDescription from stsd atom (offset 8 bytes)
+- ✅ Added `CFStringEncoding`, `CMImageDescriptionFlavor`, and `CFStringGetSystemEncoding()` to C bindings
+- ✅ Created CFNumber for pixel format (kCVPixelFormatType_32BGRA)
+- ✅ Created CFDictionary for pixel buffer attributes (BGRA + Metal compatibility)
+- ✅ Defined `decompressionOutputCallback` with correct signature (export fn, .c callconv)
+- ✅ Created VTDecompressionOutputCallbackRecord
+- ✅ Successfully called `VTDecompressionSessionCreate()`
+- ✅ Fixed defer order for proper cleanup (Invalidate then Release in single defer block)
+
+**Key Learnings**:
+- `extern var` values are already pointers - don't use `&` when passing CFString extern vars
+- Zig defer statements execute in REVERSE order (LIFO) - combine related cleanup in single defer block
+- QuickTime stsd atom structure: [4 bytes version/flags][4 bytes entry count][ImageDescription...]
+- `CMVideoFormatDescriptionCreateFromBigEndianImageDescriptionData` is the correct API for QuickTime/ProRes
+
+**Output**:
+```
+Format description created: *CMVideoFormatDescriptionRef@...
+   Codec FourCC: 0x61703468 ('h4pa')
+   Dimensions: 4096x2928
+✅ Decompression session created successfully!
+🎉 Phase 4.3 Complete! VTDecompressionSession created successfully!
+```
+
+**Files Modified**:
+- `src/io/media.zig` - Added `stsd_data` field
+- `src/io/decode/videotoolbox_c.zig` - Added CMVideoFormatDescriptionCreateFromBigEndianImageDescriptionData
+- `src/io/decode/vt_decode.zig` - Implemented complete session creation
+
+---
+
 ## 🚧 Current Phase
 
-### Phase 4.3: Create VTDecompressionSession (Next)
+### Phase 4.4: Create CMBlockBuffer & CMSampleBuffer (Next)
 
-**Goal**: Create the decoder session that will decode frames
+**Goal**: Prepare compressed frame data for decoding
 
 **What's needed**:
-1. Create output pixel buffer attributes dictionary (BGRA8 + Metal compatible)
-2. Define decompression callback function
-3. Create VTDecompressionOutputCallbackRecord
-4. Call `VTDecompressionSessionCreate()`
-5. Verify session created successfully
+1. Read raw frame data using `SourceMedia.readFrame()`
+2. Create CMBlockBuffer wrapping the compressed frame bytes
+3. Create CMSampleTimingInfo with PTS and duration
+4. Create CMSampleBuffer combining block buffer + timing + format description
+5. Verify CMSampleBuffer is valid
 
 **Functions to use**:
-- `CFDictionaryCreate()` - for pixel buffer attributes
-- `VTDecompressionSessionCreate()` - create session
-- Callback with signature matching `VTDecompressionOutputCallback`
+- `CMBlockBufferCreateWithMemoryBlock()` - wrap raw frame data
+- `CMTimeMake()` - create presentation timestamps
+- `CMSampleBufferCreate()` - combine everything into sample buffer
+- `CMSampleBufferIsValid()` - verify it worked
 
 ---
 
 ## 📋 Remaining Phases
 
-### Phase 4.4: Create CMBlockBuffer & CMSampleBuffer
-- Create CMBlockBuffer from raw frame data
-- Create CMSampleBuffer with timing info
-- Use data from `SourceMedia.readFrame()`
-
-### Phase 4.5: Decode Single Frame
-- Call `VTDecompressionSessionDecodeFrame()`
-- Implement callback to receive CVPixelBuffer
-- Call `VTDecompressionSessionWaitForAsynchronousFrames()`
+### Phase 4.5: Decode Single Frame (Not Started)
+- Call `VTDecompressionSessionDecodeFrame()` with CMSampleBuffer
+- Wait for callback to receive CVPixelBuffer
+- Call `VTDecompressionSessionWaitForAsynchronousFrames()` to ensure completion
 
 ### Phase 5: Synchronous Decode Wrapper
 - Add mutex + condition variable for blocking
@@ -137,5 +170,11 @@ Created complete manual extern declarations for Apple frameworks:
 
 ---
 
-**Last Updated**: 2026-01-06
-**Current Status**: Phase 4.2 Complete ✅ → Starting Phase 4.3
+**Last Updated**: 2026-01-08
+**Current Status**: Phase 4.3 Complete ✅ → Starting Phase 4.4
+
+## 🎯 Recent Wins
+
+- Successfully created VTDecompressionSession with BGRA + Metal compatible output!
+- ProRes 4444 hardware decoding pipeline initialized
+- Clean error handling and memory management with proper defer order
