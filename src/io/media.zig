@@ -37,6 +37,7 @@ pub const SourceMedia = struct {
     end_frame_number: i64,
     reel_name: ?[]const u8,
     codec: []const u8,
+    stsd_data: []const u8,
     frames: []mov.FrameInfo,
 
     pub fn init(ctx: MediaContext) !SourceMedia {
@@ -77,6 +78,12 @@ pub const SourceMedia = struct {
         const codec_array = vi.codec;
         const codec = try ctx.allocator.dupe(u8, &codec_array);
         errdefer ctx.allocator.free(codec);
+
+        const stsd_data = if (vt.stsd_data) |data|
+            try ctx.allocator.dupe(u8, data)
+        else
+            return error.NoStsdData;
+        errdefer ctx.allocator.free(stsd_data);
 
         const frame_duration = if (stts.len > 0) stts[0].sample_duration else return error.NoFrameDuration;
         const frame_rate = Rational{ .num = mdhd.timescale, .den = frame_duration };
@@ -134,6 +141,7 @@ pub const SourceMedia = struct {
             .end_frame_number = end_frame_number,
             .reel_name = null,
             .codec = codec,
+            .stsd_data = stsd_data,
             .frames = frames,
         };
     }
@@ -164,6 +172,7 @@ pub const SourceMedia = struct {
         allocator.free(self.file_path);
         allocator.free(self.file_name);
         allocator.free(self.codec);
+        allocator.free(self.stsd_data);
         allocator.free(self.frames);
         allocator.free(self.start_timecode);
         allocator.free(self.end_timecode);

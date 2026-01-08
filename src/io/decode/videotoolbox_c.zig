@@ -169,6 +169,9 @@ pub const VTDecompressionOutputCallbackRecord = extern struct {
 // CoreMedia - CMFormatDescription functions
 // ============================================================================
 
+pub const CFStringEncoding = u32;
+pub const CMImageDescriptionFlavor = CFStringRef;
+
 pub extern "c" fn CMVideoFormatDescriptionCreate(
     allocator: CFAllocatorRef,
     codecType: FourCharCode,
@@ -177,6 +180,17 @@ pub extern "c" fn CMVideoFormatDescriptionCreate(
     extensions: CFDictionaryRef,
     formatDescriptionOut: *CMVideoFormatDescriptionRef,
 ) OSStatus;
+
+pub extern "c" fn CMVideoFormatDescriptionCreateFromBigEndianImageDescriptionData(
+    allocator: CFAllocatorRef,
+    imageDescriptionData: [*]const u8,
+    size: usize,
+    stringEncoding: CFStringEncoding,
+    flavor: CMImageDescriptionFlavor,
+    formatDescriptionOut: *CMVideoFormatDescriptionRef,
+) OSStatus;
+
+pub extern "c" fn CFStringGetSystemEncoding() CFStringEncoding;
 
 pub extern "c" fn CMVideoFormatDescriptionGetDimensions(
     videoDesc: CMVideoFormatDescriptionRef,

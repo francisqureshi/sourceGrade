@@ -38,21 +38,41 @@ export fn decompressionOutputCallback(
 fn createFormatDescription(source_media: media.SourceMedia) !vtb.CMVideoFormatDescriptionRef {
     var format_desc: vtb.CMVideoFormatDescriptionRef = null;
 
-    const status =
-        vtb.CMVideoFormatDescriptionCreate(
-            null,
-            @bitCast(source_media.codec[0..4].*),
-            @intCast(source_media.resolution.width),
-            @intCast(source_media.resolution.height),
-            null,
-            &format_desc,
-        );
+    // stsd atom structure:
+    // 0-3: version/flags (4 bytes)
+    // 4-7: entry count (4 bytes)
+    // 8+:  ImageDescription data
+    const image_desc_offset = 8;
 
-    if (status != vtb.noErr) {
-        std.debug.print("CMVideoFormatDescriptionCreate failed: {d}\n", .{status});
+    if (source_media.stsd_data.len < image_desc_offset) {
+        std.debug.print("stsd_data too small: {d} bytes\n", .{source_media.stsd_data.len});
         return error.CreateFormatDescriptionFailed;
     }
-    return format_desc.?; // Return the non-null value
+
+    const image_desc_data = source_media.stsd_data[image_desc_offset..];
+
+    std.debug.print("stsd_data size: {d} bytes, image_desc size: {d} bytes\n", .{ source_media.stsd_data.len, image_desc_data.len });
+    std.debug.print("First 16 bytes of image_desc: ", .{});
+    for (image_desc_data[0..@min(16, image_desc_data.len)]) |b| {
+        std.debug.print("{X:0>2} ", .{b});
+    }
+    std.debug.print("\n", .{});
+
+    // Use the QuickTime-specific function that takes raw ImageDescription data
+    const status = vtb.CMVideoFormatDescriptionCreateFromBigEndianImageDescriptionData(
+        null,
+        image_desc_data.ptr,
+        image_desc_data.len,
+        vtb.CFStringGetSystemEncoding(),
+        null, // NULL = QuickTimeMovie flavor (default)
+        &format_desc,
+    );
+
+    if (status != vtb.noErr) {
+        std.debug.print("CMVideoFormatDescriptionCreateFromBigEndianImageDescriptionData failed: {d}\n", .{status});
+        return error.CreateFormatDescriptionFailed;
+    }
+    return format_desc.?;
 }
 
 fn createDecompressionSession(format_desc: vtb.CMVideoFormatDescriptionRef) !vtb.VTDecompressionSessionRef {
