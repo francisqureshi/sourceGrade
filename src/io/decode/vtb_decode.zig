@@ -124,7 +124,29 @@ fn createDecompressionSession(format_desc: vtb.CMVideoFormatDescriptionRef) !vtb
     return session.?;
 }
 
-pub fn decode(source_media: media.SourceMedia) !void {
+fn createBlockBuffer(frame_data: []u8) !vtb.CMBlockBufferRef {
+    var block_buffer: vtb.CMBlockBufferRef = null;
+
+    const status = vtb.CMBlockBufferCreateWithMemoryBlock(
+        vtb.kCFAllocatorDefault,
+        frame_data.ptr,
+        frame_data.len,
+        vtb.kCFAllocatorNull,
+        null,
+        0,
+        frame_data.len,
+        0,
+        &block_buffer,
+    );
+
+    if (status != vtb.noErr) {
+        return error.CreateBlockBufferFailed;
+    }
+
+    return block_buffer.?;
+}
+
+pub fn decode(source_media: media.SourceMedia, mctx: media.MediaContext) !void {
     std.debug.print("\n=== VideoToolbox Tests ===\n", .{});
 
     const format_desc = try createFormatDescription(source_media);
@@ -134,10 +156,9 @@ pub fn decode(source_media: media.SourceMedia) !void {
     try verifyFmtDes(format_desc);
 
     // Check if hardware decode is supported for this codec
-    // Note: VTIsHardwareDecodeSupported can be unreliable for ProRes, skip for now
-    // const codec_type = vtb.CMFormatDescriptionGetMediaSubType(format_desc);
-    // const hw_supported = vtb.VTIsHardwareDecodeSupported(codec_type);
-    // std.debug.print("Hardware decode supported: {}\n", .{hw_supported != 0});
+    const codec_type = vtb.CMFormatDescriptionGetMediaSubType(format_desc);
+    const hw_supported = vtb.VTIsHardwareDecodeSupported(codec_type);
+    std.debug.print("Hardware decode supported: {}\n", .{hw_supported != 0});
 
     const session = try createDecompressionSession(format_desc);
     defer {
@@ -146,6 +167,19 @@ pub fn decode(source_media: media.SourceMedia) !void {
     }
 
     std.debug.print("🎉 Phase 4.3 Complete! VTDecompressionSession created successfully!\n", .{});
+
+    const frame_size = try source_media.getFrameSize(0);
+    std.debug.print("\nFirst frame size: {d} bytes\n", .{frame_size});
+
+    const buffer = try mctx.allocator.alloc(u8, frame_size);
+
+    const bytes_read = try source_media.readFrame(mctx, 0, buffer);
+    std.debug.print("Read {d} bytes from frame 0\n", .{bytes_read});
+
+    const block_buffer = try createBlockBuffer(buffer);
+    std.debug.print("block_buffer: {*}\n", .{block_buffer});
+
+    defer mctx.allocator.free(buffer);
 }
 
 //
