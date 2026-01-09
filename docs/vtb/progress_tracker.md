@@ -197,7 +197,7 @@ Got pixel buffer: *CVPixelBufferRef@6000016e00a0
 
 ---
 
-## 🚧 Current Phase
+## ✅ COMPLETE PHASES
 
 ### Phase 6: VideoToolboxDecoder Struct ✅ COMPLETE (2026-01-09)
 
@@ -224,18 +224,55 @@ Got pixel buffer: *CVPixelBufferRef@6000016e00a0
 - Block buffer needs CFRelease (it's a CF object)
 - Frame context must be reset to null before each decode
 
-**API**:
+**Files Modified**:
+- `src/io/decode/vtb_decode.zig` - Implemented VideoToolboxDecoder struct with init/deinit/decodeFrame
+- `src/io/decode/videotoolbox_c.zig` - Added comprehensive documentation
+
+---
+
+### Phase 6.5: DecodedFrame Wrapper & Ownership Model ✅ COMPLETE (2026-01-09)
+
+**Goal**: Clean up resource ownership - caller should own decoded frames, not decoder
+
+**What we accomplished**:
+- ✅ Fixed frame_ctx lifetime bug - changed from copy to heap-allocated pointer
+  - `frame_ctx: FrameContext` → `frame_ctx: *FrameContext`
+  - Allocate with `mctx.allocator.create(FrameContext)` in init()
+  - Deallocate with `mctx.allocator.destroy(self.frame_ctx)` in deinit()
+  - Fixes dangling pointer issue in callback
+- ✅ Created `DecodedFrame` wrapper struct for safe ownership
+  - Holds CVPixelBufferRef
+  - Provides `deinit()` method that calls CFRelease()
+- ✅ Updated `decodeFrame()` return type: `CVPixelBufferRef` → `DecodedFrame`
+- ✅ Made `deinit()` accept `*const DecodedFrame` (non-mutating cleanup)
+- ✅ Fixed double-release bug - removed defer on block_buffer (owned by sample_buffer)
+
+**Key Learnings**:
+- Callback context must live in struct field, not local variable - use heap allocation
+- Sample buffer owns block buffer - don't release it separately
+- deinit() methods should take `*const T` when they only deallocate
+- Wrapper structs integrate cleanly with Zig's defer pattern
+
+**API** (Production-Ready):
 ```zig
 var decoder = try VideoToolboxDecoder.init(&source_media, &mctx);
 defer decoder.deinit();
 
-const pixel_buffer = try decoder.decodeFrame(frame_index);
-defer vtb.CFRelease(pixel_buffer);
+const frame = try decoder.decodeFrame(0);
+defer frame.deinit();  // Caller owns the frame, manages cleanup
+
+// Use frame.pixel_buffer as needed
+std.debug.print("Frame: {*}\n", .{frame.pixel_buffer});
 ```
 
+**Tested**:
+- ✅ Single frame decode (ProRes 4444, 4608×3164, 8.7MB)
+- ✅ Proper cleanup with no malloc errors
+- ✅ Decoder lifetime independent from frame lifetime
+
 **Files Modified**:
-- `src/io/decode/vtb_decode.zig` - Implemented VideoToolboxDecoder struct with init/deinit/decodeFrame
-- `src/io/decode/videotoolbox_c.zig` - Added comprehensive documentation
+- `src/io/decode/vtb_decode.zig` - Heap-allocated frame_ctx, DecodedFrame wrapper
+- `src/main.zig` - Updated to use `defer frame.deinit()` pattern
 
 ---
 
@@ -273,12 +310,16 @@ defer vtb.CFRelease(pixel_buffer);
 ---
 
 **Last Updated**: 2026-01-09
-**Current Status**: Phase 6 Complete ✅ → VideoToolboxDecoder production-ready! Ready for Phase 7 (Integration with media.zig)
+**Current Status**: Phase 6.5 Complete ✅ → DecodedFrame API production-ready! Ready for Phase 7 (Integration with media.zig)
 
 ## 🎯 Recent Wins
 
 - 🎉 **ProRes 4444 hardware decoding fully working!**
+- ✅ Fixed frame_ctx lifetime issue - heap allocation for callback safety
+- ✅ DecodedFrame wrapper for clean ownership semantics
+- ✅ No more malloc errors - proper CF object lifecycle management
 - Successfully capturing and retaining CVPixelBuffers from async decoder
 - Proper memory management with CFRetain/CFRelease
-- Full decode pipeline: MOV parsing → CMSampleBuffer → VTDecompressionSession → CVPixelBuffer
+- Full decode pipeline: MOV parsing → CMSampleBuffer → VTDecompressionSession → CVPixelBuffer → DecodedFrame
+- Production-ready API with defer pattern integration
 - Ready for Metal texture conversion and GPU rendering

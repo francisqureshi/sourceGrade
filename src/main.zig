@@ -160,9 +160,9 @@ fn testSourceIntegration() !void {
 
     // Decode first frame
     const pixel_buffer = try decoder.decodeFrame(0);
-    defer vtbFW.CFRelease(pixel_buffer);
+    defer pixel_buffer.deinit();
 
-    std.debug.print("Successfully decoded frame 0: {*}\n", .{pixel_buffer});
+    std.debug.print("Successfully decoded frame 0: {*}\n", .{pixel_buffer.pixel_buffer});
 }
 
 pub fn main() !void {

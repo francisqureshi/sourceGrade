@@ -38,7 +38,7 @@ pub const VideoToolboxDecoder = struct {
     pub fn decodeFrame(
         self: *VideoToolboxDecoder,
         frame_index: usize,
-    ) !vtb.CVPixelBufferRef {
+    ) !DecodedFrame {
         self.frame_ctx.pixel_buffer = null;
 
         const frame_size = try self.source_media.getFrameSize(frame_index);
@@ -67,7 +67,7 @@ pub const VideoToolboxDecoder = struct {
         // Now frame_ctx.pixel_buffer contains the decoded frame!
         if (self.frame_ctx.pixel_buffer) |pb| {
             std.debug.print("Got pixel buffer: {*}\n", .{pb});
-            return pb;
+            return DecodedFrame{ .pixel_buffer = pb };
         } else {
             std.debug.print("XXX ERROR: Callback did not populate pixel_buffer!\n", .{});
             return error.DecodeFrameFailed;
@@ -92,6 +92,14 @@ const VideoToolboxError = error{
 };
 const FrameContext = struct {
     pixel_buffer: ?vtb.CVPixelBufferRef,
+};
+
+pub const DecodedFrame = struct {
+    pixel_buffer: vtb.CVPixelBufferRef,
+
+    pub fn deinit(self: *const DecodedFrame) void {
+        vtb.CFRelease(self.pixel_buffer);
+    }
 };
 
 // Callback that receives decoded frames from VideoToolbox
