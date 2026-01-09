@@ -199,21 +199,52 @@ Got pixel buffer: *CVPixelBufferRef@6000016e00a0
 
 ## 🚧 Current Phase
 
-### Phase 5-7: Production Integration (Next)
+### Phase 6: VideoToolboxDecoder Struct ✅ COMPLETE (2026-01-09)
+
+**Goal**: Create production-ready decoder struct that encapsulates session lifecycle
+
+**What we accomplished**:
+- ✅ Designed struct with fields: session, format_desc, frame_ctx, mctx, source_media
+- ✅ Implemented `init()` - creates format description and decompression session
+- ✅ Implemented `deinit()` - properly releases CF objects and invalidates session
+- ✅ Added comprehensive doc comments to videotoolbox_c.zig (400+ lines documented)
+- ✅ Implemented `decodeFrame()` - complete and functional!
+  - ✅ Uses frame_index parameter correctly
+  - ✅ Allocates buffer with mctx.allocator
+  - ✅ Returns CVPixelBufferRef (unwrapped with error handling)
+  - ✅ Proper defer cleanup for buffer, block_buffer, and sample_buffer
+  - ✅ Resets frame_ctx.pixel_buffer to null before decode
+  - ✅ Debug print for failed decode (null pixel_buffer)
+
+**Design Decision**: Decoder tied 1:1 to SourceMedia clip (each clip gets its own decoder)
+
+**Key Learnings**:
+- Defers should be placed immediately after resource creation (not at end of function)
+- Must unwrap optional pixel_buffer before returning (using if/else with error)
+- Block buffer needs CFRelease (it's a CF object)
+- Frame context must be reset to null before each decode
+
+**API**:
+```zig
+var decoder = try VideoToolboxDecoder.init(&source_media, &mctx);
+defer decoder.deinit();
+
+const pixel_buffer = try decoder.decodeFrame(frame_index);
+defer vtb.CFRelease(pixel_buffer);
+```
+
+**Files Modified**:
+- `src/io/decode/vtb_decode.zig` - Implemented VideoToolboxDecoder struct with init/deinit/decodeFrame
+- `src/io/decode/videotoolbox_c.zig` - Added comprehensive documentation
 
 ---
 
 ## 📋 Remaining Phases
 
-### Phase 5: Synchronous Decode Wrapper (Optional - Already Functional)
-- ✅ Frame context struct already implemented
-- ✅ `VTDecompressionSessionWaitForAsynchronousFrames()` already provides synchronous behavior
-- Future: Could add mutex + condition variable for more complex multi-threaded scenarios
-
-### Phase 6: VideoToolboxDecoder Struct
-- Encapsulate session lifecycle
-- `init()` / `deinit()` methods
-- Reusable decoder instance
+### Phase 5: Synchronous Decode Wrapper ✅ SKIPPED
+- ✅ Already have synchronous behavior with `VTDecompressionSessionWaitForAsynchronousFrames()`
+- ✅ Frame context struct captures decoded frames
+- Decision: Skip complex mutex/condition variable implementation (not needed)
 
 ### Phase 7: Integration with media.zig
 - Add decoder to SourceMedia
@@ -242,7 +273,7 @@ Got pixel buffer: *CVPixelBufferRef@6000016e00a0
 ---
 
 **Last Updated**: 2026-01-09
-**Current Status**: Phase 4.6 Complete ✅ → Ready for Production Integration (Phases 6-7)
+**Current Status**: Phase 6 Complete ✅ → VideoToolboxDecoder production-ready! Ready for Phase 7 (Integration with media.zig)
 
 ## 🎯 Recent Wins
 

@@ -17,26 +17,15 @@ pub const VideoToolboxDecoder = struct {
         source_media: *const media.SourceMedia,
         mctx: *const media.MediaContext,
     ) !VideoToolboxDecoder {
-
-        // TODO: Create format description
         const format_desc = try createFormatDescription(source_media);
 
         // Check Fmt Description
         try verifyFmtDes(format_desc);
 
-        // Debug use only ?
-        // // Check if hardware decode is supported for this codec
-        // const codec_type = vtb.CMFormatDescriptionGetMediaSubType(format_desc);
-        // const hw_supported = vtb.VTIsHardwareDecodeSupported(codec_type);
-        // std.debug.print("Hardware decode supported: {}\n", .{hw_supported != 0});
-
-        // TODO: Initialize frame_ctx
         var frame_ctx = FrameContext{ .pixel_buffer = null };
 
-        // TODO: Create decompression session
         const session = try createDecompressionSession(format_desc, &frame_ctx);
 
-        // TODO: Return VideoToolboxDecoder struct
         return .{
             .session = session,
             .format_desc = format_desc,
@@ -45,6 +34,53 @@ pub const VideoToolboxDecoder = struct {
             .source_media = source_media,
         };
     }
+
+    pub fn decodeFrame(
+        self: *VideoToolboxDecoder,
+        frame_index: usize,
+    ) !vtb.CVPixelBufferRef {
+        self.frame_ctx.pixel_buffer = null;
+
+        const frame_size = try self.source_media.getFrameSize(frame_index);
+        std.debug.print("\nFirst frame size: {d} bytes\n", .{frame_size});
+
+        const buffer = try self.mctx.allocator.alloc(u8, frame_size);
+        defer self.mctx.allocator.free(buffer);
+
+        const bytes_read = try self.source_media.readFrame(self.mctx, frame_index, buffer);
+        std.debug.print("Read {d} bytes from frame 0\n", .{bytes_read});
+
+        const block_buffer = try createBlockBuffer(buffer);
+        defer vtb.CFRelease(block_buffer);
+        std.debug.print("block_buffer: {*}\n", .{block_buffer});
+
+        const timing_info = createSampleTimingInfo(frame_index, self.source_media);
+        const sample_buffer = try createSampleBuffer(block_buffer, timing_info, self.format_desc);
+        defer vtb.CFRelease(sample_buffer);
+
+        std.debug.print("sample_buffer: {*}\n", .{sample_buffer});
+
+        // Phase 4.5: Decode the frame
+        try decompress(self.session, sample_buffer);
+
+        // Now frame_ctx.pixel_buffer contains the decoded frame!
+        if (self.frame_ctx.pixel_buffer) |pb| {
+            std.debug.print("Got pixel buffer: {*}\n", .{pb});
+            // ... do stuff with it ...
+        }
+
+        // return self.frame_ctx.pixel_buffer orelse error.DecodeFrameFailed;
+
+        // Now frame_ctx.pixel_buffer contains the decoded frame!
+        if (self.frame_ctx.pixel_buffer) |pb| {
+            std.debug.print("Got pixel buffer: {*}\n", .{pb});
+            return pb;
+        } else {
+            std.debug.print("XXX ERROR: Callback did not populate pixel_buffer!\n", .{});
+            return error.DecodeFrameFailed;
+        }
+    }
+
     pub fn deinit(self: *VideoToolboxDecoder) void {
         vtb.CFRelease(self.format_desc);
         vtb.VTDecompressionSessionInvalidate(self.session);
