@@ -4,7 +4,9 @@ const pg = @import("pg");
 const media = @import("io/media.zig");
 const pgdb = @import("io/db/pgdb.zig");
 // const renderer = @import("gpu/renderer.zig");
-const vtd = @import("io/decode/vtb_decode.zig");
+const vtbFW = @import("io/decode/videotoolbox_c.zig");
+
+const vtb = @import("io/decode/vtb_decode.zig");
 
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
@@ -24,14 +26,20 @@ fn testPgsql() !void {
     // cases. The pool's `acquire` method, to get a connection is thread-safe.
     // The pool may start 1 background thread to reconnect disconnected
     // connections (or connections in an invalid state).
-    var pool = pg.Pool.init(allocator, .{ .io = io, .size = 5, .connect = .{
-        .port = 5433,
-        .host = "127.0.0.1",
-    }, .auth = .{
-        .username = "fq",
-        .database = "sourcegrade",
-        .timeout = 10_000,
-    } }) catch |err| {
+    var pool = pg.Pool.init(allocator, .{
+        .io = io,
+        .size = 5,
+        .connect = .{
+            .port = 5433,
+            .host = "127.0.0.1",
+        },
+        .auth = .{
+            .username = "mac10",
+            // .username = "fq",
+            .database = "sourcegrade",
+            .timeout = 10_000,
+        },
+    }) catch |err| {
         log.err("Failed to connect: {}", .{err});
         std.process.exit(1);
     };
@@ -69,8 +77,8 @@ fn testSourceIntegration() !void {
     const io = threaded.io();
 
     // Open a test video file
-    const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
-    // const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
+    // const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
+    const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
 
     const file = Io.Dir.openFileAbsolute(io, video_path, .{}) catch |err| {
         std.debug.print("Could not open test video file: {}\n", .{err});
@@ -143,8 +151,18 @@ fn testSourceIntegration() !void {
 
     // std.debug.print("\nSource integration test passed!\n", .{});
 
+    std.debug.print("\n\n=== VideoToolBox Decoder ===\n\n", .{});
     // VideoToolBox Decode test
-    try vtd.decode(&source_media, &mctx);
+    // try vtd.decode(&source_media, &mctx);
+
+    var decoder = try vtb.VideoToolboxDecoder.init(&source_media, &mctx);
+    defer decoder.deinit();
+
+    // Decode first frame
+    const pixel_buffer = try decoder.decodeFrame(0);
+    defer vtbFW.CFRelease(pixel_buffer);
+
+    std.debug.print("Successfully decoded frame 0: {*}\n", .{pixel_buffer});
 }
 
 pub fn main() !void {

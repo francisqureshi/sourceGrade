@@ -9,7 +9,7 @@ pub const log = std.log.scoped(.videoToolBox);
 pub const VideoToolboxDecoder = struct {
     session: vtb.VTDecompressionSessionRef,
     format_desc: vtb.CMVideoFormatDescriptionRef,
-    frame_ctx: FrameContext,
+    frame_ctx: *FrameContext,
     mctx: *const media.MediaContext, //has our File, Allocator and std.IO
     source_media: *const media.SourceMedia, // Reference to clip
 
@@ -22,14 +22,14 @@ pub const VideoToolboxDecoder = struct {
         // Check Fmt Description
         try verifyFmtDes(format_desc);
 
-        var frame_ctx = FrameContext{ .pixel_buffer = null };
-
-        const session = try createDecompressionSession(format_desc, &frame_ctx);
+        const frame_ctx_ptr = try mctx.allocator.create(FrameContext);
+        frame_ctx_ptr.* = FrameContext{ .pixel_buffer = null };
+        const session = try createDecompressionSession(format_desc, frame_ctx_ptr);
 
         return .{
             .session = session,
             .format_desc = format_desc,
-            .frame_ctx = frame_ctx,
+            .frame_ctx = frame_ctx_ptr,
             .mctx = mctx,
             .source_media = source_media,
         };
@@ -51,7 +51,6 @@ pub const VideoToolboxDecoder = struct {
         std.debug.print("Read {d} bytes from frame 0\n", .{bytes_read});
 
         const block_buffer = try createBlockBuffer(buffer);
-        defer vtb.CFRelease(block_buffer);
         std.debug.print("block_buffer: {*}\n", .{block_buffer});
 
         const timing_info = createSampleTimingInfo(frame_index, self.source_media);
@@ -62,12 +61,6 @@ pub const VideoToolboxDecoder = struct {
 
         // Phase 4.5: Decode the frame
         try decompress(self.session, sample_buffer);
-
-        // Now frame_ctx.pixel_buffer contains the decoded frame!
-        if (self.frame_ctx.pixel_buffer) |pb| {
-            std.debug.print("Got pixel buffer: {*}\n", .{pb});
-            // ... do stuff with it ...
-        }
 
         // return self.frame_ctx.pixel_buffer orelse error.DecodeFrameFailed;
 
@@ -85,6 +78,7 @@ pub const VideoToolboxDecoder = struct {
         vtb.CFRelease(self.format_desc);
         vtb.VTDecompressionSessionInvalidate(self.session);
         vtb.CFRelease(self.session);
+        self.mctx.allocator.destroy(self.frame_ctx);
     }
 };
 
