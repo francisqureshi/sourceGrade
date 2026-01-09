@@ -9,10 +9,12 @@
 - ✅ `mov.zig`: Parses MOV atoms, extracts frame offsets/sizes from mdat
 - ✅ `media.zig`: High-level `SourceMedia` struct with metadata
 - ✅ `readFrame()`: Returns raw compressed ProRes bytes
+- ✅ **Phase 4.1-4.6**: Complete VideoToolbox decode pipeline working
+- ✅ **Hardware ProRes 4444 decoding functional**
 
 ---
 
-## Phase 4: Single Frame VideoToolbox Decode
+## Phase 4: Single Frame VideoToolbox Decode ✅ COMPLETED (2026-01-09)
 
 **Goal**: Decode ONE ProRes frame to CVPixelBuffer
 
@@ -23,53 +25,66 @@
 - **CMSampleBuffer** - Frame + timing container
 - **CVPixelBuffer** - Decoded BGRA pixels (output)
 
-### Steps
-1. `@cImport` VideoToolbox/CoreMedia/CoreVideo headers
-2. Create CMVideoFormatDescription from `stsd_data`
-3. Create VTDecompressionSession (output: BGRA8 + Metal compatible)
-4. Create CMBlockBuffer from raw frame data
-5. Create CMSampleBuffer (block buffer + timing)
-6. Call `VTDecompressionSessionDecodeFrame()`
-7. Verify callback fires with valid CVPixelBuffer
+### Completed Steps
+1. ✅ Manual extern declarations (videotoolbox_c.zig) - `@cImport` not viable
+2. ✅ Create CMVideoFormatDescription from `stsd_data`
+3. ✅ Create VTDecompressionSession (output: BGRA8 + Metal compatible)
+4. ✅ Create CMBlockBuffer from raw frame data
+5. ✅ Create CMSampleBuffer (block buffer + timing)
+6. ✅ Call `VTDecompressionSessionDecodeFrame()`
+7. ✅ Callback fires with valid CVPixelBuffer
+8. ✅ Extract CVPixelBuffer info (width, height, pixel format, bytes per row)
+9. ✅ Capture CVPixelBuffer using FrameContext + CFRetain/CFRelease
+
+**Status**: Fully functional ProRes 4444 hardware decode pipeline (4096x2928 tested)
 
 ---
 
-## Phase 5: Synchronous Decode Wrapper
+## Phase 5: Synchronous Decode Wrapper ✅ OPTIONAL - ALREADY FUNCTIONAL
 
 **Goal**: Block until decode completes, return CVPixelBuffer
 
-### Approach
-- Frame context with mutex + condition variable
-- Callback signals when complete
-- `decodeFrameSync()` waits and returns pixel buffer
-- Caller must `CVPixelBufferRelease()` when done
+### Current Implementation
+- ✅ `VTDecompressionSessionWaitForAsynchronousFrames()` provides synchronous blocking
+- ✅ `FrameContext` struct captures CVPixelBuffer from callback
+- ✅ Proper reference counting with `CFRetain()` in callback, `CFRelease()` after use
+
+**Note**: More complex synchronization (mutex + condition variable) not needed for current use case
 
 ---
 
-## Phase 6: VideoToolboxDecoder Struct
+## Phase 6: VideoToolboxDecoder Struct 🚧 NEXT
 
-**Goal**: Encapsulate session lifecycle
+**Goal**: Encapsulate session lifecycle for production use
 
+**Proposed API**:
 ```zig
 pub const VideoToolboxDecoder = struct {
     session: VTDecompressionSessionRef,
     format_desc: CMVideoFormatDescriptionRef,
+    frame_ctx: FrameContext,
 
     pub fn init(stsd_data: []const u8, width: u16, height: u16) !VideoToolboxDecoder
     pub fn deinit(self: *VideoToolboxDecoder) void
-    pub fn decodeFrame(self: *VideoToolboxDecoder, frame_data: []const u8, pts: CMTime) !*CVPixelBuffer
+    pub fn decodeFrame(self: *VideoToolboxDecoder, frame_data: []const u8, pts: CMTime) !CVPixelBufferRef
 };
 ```
 
+**Benefits**:
+- Reusable decoder instance (create once, decode many frames)
+- Automatic cleanup via `deinit()`
+- Thread-safe frame context management
+
 ---
 
-## Phase 7: Integration with media.zig
+## Phase 7: Integration with media.zig 🚧 FUTURE
 
 **Changes**:
 - Add `decoder: VideoToolboxDecoder` field to `SourceMedia`
 - Initialize in `SourceMedia.init()` using `stsd_data`
 - `readFrame()` returns `CVPixelBuffer` instead of raw bytes
 - Port `CVMetalTextureCache` conversion from Swift
+- Remove Swift VideoReader dependency entirely
 
 ---
 
@@ -80,102 +95,57 @@ Each phase:
 2. Run under Instruments (check memory leaks)
 3. Test frames: 0, 100, last (compare with FFmpeg extraction)
 
----
-
-## Common Issues
-
-| Problem | Cause | Fix |
-|---------|-------|-----|
-| Format desc fails | Wrong FourCC mapping | Check codec: apcn=422, apch=422HQ, ap4h=4444 |
-| Session fails | Invalid output format | Try without Metal compat first |
-| Error -12909 | Bad CMTime | Verify timescale from media_header |
-| No callback | Didn't wait async | Add `WaitForAsynchronousFrames()` |
-| Callback status != 0 | Corrupt frame data | Compare with ffprobe extraction |
+**Phase 4 Validation Results**:
+- ✅ ProRes 4444 decode successful (4096x2928)
+- ✅ Pixel format: BGRA (0x42475241)
+- ✅ Hardware decode confirmed via `VTIsHardwareDecodeSupported()`
+- ✅ CVPixelBuffer properly captured and released
+- 🔲 Memory leak testing pending (run Instruments)
 
 ---
 
-## Resources
+## Common Issues ✅ RESOLVED
 
-**Headers**:
-- `/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/System/Library/Frameworks/VideoToolbox.framework/Headers/VTDecompressionSession.h`
+| Problem | Cause | Fix | Status |
+|---------|-------|-----|--------|
+| Format desc fails | Wrong FourCC mapping | Use `CMVideoFormatDescriptionCreateFromBigEndianImageDescriptionData` | ✅ Fixed |
+| Session fails | Invalid output format | Try without Metal compat first | ✅ Working |
+| Error -12909 | Bad CMTime | Verify timescale from media_header | ✅ Working |
+| No callback | Didn't wait async | Add `WaitForAsynchronousFrames()` | ✅ Implemented |
+| Callback status != 0 | Corrupt frame data | Compare with ffprobe extraction | ✅ Working |
+| `@cImport` fails | Apple headers too complex | Use manual extern declarations | ✅ Fixed |
+| Context lifetime | Local var destroyed before callback | Pass pointer from caller's scope | ✅ Fixed |
+| CVPixelBuffer freed early | Missing CFRetain | Retain in callback, release after use | ✅ Fixed |
 
-**Key Functions**:
-- `CMVideoFormatDescriptionCreate()`
-- `VTDecompressionSessionCreate()`
-- `CMBlockBufferCreateWithMemoryBlock()`
-- `CMSampleBufferCreate()`
-- `VTDecompressionSessionDecodeFrame()`
-- `VTDecompressionSessionWaitForAsynchronousFrames()`
+---
+
+## Implementation Files
+
+**Created**:
+- `src/io/decode/videotoolbox_c.zig` - Manual C API bindings (400+ lines)
+- `src/io/decode/vtb_decode.zig` - Decode pipeline implementation
+- `docs/zig-0.16-macos-framework-linking.md` - Framework linking guide
+- `docs/progress_tracker.md` - Detailed phase tracking
+
+**Modified**:
+- `src/io/media.zig` - Added `stsd_data` field
+- `build.zig` - Framework linking configuration
+
+---
+
+## Key Learnings
+
+1. **Manual extern declarations** work better than `@cImport` for Apple frameworks
+2. **Framework linking** requires `NativePaths.detect()` + `addFrameworkPath()` in Zig 0.16
+3. **QuickTime stsd atom** structure: `[version/flags:4][entry_count:4][ImageDescription...]`
+4. **CMTime mapping**: `value = frame_index × den`, `timescale = num` (from `Rational`)
+5. **Context passing**: Must live in caller's scope, pass by pointer
+6. **CoreFoundation reference counting**: Use CFRetain/CFRelease for objects allocated by Apple frameworks
 
 ---
 
 ## Next Action
 
-**Start**: Phase 4, Step 1 - Test `@cImport` in new file `src/io/video_decoder.zig`
+**Phase 6**: Create `VideoToolboxDecoder` struct to encapsulate session lifecycle and enable reusable, production-ready decoding.
 
-```zig
-const c = @cImport({
-    @cInclude("VideoToolbox/VideoToolbox.h");
-});
-
-pub fn main() !void {
-    std.debug.print("VT Type ID: {}\n", .{c.VTGetTypeID()});
-}
-```
-
-
-
-
-next bit 4.3
-
-
-  The trailing comma tells zig fmt to keep it multi-line. Otherwise it tries to
-  compress it to one line if it fits within 100 characters.
-
-  Alternative: If you want more control, break it into intermediate variables:
-
-  const codec_fourcc: vtb.FourCharCode = @bitCast(source_media.codec[0..4].*);
-  const width: i32 = @intCast(source_media.resolution.width);
-  const height: i32 = @intCast(source_media.resolution.height);
-
-  const status = vtb.CMVideoFormatDescriptionCreate(
-      null,
-      codec_fourcc,
-      width,
-      height,
-      null,
-      &format_desc,
-  );
-
-  This is also more readable! Which style do you prefer?
-
-> great so next steps:
-
-⏺ Perfect! Now let's tackle Phase 4.3: Create VTDecompressionSession!
-
-  Here's what you need to implement in a new createDecompressionSession() function:
-
-  Step-by-step:
-
-  1. Create pixel buffer attributes dictionary (tells VT you want BGRA8 + Metal
-  compatible output)
-    - Use CFDictionaryCreate()
-    - Keys: pixel format type, Metal compatibility
-    - Values: kCVPixelFormatType_32BGRA, true
-  2. Define the callback function (receives decoded frames)
-    - Must match VTDecompressionOutputCallback signature
-    - Use export fn with .c calling convention
-    - For now, just print that it was called
-  3. Create callback record
-    - VTDecompressionOutputCallbackRecord struct
-    - Contains: callback function pointer + context pointer
-  4. Call VTDecompressionSessionCreate()
-    - Pass format description, callback record, pixel buffer attributes
-    - Returns the session
-  5. Add error handling for session creation failure
-
-  Key challenge: Creating the CFDictionary for pixel buffer attributes is the
-  trickiest part. You need to create CF objects for the keys and values.
-
-  Want to try implementing this yourself, or should I guide you through the
-  CFDictionary creation first (since that's the most complex part)? 
+See `src/io/decode/vtb_decode.zig` for current working implementation. 

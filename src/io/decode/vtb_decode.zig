@@ -14,6 +14,9 @@ const VideoToolboxError = error{
     DecodeFrameFailed,
     DecoderWaitFailed,
 };
+const FrameContext = struct {
+    pixel_buffer: ?vtb.CVPixelBufferRef,
+};
 
 // Callback that receives decoded frames from VideoToolbox
 export fn decompressionOutputCallback(
@@ -25,7 +28,11 @@ export fn decompressionOutputCallback(
     presentationTimeStamp: vtb.CMTime,
     presentationDuration: vtb.CMTime,
 ) callconv(.c) void {
-    _ = decompressionOutputRefCon;
+    if (decompressionOutputRefCon) |ctx_ptr| {
+        const ctx: *FrameContext = @ptrCast(@alignCast(ctx_ptr));
+        ctx.pixel_buffer = imageBuffer; // Store it!
+        _ = vtb.CFRetain(imageBuffer); // Keep it alive
+    }
     _ = sourceFrameRefCon;
     _ = infoFlags;
     _ = presentationTimeStamp;
@@ -36,7 +43,20 @@ export fn decompressionOutputCallback(
         return;
     }
 
-    std.debug.print("✅ Decode callback received frame: {*}\n", .{imageBuffer});
+    // Extract pixel buffer information
+    const width = vtb.CVPixelBufferGetWidth(imageBuffer);
+    const height = vtb.CVPixelBufferGetHeight(imageBuffer);
+    const pixel_format = vtb.CVPixelBufferGetPixelFormatType(imageBuffer);
+    const bytes_per_row = vtb.CVPixelBufferGetBytesPerRow(imageBuffer);
+
+    // Convert pixel format to readable string
+    const format_bytes: [4]u8 = @bitCast(pixel_format);
+
+    std.debug.print("✅ Decoded CVPixelBuffer:\n", .{});
+    std.debug.print("   Resolution: {d}x{d}\n", .{ width, height });
+    std.debug.print("   Pixel Format: 0x{X:0>8} ('{s}')\n", .{ pixel_format, &format_bytes });
+    std.debug.print("   Bytes per Row: {d}\n", .{bytes_per_row});
+    std.debug.print("   Total Size: {d} bytes\n", .{bytes_per_row * height});
 }
 
 fn createFormatDescription(source_media: media.SourceMedia) !vtb.CMVideoFormatDescriptionRef {
@@ -72,7 +92,7 @@ fn createFormatDescription(source_media: media.SourceMedia) !vtb.CMVideoFormatDe
     return format_desc.?;
 }
 
-fn createDecompressionSession(format_desc: vtb.CMVideoFormatDescriptionRef) !vtb.VTDecompressionSessionRef {
+fn createDecompressionSession(format_desc: vtb.CMVideoFormatDescriptionRef, frame_ctx: *FrameContext) !vtb.VTDecompressionSessionRef {
     // Create CFNumber for pixel format
     var pixel_format: u32 = vtb.kCVPixelFormatType_32BGRA;
     const pixel_format_number = vtb.CFNumberCreate(
@@ -105,7 +125,7 @@ fn createDecompressionSession(format_desc: vtb.CMVideoFormatDescriptionRef) !vtb
     // Create callback record
     const callback_record = vtb.VTDecompressionOutputCallbackRecord{
         .decompressionOutputCallback = decompressionOutputCallback,
-        .decompressionOutputRefCon = null,
+        .decompressionOutputRefCon = frame_ctx,
     };
 
     // Create decompression session
@@ -216,7 +236,7 @@ fn decompress(
         return error.DecodeFrameFailed;
     }
 
-    std.debug.print("✅ Frame sent to decoder\n", .{});
+    std.debug.print(" Frame sent to decoder\n", .{});
 
     // Wait for decoder to finish (blocks until callback completes)
     const wait_status = vtb.VTDecompressionSessionWaitForAsynchronousFrames(session);
@@ -225,7 +245,7 @@ fn decompress(
         return error.DecoderWaitFailed;
     }
 
-    std.debug.print("✅ Decoder finished, callback was invoked\n", .{});
+    std.debug.print(" Decoder finished, callback was invoked\n", .{});
 }
 
 pub fn decode(source_media: media.SourceMedia, mctx: media.MediaContext) !void {
@@ -242,13 +262,15 @@ pub fn decode(source_media: media.SourceMedia, mctx: media.MediaContext) !void {
     const hw_supported = vtb.VTIsHardwareDecodeSupported(codec_type);
     std.debug.print("Hardware decode supported: {}\n", .{hw_supported != 0});
 
-    const session = try createDecompressionSession(format_desc);
+    var frame_ctx = FrameContext{ .pixel_buffer = null };
+
+    const session = try createDecompressionSession(format_desc, &frame_ctx);
     defer {
         vtb.VTDecompressionSessionInvalidate(session);
         vtb.CFRelease(session);
     }
 
-    std.debug.print("🎉 Phase 4.3 Complete! VTDecompressionSession created successfully!\n", .{});
+    std.debug.print("Phase 4.3 Complete! VTDecompressionSession created successfully!\n", .{});
 
     const frame_size = try source_media.getFrameSize(0);
     std.debug.print("\nFirst frame size: {d} bytes\n", .{frame_size});
@@ -263,14 +285,28 @@ pub fn decode(source_media: media.SourceMedia, mctx: media.MediaContext) !void {
 
     const timing_info = createSampleTimingInfo(0, source_media);
     const sample_buffer = try createSampleBuffer(block_buffer, timing_info, format_desc);
-    defer vtb.CFRelease(sample_buffer);
 
     std.debug.print("sample_buffer: {*}\n", .{sample_buffer});
 
     // Phase 4.5: Decode the frame
     try decompress(session, sample_buffer);
 
+    // Now frame_ctx.pixel_buffer contains the decoded frame!
+    if (frame_ctx.pixel_buffer) |pb| {
+        std.debug.print("Got pixel buffer: {*}\n", .{pb});
+        // ... do stuff with it ...
+        vtb.CFRelease(pb); // Release when done
+    }
+
+    defer vtb.CFRelease(sample_buffer);
+
     defer mctx.allocator.free(buffer);
+
+    //  Check agian after defers
+    if (frame_ctx.pixel_buffer) |pb| {
+        // vtb.CFRelease(pb); // Release when done
+        std.debug.print("Check agian after CFRealease(pb) + defers....\nGot pixel buffer: {*}\n", .{pb});
+    }
 }
 
 //

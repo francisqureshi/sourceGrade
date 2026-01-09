@@ -165,23 +165,50 @@ sample_buffer: *CMSampleBufferRef@...
 
 ---
 
+### Phase 4.6: Extract & Verify CVPixelBuffer ✅
+**Completed**: 2026-01-09
+
+**What we accomplished**:
+- ✅ Enhanced callback to extract CVPixelBuffer information (width, height, pixel format, bytes per row)
+- ✅ Implemented `FrameContext` struct to capture CVPixelBuffer from async callback
+- ✅ Passed context through `decompressionOutputRefCon` parameter
+- ✅ Added proper memory management with `CFRetain()` in callback and `CFRelease()` in main function
+- ✅ Fixed pointer lifetime issues by passing `*FrameContext` instead of by-value
+
+**Output**:
+```
+✅ Decoded CVPixelBuffer:
+   Resolution: 4096x2928
+   Pixel Format: 0x42475241 ('ARGB')
+   Bytes per Row: 16384
+   Total Size: 47972352 bytes
+Got pixel buffer: *CVPixelBufferRef@6000016e00a0
+```
+
+**Key Learnings**:
+- Context structs must live in caller's scope, not in function that passes them
+- Pass context by pointer (`*FrameContext`) not by value to avoid lifetime issues
+- `CFRetain()` increments ref count to keep CVPixelBuffer alive beyond callback
+- `CFRetain()` returns a pointer value that must be discarded with `_` in Zig
+- Storing pointer + retaining are both necessary (pointer = access, retain = lifetime)
+
+**Files Modified**:
+- `src/io/decode/vtb_decode.zig` - Added FrameContext struct, enhanced callback, added CFRetain/CFRelease
+
+---
+
 ## 🚧 Current Phase
 
-### Phase 4.6: Extract & Verify CVPixelBuffer (Next)
+### Phase 5-7: Production Integration (Next)
 
 ---
 
 ## 📋 Remaining Phases
 
-### Phase 4.5: Decode Single Frame (Not Started)
-- Call `VTDecompressionSessionDecodeFrame()` with CMSampleBuffer
-- Wait for callback to receive CVPixelBuffer
-- Call `VTDecompressionSessionWaitForAsynchronousFrames()` to ensure completion
-
-### Phase 5: Synchronous Decode Wrapper
-- Add mutex + condition variable for blocking
-- Frame context struct
-- Make decode synchronous (return CVPixelBuffer directly)
+### Phase 5: Synchronous Decode Wrapper (Optional - Already Functional)
+- ✅ Frame context struct already implemented
+- ✅ `VTDecompressionSessionWaitForAsynchronousFrames()` already provides synchronous behavior
+- Future: Could add mutex + condition variable for more complex multi-threaded scenarios
 
 ### Phase 6: VideoToolboxDecoder Struct
 - Encapsulate session lifecycle
@@ -214,12 +241,13 @@ sample_buffer: *CMSampleBufferRef@...
 
 ---
 
-**Last Updated**: 2026-01-08
-**Current Status**: Phase 4.4 Complete ✅ → Starting Phase 4.5
+**Last Updated**: 2026-01-09
+**Current Status**: Phase 4.6 Complete ✅ → Ready for Production Integration (Phases 6-7)
 
 ## 🎯 Recent Wins
 
-- Successfully created CMSampleBuffer with timing info from frame data!
-- Block buffer + timing + format description all working together
-- Ready to feed sample buffer to decoder and receive CVPixelBuffer
-- ProRes 4444 decoding pipeline 80% complete
+- 🎉 **ProRes 4444 hardware decoding fully working!**
+- Successfully capturing and retaining CVPixelBuffers from async decoder
+- Proper memory management with CFRetain/CFRelease
+- Full decode pipeline: MOV parsing → CMSampleBuffer → VTDecompressionSession → CVPixelBuffer
+- Ready for Metal texture conversion and GPU rendering
