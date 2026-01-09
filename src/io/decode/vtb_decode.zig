@@ -6,6 +6,52 @@ const Allocator = std.mem.Allocator;
 const Io = std.Io;
 pub const log = std.log.scoped(.videoToolBox);
 
+pub const VideoToolboxDecoder = struct {
+    session: vtb.VTDecompressionSessionRef,
+    format_desc: vtb.CMVideoFormatDescriptionRef,
+    frame_ctx: FrameContext,
+    mctx: *const media.MediaContext, //has our File, Allocator and std.IO
+    source_media: *const media.SourceMedia, // Reference to clip
+
+    pub fn init(
+        source_media: *const media.SourceMedia,
+        mctx: *const media.MediaContext,
+    ) !VideoToolboxDecoder {
+
+        // TODO: Create format description
+        const format_desc = try createFormatDescription(source_media);
+
+        // Check Fmt Description
+        try verifyFmtDes(format_desc);
+
+        // Debug use only ?
+        // // Check if hardware decode is supported for this codec
+        // const codec_type = vtb.CMFormatDescriptionGetMediaSubType(format_desc);
+        // const hw_supported = vtb.VTIsHardwareDecodeSupported(codec_type);
+        // std.debug.print("Hardware decode supported: {}\n", .{hw_supported != 0});
+
+        // TODO: Initialize frame_ctx
+        var frame_ctx = FrameContext{ .pixel_buffer = null };
+
+        // TODO: Create decompression session
+        const session = try createDecompressionSession(format_desc, &frame_ctx);
+
+        // TODO: Return VideoToolboxDecoder struct
+        return .{
+            .session = session,
+            .format_desc = format_desc,
+            .frame_ctx = frame_ctx,
+            .mctx = mctx,
+            .source_media = source_media,
+        };
+    }
+    pub fn deinit(self: *VideoToolboxDecoder) void {
+        vtb.CFRelease(self.format_desc);
+        vtb.VTDecompressionSessionInvalidate(self.session);
+        vtb.CFRelease(self.session);
+    }
+};
+
 const VideoToolboxError = error{
     CreateFormatDescriptionFailed,
     CreateDecompressionSessionFailed,
@@ -59,7 +105,7 @@ export fn decompressionOutputCallback(
     std.debug.print("   Total Size: {d} bytes\n", .{bytes_per_row * height});
 }
 
-fn createFormatDescription(source_media: media.SourceMedia) !vtb.CMVideoFormatDescriptionRef {
+fn createFormatDescription(source_media: *const media.SourceMedia) !vtb.CMVideoFormatDescriptionRef {
     var format_desc: vtb.CMVideoFormatDescriptionRef = null;
 
     // stsd atom structure:
@@ -92,7 +138,10 @@ fn createFormatDescription(source_media: media.SourceMedia) !vtb.CMVideoFormatDe
     return format_desc.?;
 }
 
-fn createDecompressionSession(format_desc: vtb.CMVideoFormatDescriptionRef, frame_ctx: *FrameContext) !vtb.VTDecompressionSessionRef {
+fn createDecompressionSession(
+    format_desc: vtb.CMVideoFormatDescriptionRef,
+    frame_ctx: *FrameContext,
+) !vtb.VTDecompressionSessionRef {
     // Create CFNumber for pixel format
     var pixel_format: u32 = vtb.kCVPixelFormatType_32BGRA;
     const pixel_format_number = vtb.CFNumberCreate(
@@ -172,7 +221,7 @@ fn createBlockBuffer(frame_data: []u8) !vtb.CMBlockBufferRef {
 
 fn createSampleTimingInfo(
     frame_index: usize,
-    source_media: media.SourceMedia,
+    source_media: *const media.SourceMedia,
 ) vtb.CMSampleTimingInfo {
     // PTS = frame_index × frame_duration / timescale
     // For frame 0: PTS = 0
@@ -180,7 +229,10 @@ fn createSampleTimingInfo(
     const pts = vtb.CMTimeMake(pts_value, @as(i32, @intCast(source_media.frame_rate.num)));
 
     // Duration = frame_duration / timescale
-    const duration = vtb.CMTimeMake(@as(i64, @intCast(source_media.frame_rate.den)), @as(i32, @intCast(source_media.frame_rate.num)));
+    const duration = vtb.CMTimeMake(
+        @as(i64, @intCast(source_media.frame_rate.den)),
+        @as(i32, @intCast(source_media.frame_rate.num)),
+    );
 
     // DTS (decode timestamp) is usually same as PTS for intraframe codecs like ProRes
     const dts = pts;
@@ -248,7 +300,7 @@ fn decompress(
     std.debug.print(" Decoder finished, callback was invoked\n", .{});
 }
 
-pub fn decode(source_media: media.SourceMedia, mctx: media.MediaContext) !void {
+pub fn decode(source_media: *const media.SourceMedia, mctx: *const media.MediaContext) !void {
     std.debug.print("\n=== VideoToolbox Tests ===\n", .{});
 
     const format_desc = try createFormatDescription(source_media);

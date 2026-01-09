@@ -645,16 +645,36 @@ pub const kCFNumberFloat64Type: CFIndex = 13;
 // ============================================================================
 // OSStatus error codes
 // ============================================================================
+
+/// Success status code (all Apple APIs return 0 on success)
 pub const noErr: OSStatus = 0;
+
+/// The decompression session is invalid or has been invalidated
 pub const kVTInvalidSessionErr: OSStatus = -12903;
+
+/// The decoder encountered corrupted or invalid compressed data
 pub const kVTVideoDecoderBadDataErr: OSStatus = -12909;
+
+/// The decoder doesn't support the format/codec
 pub const kVTVideoDecoderUnsupportedDataFormatErr: OSStatus = -12910;
+
+/// The decoder malfunctioned (internal error)
 pub const kVTVideoDecoderMalfunctionErr: OSStatus = -12911;
+
+/// The encoder malfunctioned (internal error)
 pub const kVTVideoEncoderMalfunctionErr: OSStatus = -12912;
+
+/// The decoder is not available right now (resource contention)
 pub const kVTVideoDecoderNotAvailableNowErr: OSStatus = -12913;
+
+/// Image rotation is not supported for this format
 pub const kVTImageRotationNotSupportedErr: OSStatus = -12914;
+
+/// The encoder is not available right now (resource contention)
 pub const kVTVideoEncoderNotAvailableNowErr: OSStatus = -12915;
 
+/// Test function to verify extern declarations compile and link correctly
+/// Run with: zig build-exe videotoolbox_c.zig -framework VideoToolbox -framework CoreMedia -framework CoreVideo
 pub fn main() !void {
     std.debug.print("Testing VideoToolbox extern declarations...\n", .{});
 

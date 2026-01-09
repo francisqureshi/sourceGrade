@@ -149,7 +149,7 @@ pub const SourceMedia = struct {
     /// Read a frame into the provided buffer
     /// Returns the number of bytes written to the buffer
     /// Returns error.BufferTooSmall if buffer is insufficient
-    pub fn readFrame(self: *const SourceMedia, ctx: MediaContext, frame_index: usize, buffer: []u8) !usize {
+    pub fn readFrame(self: *const SourceMedia, ctx: *const MediaContext, frame_index: usize, buffer: []u8) !usize {
         if (frame_index >= self.frames.len) return error.FrameIndexOutOfBounds;
 
         const frame_data = try mov.extractFrame(ctx.io, ctx.file, self.frames[frame_index], ctx.allocator);

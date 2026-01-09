@@ -144,7 +144,7 @@ fn testSourceIntegration() !void {
     // std.debug.print("\nSource integration test passed!\n", .{});
 
     // VideoToolBox Decode test
-    try vtd.decode(source_media, mctx);
+    try vtd.decode(&source_media, &mctx);
 }
 
 pub fn main() !void {
