@@ -266,28 +266,51 @@ std.debug.print("Frame: {*}\n", .{frame.pixel_buffer});
 ```
 
 **Tested**:
-- ✅ Single frame decode (ProRes 4444, 4608×3164, 8.7MB)
-- ✅ Proper cleanup with no malloc errors
+- ✅ Single frame decode (ProRes 4444, 4096×2928, ~7-8MB per frame)
+- ✅ Multiple frame decode loop (68 frames decoded successfully)
+- ✅ Proper cleanup with no memory leaks
 - ✅ Decoder lifetime independent from frame lifetime
+- ✅ Reusable decoder session (create once, decode many frames)
+- ✅ Hardware acceleration confirmed (BGRA output, ~48MB decoded size)
+
+**Performance Notes**:
+- Heap allocation is NOT a bottleneck (happens once in init())
+- Per-frame costs: disk I/O (~7-8MB read) + GPU decode
+- Decode-on-demand pattern optimal for grading apps (random frame access)
+- VTDecompressionSessionDecodeFrame designed for one frame at a time
 
 **Files Modified**:
 - `src/io/decode/vtb_decode.zig` - Heap-allocated frame_ctx, DecodedFrame wrapper
-- `src/main.zig` - Updated to use `defer frame.deinit()` pattern
+- `src/main.zig` - Updated to use `defer frame.deinit()` pattern, multi-frame test loop
 
 ---
 
-## 📋 Remaining Phases
+## 🚧 Current Phase
+
+### Phase 7: Integration with media.zig (Starting - 2026-01-09)
+
+**Goal**: Integrate VideoToolboxDecoder into SourceMedia for production use
+
+**Plan**:
+1. Add optional `decoder: ?VideoToolboxDecoder` field to `SourceMedia` struct
+2. Initialize decoder in `SourceMedia.init()` if decoding is needed
+3. Update `readFrame()` or create new method to return decoded frames
+4. Consider: Should decoder creation be lazy (on first decode) or eager (in init)?
+5. Future: Port CVMetalTextureCache from Swift for GPU rendering
+
+**Questions to resolve**:
+- Where should decoder lifetime be managed? (SourceMedia.deinit()?)
+- Should we keep raw frame reading separate from decoded frame access?
+- API design: `getDecodedFrame(index)` vs modifying `readFrame()`?
+
+---
+
+## 📋 Completed Phases
 
 ### Phase 5: Synchronous Decode Wrapper ✅ SKIPPED
 - ✅ Already have synchronous behavior with `VTDecompressionSessionWaitForAsynchronousFrames()`
 - ✅ Frame context struct captures decoded frames
 - Decision: Skip complex mutex/condition variable implementation (not needed)
-
-### Phase 7: Integration with media.zig
-- Add decoder to SourceMedia
-- Change readFrame() to return CVPixelBuffer
-- Port CVMetalTextureCache from Swift
-- Remove Swift VideoReader dependency
 
 ---
 
@@ -310,16 +333,17 @@ std.debug.print("Frame: {*}\n", .{frame.pixel_buffer});
 ---
 
 **Last Updated**: 2026-01-09
-**Current Status**: Phase 6.5 Complete ✅ → DecodedFrame API production-ready! Ready for Phase 7 (Integration with media.zig)
+**Current Status**: Phase 7 Starting 🚧 → Integrating VideoToolboxDecoder with SourceMedia (Phase 6 complete, tested with 68-frame loop)
 
 ## 🎯 Recent Wins
 
-- 🎉 **ProRes 4444 hardware decoding fully working!**
-- ✅ Fixed frame_ctx lifetime issue - heap allocation for callback safety
-- ✅ DecodedFrame wrapper for clean ownership semantics
-- ✅ No more malloc errors - proper CF object lifecycle management
-- Successfully capturing and retaining CVPixelBuffers from async decoder
-- Proper memory management with CFRetain/CFRelease
+- 🎉 **Phase 6 Complete: VideoToolboxDecoder production-ready!**
+- ✅ Tested decoding 68 frames in a loop - all successful
+- ✅ Confirmed reusable session (create once, decode many)
+- ✅ Hardware acceleration working (4096×2928 ProRes 4444)
+- ✅ DecodedFrame wrapper with clean ownership semantics
+- ✅ Heap-allocated frame_ctx for async callback safety
+- ✅ No memory leaks - proper CF object lifecycle management
 - Full decode pipeline: MOV parsing → CMSampleBuffer → VTDecompressionSession → CVPixelBuffer → DecodedFrame
 - Production-ready API with defer pattern integration
-- Ready for Metal texture conversion and GPU rendering
+- Ready for Phase 7: SourceMedia integration

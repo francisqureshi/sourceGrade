@@ -34,8 +34,8 @@ fn testPgsql() !void {
             .host = "127.0.0.1",
         },
         .auth = .{
-            .username = "mac10",
-            // .username = "fq",
+            // .username = "mac10",
+            .username = "fq",
             .database = "sourcegrade",
             .timeout = 10_000,
         },
@@ -77,8 +77,8 @@ fn testSourceIntegration() !void {
     const io = threaded.io();
 
     // Open a test video file
-    // const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
-    const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
+    const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
+    // const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
 
     const file = Io.Dir.openFileAbsolute(io, video_path, .{}) catch |err| {
         std.debug.print("Could not open test video file: {}\n", .{err});
@@ -162,7 +162,21 @@ fn testSourceIntegration() !void {
     const pixel_buffer = try decoder.decodeFrame(0);
     defer pixel_buffer.deinit();
 
-    std.debug.print("Successfully decoded frame 0: {*}\n", .{pixel_buffer.pixel_buffer});
+    const frames: usize = 10;
+    // const frames: usize = @intCast(source_media.duration_in_frames);
+
+    for (0..frames) |f_idx| {
+        const frame = try decoder.decodeFrame(f_idx);
+        defer frame.deinit();
+
+        // const width = vtbFW.CVPixelBufferGetWidth(frame.pixel_buffer);
+        // const height = vtbFW.CVPixelBufferGetHeight(frame.pixel_buffer);
+        // const format = vtbFW.CVPixelBufferGetPixelFormatType(frame.pixel_buffer);
+
+        // std.debug.print("✅ Decoded: {d}x{d}, format: 0x{X:0>8}\n", .{ width, height, format });
+    }
+
+    // std.debug.print("Successfully decoded frame 0: {*}\n", .{pixel_buffer.pixel_buffer});
 }
 
 pub fn main() !void {
