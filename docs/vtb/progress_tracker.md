@@ -347,3 +347,51 @@ std.debug.print("Frame: {*}\n", .{frame.pixel_buffer});
 - Full decode pipeline: MOV parsing → CMSampleBuffer → VTDecompressionSession → CVPixelBuffer → DecodedFrame
 - Production-ready API with defer pattern integration
 - Ready for Phase 7: SourceMedia integration
+
+---
+
+## 🔬 Investigation: Pixel Format Selection (2026-01-10)
+
+**Discovery**: FFmpeg's `kCVPixelFormatType_4444AYpCbCr16` ('v416') **fails** on macOS 15!
+
+### What We Found
+
+Used `VTSessionCopyProperty()` to query supported pixel formats for ProRes 4444:
+
+**Supported formats (ordered by quality)**:
+```
+'sa4s' (kCVPixelFormatType_444YpCbCr16VideoRange_16A_TriPlanar) ✅ #1 for quality
+'420v' (kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+...12 formats total
+```
+
+**NOT in the list**: 'v416' (`kCVPixelFormatType_4444AYpCbCr16` = 0x76343136)
+
+### The Issue
+
+- FFmpeg code uses 'v416' for ProRes with alpha (see `libavcodec/videotoolbox.c:1147`)
+- On macOS 15, VideoToolbox returns error **-6680** (`kCVReturnInvalidPixelFormat`) during decode
+- Session creation succeeds, but decode callback fails
+- Likely macOS version difference - FFmpeg code may be for older macOS
+
+### The Solution
+
+Use `kCVPixelFormatType_444YpCbCr16VideoRange_16A_TriPlanar` ('sa4s'):
+- ✅ Works for ProRes 4444 **with** alpha
+- ✅ Works for ProRes 444 **without** alpha (alpha plane is just empty)
+- ✅ Preserves full 16-bit YCbCr quality + 16-bit alpha
+- ✅ First in quality-ordered list for ProRes 4444
+
+### Future Optimization (TODO)
+
+Instead of hardcoding 'sa4s', we should:
+1. Query `kVTDecompressionPropertyKey_SupportedPixelFormatsOrderedByQuality` after session creation
+2. Extract first format from CFArray using `CFArrayGetValueAtIndex()`
+3. Cache the best format in `SourceMedia` struct for that codec
+4. Avoids hardcoding format assumptions, works optimally for all codecs
+
+**Files modified**:
+- `src/io/decode/videotoolbox_c.zig` - Added VTSessionCopyProperty, CFArray functions
+- `src/io/decode/vtb_decode.zig` - Changed to 'sa4s', added TODO comment
+
+**Impact**: Now using optimal format for ProRes 444/4444 on modern macOS!

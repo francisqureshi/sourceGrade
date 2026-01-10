@@ -161,6 +161,28 @@ pub const kCVPixelFormatType_32BGRA = 0x42475241; // 'BGRA'
 /// 32-bit ARGB pixel format (8 bits per component)
 pub const kCVPixelFormatType_32ARGB = 0x41524742; // 'ARGB'
 
+/// 64-bit ARGB pixel format (16 bits per component) - preserves ProRes 4444 bit depth
+pub const kCVPixelFormatType_64ARGB = 0x62363461; // 'b64a'
+
+/// 128-bit RGBA float (32-bit float per component) - native float format
+pub const kCVPixelFormatType_128RGBAFloat = 0x52474261; //RGBf' (note: check actual FourCC)
+
+/// 4:4:4:4 AYpCbCr 16-bit packed (16 bits per component)
+/// Component order: A Y' Cb Cr in single buffer
+/// Note: May crash during ProRes decode - use tri-planar format instead
+pub const kCVPixelFormatType_4444AYpCbCr16 = 0x76343136; // 'v416'
+
+/// 4:4:4 YpCbCr 16-bit tri-planar with 16-bit alpha ✨ WORKS for ProRes 4444!
+/// Plane 0: Y (luma), Plane 1: CbCr interleaved, Plane 2: A (alpha)
+/// 16 bits per component, video range Y'CbCr, full range alpha
+/// Preserves full ProRes 4444 bit depth (12-bit RGB + 16-bit alpha)
+/// Total: 64 bits per pixel (8 bytes), ~96MB for 4K frame
+pub const kCVPixelFormatType_444YpCbCr16VideoRange_16A_TriPlanar = 0x73346173; // 'sa4s'
+
+/// 4:4:4 YpCbCr 16-bit bi-planar (video range) - FFmpeg P416 format
+/// Plane 0: Y, Plane 1: CbCr interleaved (no alpha)
+pub const kCVPixelFormatType_444YpCbCr16BiPlanarVideoRange = 0x70343136; // 'p416'
+
 /// 4:2:0 YCbCr bi-planar (video range) - efficient for video
 pub const kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange = 0x34323076; // '420v'
 
@@ -266,6 +288,27 @@ pub extern "c" fn VTDecompressionSessionCopyBlackPixelBuffer(
 pub extern "c" fn VTIsHardwareDecodeSupported(
     codecType: FourCharCode,
 ) Boolean;
+
+/// Copies a dictionary of supported properties for any VT session
+/// Works with VTDecompressionSessionRef, VTCompressionSessionRef, etc.
+/// Returns: OSStatus (0 on success), outputs dictionary via pointer
+pub extern "c" fn VTSessionCopySupportedPropertyDictionary(
+    session: ?*anyopaque, // Generic VTSessionRef - can be decompression or compression session
+    supportedPropertyDictionaryOut: *CFDictionaryRef,
+) OSStatus;
+
+/// Copies the value of a specific property from a VT session
+/// Returns: OSStatus (0 on success), outputs property value via pointer (must CFRelease)
+pub extern "c" fn VTSessionCopyProperty(
+    session: ?*anyopaque, // Generic VTSessionRef
+    propertyKey: CFStringRef, // Property key (e.g., kVTDecompressionPropertyKey_SupportedPixelFormatsOrderedByQuality)
+    allocator: ?*anyopaque, // Usually null
+    propertyValueOut: *?*anyopaque, // Outputs the property value
+) OSStatus;
+
+// VTDecompressionSession property keys
+pub extern "c" var kVTDecompressionPropertyKey_SupportedPixelFormatsOrderedByQuality: CFStringRef;
+pub extern "c" var kVTDecompressionPropertyKey_SupportedPixelFormatsOrderedByPerformance: CFStringRef;
 
 /// Callback function signature for receiving decoded frames
 /// Called asynchronously on a background thread when a frame is decoded
@@ -596,8 +639,23 @@ pub extern "c" fn CFRelease(cf: ?*anyopaque) void;
 /// Returns: the same pointer (return value usually discarded with `_`)
 pub extern "c" fn CFRetain(cf: ?*const anyopaque) ?*const anyopaque;
 
+/// Prints a description of a CoreFoundation object to stderr (for debugging)
+/// Useful for inspecting CFDictionaries, CFArrays, etc.
+pub extern "c" fn CFShow(obj: ?*const anyopaque) void;
+
 /// Returns the CFTypeID for a CF object (unique identifier for its class)
 pub extern "c" fn CFGetTypeID(cf: CFTypeRef) CFTypeID;
+
+// ============================================================================
+// CoreFoundation - CFArray functions
+// ============================================================================
+
+/// Returns the number of elements in a CFArray
+pub extern "c" fn CFArrayGetCount(theArray: CFArrayRef) CFIndex;
+
+/// Returns the value at the given index in a CFArray
+/// Returns: pointer to the value (not retained, don't CFRelease it)
+pub extern "c" fn CFArrayGetValueAtIndex(theArray: CFArrayRef, idx: CFIndex) ?*const anyopaque;
 
 // ============================================================================
 // CoreFoundation - CFDictionary functions
@@ -635,6 +693,14 @@ pub extern "c" fn CFNumberCreate(
     theType: CFIndex,
     valuePtr: ?*const anyopaque,
 ) CFNumberRef;
+
+/// Gets the value from a CFNumber
+/// Returns: true if successful, false if failed
+pub extern "c" fn CFNumberGetValue(
+    number: CFNumberRef,
+    theType: CFIndex,
+    valuePtr: ?*anyopaque,
+) Boolean;
 
 /// CFNumber type for signed 32-bit integers
 pub const kCFNumberSInt32Type: CFIndex = 3;

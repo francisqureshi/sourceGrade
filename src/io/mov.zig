@@ -246,6 +246,14 @@ fn parseStsz(data: []const u8, allocator: Allocator) !SampleSizeTable {
         for (sizes) |*size| {
             size.* = try reader.takeInt(u32, .big);
         }
+    } else {
+        // Fixed size - create array filled with the fixed value
+        sizes = try allocator.alloc(u32, sample_count);
+        errdefer allocator.free(sizes);
+
+        for (sizes) |*size| {
+            size.* = sample_size;
+        }
     }
 
     return SampleSizeTable{
@@ -476,8 +484,16 @@ fn parseStsdVideo(data: []const u8) !VideoInfo {
 
     const codec = try reader.takeArray(4);
 
-    // Check if this is a video codec (not timecode or other)
-    const is_video = !std.mem.eql(u8, codec, "tmcd");
+    // Check if this is a video codec (ProRes variants, H.264, etc.)
+    const is_video = std.mem.eql(u8, codec, "ap4h") or // ProRes 4444
+        std.mem.eql(u8, codec, "ap4x") or // ProRes 4444 XQ
+        std.mem.eql(u8, codec, "apch") or // ProRes 422 HQ
+        std.mem.eql(u8, codec, "apcn") or // ProRes 422
+        std.mem.eql(u8, codec, "apcs") or // ProRes 422 LT
+        std.mem.eql(u8, codec, "apco") or // ProRes 422 Proxy
+        std.mem.eql(u8, codec, "avc1") or // H.264
+        std.mem.eql(u8, codec, "hvc1") or // H.265
+        std.mem.eql(u8, codec, "hev1"); // H.265
     if (!is_video) return error.NotVideoTrack;
 
     // Skip reserved (6 bytes) + data_reference_index (2 bytes)
@@ -1187,7 +1203,7 @@ pub fn main() !void {
     defer argv.deinit();
 
     _ = argv.next();
-    const filepath = argv.next() orelse {
+    const file_path = argv.next() orelse {
         std.debug.print("Usage: mov_parser <file.mov> [-v]\n", .{});
         return error.MissingArgument;
     };
@@ -1195,10 +1211,17 @@ pub fn main() !void {
     const verbose = if (argv.next()) |arg| std.mem.eql(u8, arg, "-v") else false;
 
     // Open file
-    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const abs_path = try std.fs.cwd().realpath(filepath, &path_buf);
 
-    const file = try Io.File.openAbsolute(io, abs_path, .{});
+    // Open file - if filepath is already absolute, use it; otherwise resolve it
+    const file = if (std.fs.path.isAbsolute(file_path))
+        try Io.Dir.openFileAbsolute(io, file_path, .{})
+    else blk: {
+        var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+        const cwd = std.Io.Dir.cwd();
+        const cwd_len = try cwd.realPath(io, &path_buf);
+        const abs_path = try std.fmt.bufPrint(path_buf[cwd_len..], "/{s}", .{file_path});
+        break :blk try Io.Dir.openFileAbsolute(io, path_buf[0 .. cwd_len + abs_path.len], .{});
+    };
     defer file.close(io);
 
     const tracks = try parseMovFile(io, allocator, file, verbose);

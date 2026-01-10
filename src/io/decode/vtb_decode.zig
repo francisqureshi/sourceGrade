@@ -42,22 +42,22 @@ pub const VideoToolboxDecoder = struct {
         self.frame_ctx.pixel_buffer = null;
 
         const frame_size = try self.source_media.getFrameSize(frame_index);
-        std.debug.print("\nFirst frame size: {d} bytes\n", .{frame_size});
+        // std.debug.print("\nFirst frame size: {d} bytes\n", .{frame_size});
 
         const buffer = try self.mctx.allocator.alloc(u8, frame_size);
         defer self.mctx.allocator.free(buffer);
 
-        const bytes_read = try self.source_media.readFrame(self.mctx, frame_index, buffer);
-        std.debug.print("Read {d} bytes from frame 0\n", .{bytes_read});
+        _ = try self.source_media.readFrame(self.mctx, frame_index, buffer);
+        // std.debug.print("Read {d} bytes from frame 0\n", .{bytes_read});
 
         const block_buffer = try createBlockBuffer(buffer);
-        std.debug.print("block_buffer: {*}\n", .{block_buffer});
+        // std.debug.print("block_buffer: {*}\n", .{block_buffer});
 
         const timing_info = createSampleTimingInfo(frame_index, self.source_media);
         const sample_buffer = try createSampleBuffer(block_buffer, timing_info, self.format_desc);
         defer vtb.CFRelease(sample_buffer);
 
-        std.debug.print("sample_buffer: {*}\n", .{sample_buffer});
+        // std.debug.print("sample_buffer: {*}\n", .{sample_buffer});
 
         // Phase 4.5: Decode the frame
         try decompress(self.session, sample_buffer);
@@ -69,7 +69,6 @@ pub const VideoToolboxDecoder = struct {
             std.debug.print("Got pixel buffer: {*}\n", .{pb});
             return DecodedFrame{ .pixel_buffer = pb };
         } else {
-            std.debug.print("XXX ERROR: Callback did not populate pixel_buffer!\n", .{});
             return error.DecodeFrameFailed;
         }
     }
@@ -112,20 +111,20 @@ export fn decompressionOutputCallback(
     presentationTimeStamp: vtb.CMTime,
     presentationDuration: vtb.CMTime,
 ) callconv(.c) void {
+    if (status != vtb.noErr) {
+        std.debug.print("❌ Decode callback error: {d}\n", .{status});
+        return;
+    }
+
     if (decompressionOutputRefCon) |ctx_ptr| {
         const ctx: *FrameContext = @ptrCast(@alignCast(ctx_ptr));
-        ctx.pixel_buffer = imageBuffer; // Store it!
-        _ = vtb.CFRetain(imageBuffer); // Keep it alive
+        ctx.pixel_buffer = imageBuffer;
+        _ = vtb.CFRetain(imageBuffer); // Keep it alive beyond callback
     }
     _ = sourceFrameRefCon;
     _ = infoFlags;
     _ = presentationTimeStamp;
     _ = presentationDuration;
-
-    if (status != vtb.noErr) {
-        std.debug.print("❌ Decode callback error: {d}\n", .{status});
-        return;
-    }
 
     // Extract pixel buffer information
     const width = vtb.CVPixelBufferGetWidth(imageBuffer);
@@ -180,8 +179,13 @@ fn createDecompressionSession(
     format_desc: vtb.CMVideoFormatDescriptionRef,
     frame_ctx: *FrameContext,
 ) !vtb.VTDecompressionSessionRef {
-    // Create CFNumber for pixel format
-    var pixel_format: u32 = vtb.kCVPixelFormatType_32BGRA;
+    // Use highest quality 16-bit YCbCr format for ProRes 444/4444
+    // Testing revealed kCVPixelFormatType_4444AYpCbCr16 ('v416') is NOT supported on macOS 15
+    // The tri-planar 'sa4s' format works universally for all ProRes 444 variants (with/without alpha)
+    // TODO: Query VTSessionCopyProperty(kVTDecompressionPropertyKey_SupportedPixelFormatsOrderedByQuality)
+    //       and cache the best format in SourceMedia for optimal quality across all codecs
+    var pixel_format: u32 = vtb.kCVPixelFormatType_444YpCbCr16VideoRange_16A_TriPlanar; // 'sa4s'
+
     const pixel_format_number = vtb.CFNumberCreate(
         null,
         vtb.kCFNumberSInt32Type,
@@ -312,13 +316,12 @@ fn decompress(
     session: vtb.VTDecompressionSessionRef,
     sample_buffer: vtb.CMSampleBufferRef,
 ) !void {
-    // Send frame to decoder
     const status = vtb.VTDecompressionSessionDecodeFrame(
         session,
         sample_buffer,
         0, // decodeFlags: no special options
-        null, // sourceFrameRefCon: context for callback (not needed yet)
-        null, // infoFlagsOut: output flags (not needed yet)
+        null, // sourceFrameRefCon: context for callback
+        null, // infoFlagsOut: output flags
     );
 
     if (status != vtb.noErr) {
@@ -326,16 +329,12 @@ fn decompress(
         return error.DecodeFrameFailed;
     }
 
-    std.debug.print(" Frame sent to decoder\n", .{});
-
     // Wait for decoder to finish (blocks until callback completes)
     const wait_status = vtb.VTDecompressionSessionWaitForAsynchronousFrames(session);
     if (wait_status != vtb.noErr) {
         std.debug.print("VTDecompressionSessionWaitForAsynchronousFrames failed: {d}\n", .{wait_status});
         return error.DecoderWaitFailed;
     }
-
-    std.debug.print(" Decoder finished, callback was invoked\n", .{});
 }
 
 pub fn decode(source_media: *const media.SourceMedia, mctx: *const media.MediaContext) !void {

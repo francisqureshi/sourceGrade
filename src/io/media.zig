@@ -105,7 +105,9 @@ pub const SourceMedia = struct {
         var start_tc_buffer: [32]u8 = undefined;
 
         const start_timecode_slice = try smpte_calc.getTC(start_frame_number, &start_tc_buffer);
+        std.debug.print("start_timecode_slice: {s}\n", .{start_timecode_slice});
         const start_timecode = try ctx.allocator.dupe(u8, start_timecode_slice);
+        errdefer ctx.allocator.free(start_timecode);
 
         // Build frame index from video track
         const frames = if (vt.sizes != null and vt.chunk_offsets != null and vt.stsc_entries != null)
@@ -115,8 +117,14 @@ pub const SourceMedia = struct {
                 vt.chunk_offsets.?,
                 vt.stsc_entries.?,
             )
-        else
+        else {
+            // DEBUG: Print what's missing
+            std.debug.print("❌ Missing track data for frame index:\n", .{});
+            std.debug.print("   sizes: {}\n", .{vt.sizes != null});
+            std.debug.print("   chunk_offsets: {}\n", .{vt.chunk_offsets != null});
+            std.debug.print("   stsc_entries: {}\n", .{vt.stsc_entries != null});
             return error.InsufficientTrackData;
+        };
 
         const duration_in_frames = @as(i64, @intCast(frames.len));
         const end_frame_number = start_frame_number + duration_in_frames - 1;
