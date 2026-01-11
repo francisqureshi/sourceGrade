@@ -10,19 +10,17 @@ pub const VideoToolboxDecoder = struct {
     session: vtb.VTDecompressionSessionRef,
     format_desc: vtb.CMVideoFormatDescriptionRef,
     frame_ctx: *FrameContext,
-    mctx: *const media.MediaContext, //has our File, Allocator and std.IO
     source_media: *const media.SourceMedia, // Reference to clip
 
     pub fn init(
         source_media: *const media.SourceMedia,
-        mctx: *const media.MediaContext,
     ) !VideoToolboxDecoder {
         const format_desc = try createFormatDescription(source_media);
 
         // Check Fmt Description
         try verifyFmtDes(format_desc);
 
-        const frame_ctx_ptr = try mctx.allocator.create(FrameContext);
+        const frame_ctx_ptr = try source_media.mctx.allocator.create(FrameContext);
         frame_ctx_ptr.* = FrameContext{ .pixel_buffer = null };
         const session = try createDecompressionSession(format_desc, frame_ctx_ptr);
 
@@ -30,7 +28,6 @@ pub const VideoToolboxDecoder = struct {
             .session = session,
             .format_desc = format_desc,
             .frame_ctx = frame_ctx_ptr,
-            .mctx = mctx,
             .source_media = source_media,
         };
     }
@@ -44,10 +41,10 @@ pub const VideoToolboxDecoder = struct {
         const frame_size = try self.source_media.getFrameSize(frame_index);
         // std.debug.print("\nFirst frame size: {d} bytes\n", .{frame_size});
 
-        const buffer = try self.mctx.allocator.alloc(u8, frame_size);
-        defer self.mctx.allocator.free(buffer);
+        const buffer = try self.source_media.mctx.allocator.alloc(u8, frame_size);
+        defer self.source_media.mctx.allocator.free(buffer);
 
-        _ = try self.source_media.readFrame(self.mctx, frame_index, buffer);
+        _ = try self.source_media.readFrame(frame_index, buffer);
         // std.debug.print("Read {d} bytes from frame 0\n", .{bytes_read});
 
         const block_buffer = try createBlockBuffer(buffer);
@@ -77,7 +74,7 @@ pub const VideoToolboxDecoder = struct {
         vtb.CFRelease(self.format_desc);
         vtb.VTDecompressionSessionInvalidate(self.session);
         vtb.CFRelease(self.session);
-        self.mctx.allocator.destroy(self.frame_ctx);
+        self.source_media.mctx.allocator.destroy(self.frame_ctx);
     }
 };
 
@@ -337,7 +334,7 @@ fn decompress(
     }
 }
 
-pub fn decode(source_media: *const media.SourceMedia, mctx: *const media.MediaContext) !void {
+pub fn decode(source_media: *const media.SourceMedia) !void {
     std.debug.print("\n=== VideoToolbox Tests ===\n", .{});
 
     const format_desc = try createFormatDescription(source_media);
@@ -359,14 +356,14 @@ pub fn decode(source_media: *const media.SourceMedia, mctx: *const media.MediaCo
         vtb.CFRelease(session);
     }
 
-    std.debug.print("Phase 4.3 Complete! VTDecompressionSession created successfully!\n", .{});
+    std.debug.print("VTDecompressionSession created successfully!\n", .{});
 
     const frame_size = try source_media.getFrameSize(0);
     std.debug.print("\nFirst frame size: {d} bytes\n", .{frame_size});
 
-    const buffer = try mctx.allocator.alloc(u8, frame_size);
+    const buffer = try source_media.mctx.allocator.alloc(u8, frame_size);
 
-    const bytes_read = try source_media.readFrame(mctx, 0, buffer);
+    const bytes_read = try source_media.readFrame(0, buffer);
     std.debug.print("Read {d} bytes from frame 0\n", .{bytes_read});
 
     const block_buffer = try createBlockBuffer(buffer);
@@ -389,7 +386,7 @@ pub fn decode(source_media: *const media.SourceMedia, mctx: *const media.MediaCo
 
     defer vtb.CFRelease(sample_buffer);
 
-    defer mctx.allocator.free(buffer);
+    defer source_media.mctx.allocator.free(buffer);
 
     //  Check agian after defers
     if (frame_ctx.pixel_buffer) |pb| {

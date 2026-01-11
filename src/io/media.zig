@@ -22,8 +22,9 @@ pub const Rational = struct {
 };
 
 pub const SourceMedia = struct {
-    file_name: []const u8,
+    mctx: MediaContext,
     file_path: []const u8,
+    file_name: []const u8,
     container_resolution: Resolution,
     resolution: Resolution,
     frame_rate: Rational,
@@ -40,22 +41,27 @@ pub const SourceMedia = struct {
     stsd_data: []const u8,
     frames: []mov.FrameInfo,
 
-    pub fn init(ctx: MediaContext) !SourceMedia {
-        // file path and file name
-        var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-        const path_len = try ctx.file.realPath(ctx.io, &path_buf);
-        const file_path_slice = path_buf[0..path_len];
-        const file_path = try ctx.allocator.dupe(u8, file_path_slice);
-        errdefer ctx.allocator.free(file_path);
-        const file_name = try ctx.allocator.dupe(u8, std.fs.path.basename(file_path_slice));
-        errdefer ctx.allocator.free(file_name);
+    pub fn init(fp: []const u8, io: Io, allocator: Allocator) !SourceMedia {
+        // Open video file
 
-        const tracks = try mov.parseMovFile(ctx.io, ctx.allocator, ctx.file, false);
+        const file = try Io.Dir.openFileAbsolute(io, fp, .{});
+        errdefer file.close(io);
+
+        // Create media context
+        const mctx = MediaContext{ .file = file, .io = io, .allocator = allocator };
+
+        const file_path = try mctx.allocator.dupe(u8, fp);
+        errdefer mctx.allocator.free(file_path);
+
+        const file_name = try mctx.allocator.dupe(u8, std.fs.path.basename(fp));
+        errdefer mctx.allocator.free(file_name);
+
+        const tracks = try mov.parseMovFile(mctx.io, mctx.allocator, mctx.file, false);
         defer {
             for (tracks) |*track| {
-                track.deinit(ctx.allocator);
+                track.deinit(mctx.allocator);
             }
-            ctx.allocator.free(tracks);
+            mctx.allocator.free(tracks);
         }
 
         // Single pass through tracks to extract all metadata
@@ -76,14 +82,14 @@ pub const SourceMedia = struct {
         const resolution = Resolution{ .width = vi.width, .height = vi.height };
 
         const codec_array = vi.codec;
-        const codec = try ctx.allocator.dupe(u8, &codec_array);
-        errdefer ctx.allocator.free(codec);
+        const codec = try mctx.allocator.dupe(u8, &codec_array);
+        errdefer mctx.allocator.free(codec);
 
         const stsd_data = if (vt.stsd_data) |data|
-            try ctx.allocator.dupe(u8, data)
+            try mctx.allocator.dupe(u8, data)
         else
             return error.NoStsdData;
-        errdefer ctx.allocator.free(stsd_data);
+        errdefer mctx.allocator.free(stsd_data);
 
         const frame_duration = if (stts.len > 0) stts[0].sample_duration else return error.NoFrameDuration;
         const frame_rate = Rational{ .num = mdhd.timescale, .den = frame_duration };
@@ -106,13 +112,13 @@ pub const SourceMedia = struct {
 
         const start_timecode_slice = try smpte_calc.getTC(start_frame_number, &start_tc_buffer);
         std.debug.print("start_timecode_slice: {s}\n", .{start_timecode_slice});
-        const start_timecode = try ctx.allocator.dupe(u8, start_timecode_slice);
-        errdefer ctx.allocator.free(start_timecode);
+        const start_timecode = try mctx.allocator.dupe(u8, start_timecode_slice);
+        errdefer mctx.allocator.free(start_timecode);
 
         // Build frame index from video track
         const frames = if (vt.sizes != null and vt.chunk_offsets != null and vt.stsc_entries != null)
             try mov.buildFrameIndex(
-                ctx.allocator,
+                mctx.allocator,
                 vt.sizes.?,
                 vt.chunk_offsets.?,
                 vt.stsc_entries.?,
@@ -131,9 +137,11 @@ pub const SourceMedia = struct {
 
         var end_tc_buffer: [32]u8 = undefined;
         const end_timecode_slice = try smpte_calc.getTC(end_frame_number, &end_tc_buffer);
-        const end_timecode = try ctx.allocator.dupe(u8, end_timecode_slice);
+        const end_timecode = try mctx.allocator.dupe(u8, end_timecode_slice);
+        errdefer mctx.allocator.free(end_timecode);
 
         return .{
+            .mctx = mctx,
             .file_name = file_name,
             .file_path = file_path,
             .resolution = resolution,
@@ -154,14 +162,19 @@ pub const SourceMedia = struct {
         };
     }
 
+    pub fn fromDb() !void {
+        // TODO: Implement from DB load in init.
+        return error.notYetImplementedWIP;
+    }
+
     /// Read a frame into the provided buffer
     /// Returns the number of bytes written to the buffer
     /// Returns error.BufferTooSmall if buffer is insufficient
-    pub fn readFrame(self: *const SourceMedia, ctx: *const MediaContext, frame_index: usize, buffer: []u8) !usize {
+    pub fn readFrame(self: *const SourceMedia, frame_index: usize, buffer: []u8) !usize {
         if (frame_index >= self.frames.len) return error.FrameIndexOutOfBounds;
 
-        const frame_data = try mov.extractFrame(ctx.io, ctx.file, self.frames[frame_index], ctx.allocator);
-        defer ctx.allocator.free(frame_data);
+        const frame_data = try mov.extractFrame(self.mctx.io, self.mctx.file, self.frames[frame_index], self.mctx.allocator);
+        defer self.mctx.allocator.free(frame_data);
 
         if (buffer.len < frame_data.len) return error.BufferTooSmall;
 
@@ -176,14 +189,15 @@ pub const SourceMedia = struct {
         return self.frames[frame_index].size;
     }
 
-    pub fn deinit(self: *SourceMedia, allocator: Allocator) void {
-        allocator.free(self.file_path);
-        allocator.free(self.file_name);
-        allocator.free(self.codec);
-        allocator.free(self.stsd_data);
-        allocator.free(self.frames);
-        allocator.free(self.start_timecode);
-        allocator.free(self.end_timecode);
+    pub fn deinit(self: *SourceMedia) void {
+        self.mctx.file.close(self.mctx.io);
+        self.mctx.allocator.free(self.file_path);
+        self.mctx.allocator.free(self.file_name);
+        self.mctx.allocator.free(self.codec);
+        self.mctx.allocator.free(self.stsd_data);
+        self.mctx.allocator.free(self.frames);
+        self.mctx.allocator.free(self.start_timecode);
+        self.mctx.allocator.free(self.end_timecode);
     }
 };
 
@@ -209,20 +223,8 @@ pub fn main() !void {
         return error.MissingArgument;
     };
 
-    // Open file - if filepath is already absolute, use it; otherwise resolve it
-    const file = if (std.fs.path.isAbsolute(file_path))
-        try Io.Dir.openFileAbsolute(io, file_path, .{})
-    else blk: {
-        var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-        const cwd = std.Io.Dir.cwd();
-        const cwd_len = try cwd.realPath(io, &path_buf);
-        const abs_path = try std.fmt.bufPrint(path_buf[cwd_len..], "/{s}", .{file_path});
-        break :blk try Io.Dir.openFileAbsolute(io, path_buf[0 .. cwd_len + abs_path.len], .{});
-    };
-    defer file.close(io);
+    var test_source = try SourceMedia.init(file_path, io, allocator);
 
-    const ctx = MediaContext{ .file = file, .io = io, .allocator = allocator };
-    var test_source = try SourceMedia.init(ctx);
     defer test_source.deinit(allocator);
 
     std.debug.print("Resolution: {d}x{d}\n", .{ test_source.resolution.width, test_source.resolution.height });
@@ -242,7 +244,7 @@ pub fn main() !void {
         const buffer = try allocator.alloc(u8, frame_size);
         defer allocator.free(buffer);
 
-        const bytes_read = try test_source.readFrame(ctx, 0, buffer);
+        const bytes_read = try test_source.readFrame(0, buffer);
         std.debug.print("Read {d} bytes from frame 0\n", .{bytes_read});
     }
 }
