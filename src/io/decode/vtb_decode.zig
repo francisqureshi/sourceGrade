@@ -67,6 +67,24 @@ pub const VideoToolboxDecoder = struct {
         }
     }
 
+    pub fn cpuPixelBufferData(frame: DecodedFrame, allocator: Allocator) !void {
+
+        // Lock
+        vtb.CVPixelBufferLockBaseAddress(frame.pixel_buffer, 0);
+
+        // Get width, height, bytes per row
+        vtb.CVPixelBufferGetBytesPerRow(frame.pixelbuffer);
+
+        // Get base address
+        const dataref = try vtb.CVPixelBufferGetBaseAddress(frame.pixel_buffer);
+
+        allocator.dupe(comptime T: type, m: []const T)
+        // Print some pixel data
+
+        // Unlock
+        vtb.CVPixelBufferUnLockBaseAddress(frame.pixel_buffer, 0);
+    }
+
     pub fn deinit(self: *VideoToolboxDecoder) void {
         vtb.CFRelease(self.format_desc);
         vtb.VTDecompressionSessionInvalidate(self.session);
