@@ -928,5 +928,164 @@
 
   For an inspector, you'd want read-only. Want to add those constants to videotoolbox_c.zig first?
 
+❯ /export 
+  ⎿  Conversation exported to:
+     2026-01-11-this-session-is-being-continued-from-a-previous-co.txt
+
+❯ so then we allocate... via the base addres? @src/io/decode/vtb_decode.zig 
+  ⎿  Read src/io/decode/vtb_decode.zig (431 lines)
+
+⏺ Looking at your code at line 70-86, I see you've started the cpuPixelBufferData() function. There are a few issues to work through:
+
+  Line 76: vtb.CVPixelBufferGetBytesPerRow(frame.pixelbuffer) - typo, should be frame.pixel_buffer (underscore)
+
+  Line 79: CVPixelBufferGetBaseAddress returns a pointer to the pixel data, but you need to know how to interpret it. The question is: what's the type?
+
+  Line 81: That line looks incomplete/wrong - allocator.dupe(comptime T: type, m: []const T) is a function signature, not a call
+
+  Line 85: CVPixelBufferUnLockBaseAddress - should be UnlockBaseAddress (capital L in Unlock)
+
+  So stepping back: you have the base address pointer. To dump pixel data, you need to:
+
+  1. Know the layout: width, height, bytes per row, pixel format ('sa4s' = tri-planar YCbCr)
+  2. Cast the base address to a byte pointer
+  3. Read some bytes and print them
+
+  For 'sa4s' tri-planar, the layout is: Y plane, then Cb plane, then Cr plane. Each plane is 16-bit.
+
+  What if you started simpler - just extract and print the metadata (width, height, bytes per row, format) first, then worry about dumping pixel bytes?
+
+❯ this once can you do it fo me 
+
+⏺ I'll implement the pixel buffer inspector for you.
+
+⏺ Read(src/io/decode/vtb_decode.zig)
+  ⎿  Read 20 lines
+
+⏺ Update(src/io/decode/vtb_decode.zig)
+  ⎿  Added 52 lines, removed 10 lines                                     
+       68       }                                                        
+       69                                                                
+       70       pub fn cpuPixelBufferData(frame: DecodedFrame,           
+           allocator: Allocator) !void {                                 
+       71 +         _ = allocator;                                       
+       72                                                                
+       73 -         // Lock                                              
+       74 -        vtb.CVPixelBufferLockBaseAddress(frame.pixel_buffer, 0
+          -);                                                            
+       73 +         // Lock for read-only access                         
+       74 +        const lock_status =                                   
+          +vtb.CVPixelBufferLockBaseAddress(frame.pixel_buffer,          
+          +0x00000001); // kCVPixelBufferLock_ReadOnly                   
+       75 +         if (lock_status != vtb.noErr) {                      
+       76 +             std.debug.print("❌ Failed to lock pixel buffer:  
+          + {d}\n", .{lock_status});                                     
+       77 +             return;                                          
+       78 +         }                                                    
+       79 +         defer _ =                                            
+          +vtb.CVPixelBufferUnlockBaseAddress(frame.pixel_buffer, 0);    
+       80                                                                
+       81 -         // Get width, height, bytes per row                  
+       82 -         vtb.CVPixelBufferGetBytesPerRow(frame.pixel_buffer); 
+       81 +         // Get pixel buffer dimensions and format            
+       82 +         const width =                                        
+          +vtb.CVPixelBufferGetWidth(frame.pixel_buffer);                
+       83 +         const height =                                       
+          +vtb.CVPixelBufferGetHeight(frame.pixel_buffer);               
+       84 +         const bytes_per_row =                                
+          +vtb.CVPixelBufferGetBytesPerRow(frame.pixel_buffer);          
+       85 +         const pixel_format =                                 
+          +vtb.CVPixelBufferGetPixelFormatType(frame.pixel_buffer);      
+       86                                                                
+       87 -         // Get base address                                  
+       88 -         const dataref = try                                  
+          -vtb.CVPixelBufferGetBaseAddress(frame.pixel_buffer);          
+       87 +         // Format as readable string                         
+       88 +         const format_bytes: [4]u8 = @bitCast(pixel_format);  
+       89                                                                
+       90 -         allocator.dupe(comptime T: type, m: []const T)       
+       91 -         // Print some pixel data                             
+       90 +         std.debug.print("\n📊 CVPixelBuffer Inspector:\n",   
+          +.{});                                                         
+       91 +         std.debug.print("   Dimensions: {d}x{d}\n", .{       
+          +width, height });                                             
+       92 +         std.debug.print("   Pixel Format: 0x{X:0>8}          
+          +('{s}')\n", .{ pixel_format, &format_bytes });                
+       93 +         std.debug.print("   Bytes per Row: {d}\n",           
+          +.{bytes_per_row});                                            
+       94 +         std.debug.print("   Total Size: {d} bytes\n",        
+          +.{bytes_per_row * height});                                   
+       95                                                                
+       96 -         // Unlock                                            
+       97 -                                                              
+          -vtb.CVPixelBufferUnlockBaseAddress(frame.pixel_buffer, 0);    
+       96 +         // Get base address (pointer to pixel data)          
+       97 +         const base_addr =                                    
+          +vtb.CVPixelBufferGetBaseAddress(frame.pixel_buffer);          
+       98 +         if (base_addr == null) {                             
+       99 +             std.debug.print("❌ Failed to get pixel buffer    
+          +base address\n", .{});                                        
+      100 +             return;                                          
+      101 +         }                                                    
+      102 +                                                              
+      103 +         // Cast to byte pointer for inspection               
+      104 +         const pixel_data: [*]const u8 = @ptrCast(base_addr); 
+      105 +                                                              
+      106 +         // Dump first 32 bytes of each plane                 
+      107 +         std.debug.print("\n   First 32 bytes (Y plane):\n    
+          +", .{});                                                      
+      108 +         for (0..32) |i| {                                    
+      109 +             std.debug.print("{X:0>2} ", .{pixel_data[i]});   
+      110 +             if ((i + 1) % 16 == 0) std.debug.print("\n   ",  
+          +.{});                                                         
+      111 +         }                                                    
+      112 +                                                              
+      113 +         std.debug.print("\n\n   Middle row sample (Y         
+          +plane):\n   ", .{});                                          
+      114 +         const middle_row_offset = (height / 2) *             
+          +bytes_per_row;                                                
+      115 +         for (0..32) |i| {                                    
+      116 +             std.debug.print("{X:0>2} ",                      
+          +.{pixel_data[middle_row_offset + i]});                        
+      117 +             if ((i + 1) % 16 == 0) std.debug.print("\n   ",  
+          +.{});                                                         
+      118 +         }                                                    
+      119 +                                                              
+      120 +         std.debug.print("\n\n   Last row sample (Y plane):\n 
+          +   ", .{});                                                   
+      121 +         const last_row_offset = (height - 1) *               
+          +bytes_per_row;                                                
+      122 +         for (0..32) |i| {                                    
+      123 +             std.debug.print("{X:0>2} ",                      
+          +.{pixel_data[last_row_offset + i]});                          
+      124 +             if ((i + 1) % 16 == 0) std.debug.print("\n   ",  
+          +.{});                                                         
+      125 +         }                                                    
+      126 +                                                              
+      127 +         std.debug.print("\n\n", .{});                        
+      128       }                                                        
+      129                                                                
+      130       pub fn deinit(self: *VideoToolboxDecoder) void {         
+
+⏺ Done! The pixel buffer inspector is now implemented. It:
+
+  1. Locks the buffer with read-only flag (0x00000001)
+  2. Extracts width, height, bytes per row, and pixel format
+  3. Dumps hex data from three locations:
+    - First row (start of Y plane)
+    - Middle row (helps spot patterns)
+    - Last row (end of data)
+  4. Unlocks automatically with defer
+
+  Now add a call to it in your main decode loop:
+
+  for (0..frames) |f_idx| {
+      const frame = try source_media.decodeSourceFrame(f_idx);
+      try vtb_decode.VideoToolboxDecoder.cpuPixelBufferData(frame, allocator);
+      defer frame.deinit();
+  }
+
+  Try it and see what pixel data looks like!
+
 
 
