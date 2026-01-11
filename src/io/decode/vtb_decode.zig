@@ -73,7 +73,7 @@ pub const VideoToolboxDecoder = struct {
         vtb.CVPixelBufferLockBaseAddress(frame.pixel_buffer, 0);
 
         // Get width, height, bytes per row
-        vtb.CVPixelBufferGetBytesPerRow(frame.pixelbuffer);
+        vtb.CVPixelBufferGetBytesPerRow(frame.pixel_buffer);
 
         // Get base address
         const dataref = try vtb.CVPixelBufferGetBaseAddress(frame.pixel_buffer);
@@ -82,7 +82,7 @@ pub const VideoToolboxDecoder = struct {
         // Print some pixel data
 
         // Unlock
-        vtb.CVPixelBufferUnLockBaseAddress(frame.pixel_buffer, 0);
+        vtb.CVPixelBufferUnlockBaseAddress(frame.pixel_buffer, 0);
     }
 
     pub fn deinit(self: *VideoToolboxDecoder) void {
