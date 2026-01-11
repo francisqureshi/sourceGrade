@@ -1,6 +1,8 @@
 const std = @import("std");
-const mov = @import("mov.zig");
 const smpte = @import("smpte");
+const mov = @import("mov.zig");
+
+const vtb = @import("decode/vtb_decode.zig");
 
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
@@ -40,6 +42,7 @@ pub const SourceMedia = struct {
     codec: []const u8,
     stsd_data: []const u8,
     frames: []mov.FrameInfo,
+    decoder: ?vtb.VideoToolboxDecoder,
 
     pub fn init(fp: []const u8, io: Io, allocator: Allocator) !SourceMedia {
         // Open video file
@@ -159,12 +162,25 @@ pub const SourceMedia = struct {
             .codec = codec,
             .stsd_data = stsd_data,
             .frames = frames,
+            .decoder = null,
         };
     }
 
     pub fn fromDb() !void {
         // TODO: Implement from DB load in init.
         return error.notYetImplementedWIP;
+    }
+
+    pub fn decodeSourceFrame(self: *SourceMedia, frame_idx: usize) !vtb.DecodedFrame {
+        // VideoToolBox Decode
+
+        //init Decoder if self.decoder == null..
+        self.decoder = self.decoder orelse try vtb.VideoToolboxDecoder.init(self);
+
+        // Decode frame via
+        const pixel_buffer = try self.decoder.?.decodeFrame(frame_idx);
+
+        return pixel_buffer;
     }
 
     /// Read a frame into the provided buffer
@@ -190,7 +206,10 @@ pub const SourceMedia = struct {
     }
 
     pub fn deinit(self: *SourceMedia) void {
-        self.mctx.file.close(self.mctx.io);
+        // self.decoder.?.deinit();
+        if (self.decoder) |*decoder| {
+            decoder.deinit();
+        }
         self.mctx.allocator.free(self.file_path);
         self.mctx.allocator.free(self.file_name);
         self.mctx.allocator.free(self.codec);
@@ -198,6 +217,7 @@ pub const SourceMedia = struct {
         self.mctx.allocator.free(self.frames);
         self.mctx.allocator.free(self.start_timecode);
         self.mctx.allocator.free(self.end_timecode);
+        self.mctx.file.close(self.mctx.io);
     }
 };
 
@@ -224,8 +244,7 @@ pub fn main() !void {
     };
 
     var test_source = try SourceMedia.init(file_path, io, allocator);
-
-    defer test_source.deinit(allocator);
+    defer test_source.deinit();
 
     std.debug.print("Resolution: {d}x{d}\n", .{ test_source.resolution.width, test_source.resolution.height });
     std.debug.print("Frame Rate: {d}/{d} = {d:.2} fps\n", .{ test_source.frame_rate.num, test_source.frame_rate.den, test_source.frame_rate_float });

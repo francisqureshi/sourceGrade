@@ -32,10 +32,7 @@ pub const VideoToolboxDecoder = struct {
         };
     }
 
-    pub fn decodeFrame(
-        self: *VideoToolboxDecoder,
-        frame_index: usize,
-    ) !DecodedFrame {
+    pub fn decodeFrame(self: *VideoToolboxDecoder, frame_index: usize) !DecodedFrame {
         self.frame_ctx.pixel_buffer = null;
 
         const frame_size = try self.source_media.getFrameSize(frame_index);

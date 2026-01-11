@@ -12,7 +12,7 @@ const Allocator = std.mem.Allocator;
 const Io = std.Io;
 pub const log = std.log.scoped(.pgSQL);
 
-fn testSourceIntegration() !void {
+fn testSourceIO() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -51,31 +51,22 @@ fn testSourceIntegration() !void {
     // try db_test.addSourceToDB(allocator, source_media);
 
     std.debug.print("\n\n=== VideoToolBox Decoder ===\n\n", .{});
-    // VideoToolBox Decode test
-    // try vtd.decode(&source_media, &mctx);
+    // VideoToolBox Decode
 
-    var decoder = try vtb.VideoToolboxDecoder.init(&source_media);
-    defer decoder.deinit();
-
-    // Decode first frame
-    const pixel_buffer = try decoder.decodeFrame(0);
-    defer pixel_buffer.deinit();
-
-    const frames: usize = 10;
+    const frames: usize = 1;
     // const frames: usize = @intCast(source_media.duration_in_frames);
 
     for (0..frames) |f_idx| {
-        const frame = try decoder.decodeFrame(f_idx);
+        const frame = try source_media.decodeSourceFrame(f_idx);
         defer frame.deinit();
 
-        // const width = vtbFW.CVPixelBufferGetWidth(frame.pixel_buffer);
-        // const height = vtbFW.CVPixelBufferGetHeight(frame.pixel_buffer);
-        // const format = vtbFW.CVPixelBufferGetPixelFormatType(frame.pixel_buffer);
+        const width = vtbFW.CVPixelBufferGetWidth(frame.pixel_buffer);
+        const height = vtbFW.CVPixelBufferGetHeight(frame.pixel_buffer);
+        const format = vtbFW.CVPixelBufferGetPixelFormatType(frame.pixel_buffer);
 
-        // std.debug.print("✅ Decoded: {d}x{d}, format: 0x{X:0>8}\n", .{ width, height, format });
+        std.debug.print("✅ Decoded: {d}x{d}, format: 0x{X:0>8}\n", .{ width, height, format });
+        std.debug.print("Raw Decoded Data:\n\n{any}\n", .{frame.pixel_buffer.?});
     }
-
-    // std.debug.print("Successfully decoded frame 0: {*}\n", .{pixel_buffer.pixel_buffer});
 }
 
 fn app() !void {
@@ -112,7 +103,7 @@ pub fn main() !void {
     // try db_test.testPgsql();
 
     // Test IO
-    try testSourceIntegration();
+    try testSourceIO();
 
     // Run Gui / App
     // try app();
