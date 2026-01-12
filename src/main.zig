@@ -65,7 +65,6 @@ fn testSourceIO() !void {
         const format = vtbFW.CVPixelBufferGetPixelFormatType(frame.pixel_buffer);
 
         std.debug.print("✅ Decoded: {d}x{d}, format: 0x{X:0>8}\n", .{ width, height, format });
-        std.debug.print("Raw Decoded Data:\n\n{any}\n", .{frame.pixel_buffer.?});
     }
 }
 
