@@ -105,5 +105,5 @@ pub fn main() !void {
     try testSourceIO();
 
     // Run Gui / App
-    // try app();
+    try app();
 }

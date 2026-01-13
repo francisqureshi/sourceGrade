@@ -78,7 +78,7 @@ pub fn initRenderContext(
     });
 
     // Create window (1600x900, normal window with title bar)
-    const window = c.metal_window_create(1600, 900, false);
+    const window = c.metal_window_create(1920, 1080, false);
     if (window == null) {
         std.debug.print("Failed to create window\n", .{});
         return error.WindowCreationFailed;
@@ -338,7 +338,7 @@ pub fn renderThread(ctx: *RenderContext) void {
         ctx.imgui_ctx.addRect(1450, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
 
         // Add text using new unified system
-        ctx.imgui_ctx.addText("Large-96pt", 50, 200, 96.0, .{ 255, 255, 255, 255 }) catch {};
+        ctx.imgui_ctx.addText("Large-196pt", 50, 200, 196.0, .{ 255, 255, 255, 255 }) catch {};
         ctx.imgui_ctx.addText("Medium-48pt", 50, 300, 48.0, .{ 200, 200, 255, 255 }) catch {};
         ctx.imgui_ctx.addText("Small-24pt", 50, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
 
