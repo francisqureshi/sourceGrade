@@ -94,62 +94,102 @@ pub const VideoToolboxDecoder = struct {
         std.debug.print("   Bytes per Row: {d}\n", .{bytes_per_row});
         std.debug.print("   Total Size: {d} bytes\n", .{bytes_per_row * height});
 
-        // Get base address (pointer to pixel data)
-        const base_addr = vtb.CVPixelBufferGetBaseAddress(frame);
-        if (base_addr == null) {
-            std.debug.print("❌ Failed to get pixel buffer base address\n", .{});
-            return;
+        // // Get base address (pointer to pixel data)
+        // const base_addr = vtb.CVPixelBufferGetBaseAddress(frame);
+        // if (base_addr == null) {
+        //     std.debug.print("❌ Failed to get pixel buffer base address\n", .{});
+        //     return;
+        // }
+
+        const planes = vtb.CVPixelBufferGetPlaneCount(frame);
+        std.debug.print("planes: {any}\n", .{planes});
+
+        const plane_names = [_][]const u8{ "Y (Luma)", "CbCr (Chroma Interleaved)", "Alpha" };
+
+        for (0..planes) |plane| {
+            const plane_address = vtb.CVPixelBufferGetBaseAddressOfPlane(frame, plane);
+            if (plane_address == null) {
+                std.debug.print("❌ Failed to get plane {d} address\n", .{plane});
+                continue;
+            }
+
+            const plane_width = vtb.CVPixelBufferGetWidthOfPlane(frame, plane);
+            const plane_height = vtb.CVPixelBufferGetHeightOfPlane(frame, plane);
+            const plane_bpr = vtb.CVPixelBufferGetBytesPerRowOfPlane(frame, plane);
+
+            const plane_name = if (plane < plane_names.len) plane_names[plane] else "Unknown";
+            std.debug.print("\n=== PLANE {d}: {s} ===\n", .{ plane, plane_name });
+            std.debug.print("   Size: {d}x{d}, Bytes per row: {d}\n", .{ plane_width, plane_height, plane_bpr });
+
+            const pixel_data: [*]const u8 = @ptrCast(plane_address);
+
+            // First row sample
+            std.debug.print("   First row (first 32 bytes):\n   ", .{});
+            for (0..32) |i| {
+                std.debug.print("{X:0>2} ", .{pixel_data[i]});
+                if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
+            }
+
+            // Middle row sample
+            const middle_row_offset = (plane_height / 2) * plane_bpr;
+            std.debug.print("\n   Middle row (first 32 bytes):\n   ", .{});
+            for (0..32) |i| {
+                std.debug.print("{X:0>2} ", .{pixel_data[middle_row_offset + i]});
+                if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
+            }
+
+            std.debug.print("\n", .{});
         }
 
-        // Cast to byte pointer for inspection
-        const pixel_data: [*]const u8 = @ptrCast(base_addr);
+        std.debug.print("\n", .{});
+        // // Cast to byte pointer for inspection
+        // const pixel_data: [*]const u8 = @ptrCast(base_addr);
 
-        // Calculate plane offsets for tri-planar YCbCr
-        const y_plane_size = bytes_per_row * height;
-        const cb_plane_start = y_plane_size;
-        const cr_plane_start = y_plane_size * 2;
-        const middle_row_offset = (height / 2) * bytes_per_row;
+        // // Calculate plane offsets for tri-planar YCbCr
+        // const y_plane_size = bytes_per_row * height;
+        // const cb_plane_start = y_plane_size;
+        // const cr_plane_start = y_plane_size * 2;
+        // const middle_row_offset = (height / 2) * bytes_per_row;
 
-        std.debug.print("\n   === Y PLANE ===\n", .{});
-        std.debug.print("   First row:\n   ", .{});
-        for (0..32) |i| {
-            std.debug.print("{X:0>2} ", .{pixel_data[i]});
-            if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
-        }
-
-        std.debug.print("\n\n   Middle row:\n   ", .{});
-        for (0..32) |i| {
-            std.debug.print("{X:0>2} ", .{pixel_data[middle_row_offset + i]});
-            if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
-        }
-
-        std.debug.print("\n\n   === Cb PLANE ===\n", .{});
-        std.debug.print("   First row:\n   ", .{});
-        for (0..32) |i| {
-            std.debug.print("{X:0>2} ", .{pixel_data[cb_plane_start + i]});
-            if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
-        }
-
-        std.debug.print("\n\n   Middle row:\n   ", .{});
-        for (0..32) |i| {
-            std.debug.print("{X:0>2} ", .{pixel_data[cb_plane_start + middle_row_offset + i]});
-            if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
-        }
-
-        std.debug.print("\n\n   === Cr PLANE ===\n", .{});
-        std.debug.print("   First row:\n   ", .{});
-        for (0..32) |i| {
-            std.debug.print("{X:0>2} ", .{pixel_data[cr_plane_start + i]});
-            if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
-        }
-
-        std.debug.print("\n\n   Middle row:\n   ", .{});
-        for (0..32) |i| {
-            std.debug.print("{X:0>2} ", .{pixel_data[cr_plane_start + middle_row_offset + i]});
-            if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
-        }
-
-        std.debug.print("\n\n", .{});
+        // std.debug.print("\n   === Y PLANE ===\n", .{});
+        // std.debug.print("   First row:\n   ", .{});
+        // for (0..32) |i| {
+        //     std.debug.print("{X:0>2} ", .{pixel_data[i]});
+        //     if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
+        // }
+        //
+        // std.debug.print("\n\n   Middle row:\n   ", .{});
+        // for (0..32) |i| {
+        //     std.debug.print("{X:0>2} ", .{pixel_data[middle_row_offset + i]});
+        //     if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
+        // }
+        //
+        // std.debug.print("\n\n   === Cb PLANE ===\n", .{});
+        // std.debug.print("   First row:\n   ", .{});
+        // for (0..32) |i| {
+        //     std.debug.print("{X:0>2} ", .{pixel_data[cb_plane_start + i]});
+        //     if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
+        // }
+        //
+        // std.debug.print("\n\n   Middle row:\n   ", .{});
+        // for (0..32) |i| {
+        //     std.debug.print("{X:0>2} ", .{pixel_data[cb_plane_start + middle_row_offset + i]});
+        //     if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
+        // }
+        //
+        // std.debug.print("\n\n   === Cr PLANE ===\n", .{});
+        // std.debug.print("   First row:\n   ", .{});
+        // for (0..32) |i| {
+        //     std.debug.print("{X:0>2} ", .{pixel_data[cr_plane_start + i]});
+        //     if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
+        // }
+        //
+        // std.debug.print("\n\n   Middle row:\n   ", .{});
+        // for (0..32) |i| {
+        //     std.debug.print("{X:0>2} ", .{pixel_data[cr_plane_start + middle_row_offset + i]});
+        //     if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
+        // }
+        //
     }
 
     pub fn deinit(self: *VideoToolboxDecoder) void {

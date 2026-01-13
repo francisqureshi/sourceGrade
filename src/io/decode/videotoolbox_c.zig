@@ -582,6 +582,48 @@ pub extern "c" fn CVPixelBufferGetBytesPerRow(
     pixelBuffer: CVPixelBufferRef,
 ) usize;
 
+/// Gets the number of separate planes in a planar pixel buffer
+/// For tri-planar YCbCr formats, returns 3 (or 4 with alpha)
+/// Returns: Number of planes (0 if not planar or error)
+pub extern "c" fn CVPixelBufferGetPlaneCount(
+    pixelBuffer: CVPixelBufferRef,
+) usize;
+
+/// Gets the base address of a specific plane in a planar pixel buffer
+/// Must call CVPixelBufferLockBaseAddress first
+/// planeIndex: 0 for Y, 1 for Cb, 2 for Cr in YCbCr formats
+/// Returns: Pointer to plane data, or null on error
+pub extern "c" fn CVPixelBufferGetBaseAddressOfPlane(
+    pixelBuffer: CVPixelBufferRef,
+    planeIndex: usize,
+) ?*anyopaque;
+
+/// Gets the width of a specific plane
+/// For 4:4:4 formats, all planes have same width as buffer
+/// For 4:2:2, Cb/Cr planes are half width
+/// Returns: Width in pixels
+pub extern "c" fn CVPixelBufferGetWidthOfPlane(
+    pixelBuffer: CVPixelBufferRef,
+    planeIndex: usize,
+) usize;
+
+/// Gets the height of a specific plane
+/// For 4:4:4 and 4:2:2, all planes have same height
+/// For 4:2:0, Cb/Cr planes are half height
+/// Returns: Height in pixels
+pub extern "c" fn CVPixelBufferGetHeightOfPlane(
+    pixelBuffer: CVPixelBufferRef,
+    planeIndex: usize,
+) usize;
+
+/// Gets the bytes per row for a specific plane
+/// May include padding, so can be larger than width * bytes_per_pixel
+/// Returns: Bytes per row
+pub extern "c" fn CVPixelBufferGetBytesPerRowOfPlane(
+    pixelBuffer: CVPixelBufferRef,
+    planeIndex: usize,
+) usize;
+
 // ============================================================================
 // CoreVideo - CVMetalTextureCache functions
 // ============================================================================
