@@ -59,7 +59,7 @@ pub fn createProject(pool: *pg.Pool, name: []const u8, frame_rate: f64) !i32 {
         \\  (name, default_frame_rate, default_resolution_width, default_resolution_height, working_color_space)
         \\VALUES ($1, $2, $3, $4, $5)
         \\RETURNING id
-    , .{ name, frame_rate, 1920, 1080, "rec709" });
+    , .{ name, frame_rate, 1600, 900, "rec709" });
     defer result.deinit();
 
     if (try result.next()) |row| {

@@ -2,6 +2,8 @@ const std = @import("std");
 const media = @import("../media.zig");
 const vtb = @import("videotoolbox_c.zig");
 
+pub const MTLDeviceRef = vtb.MTLDeviceRef;
+
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 pub const log = std.log.scoped(.videoToolBox);
@@ -11,9 +13,12 @@ pub const VideoToolboxDecoder = struct {
     format_desc: vtb.CMVideoFormatDescriptionRef,
     frame_ctx: *FrameContext,
     source_media: *const media.SourceMedia, // Reference to clip
+    texture_cache: vtb.CVMetalTextureCacheRef, // Metal texture cache for zero-copy textures
+    metal_device: vtb.MTLDeviceRef, // Metal device
 
     pub fn init(
         source_media: *const media.SourceMedia,
+        metal_device: vtb.MTLDeviceRef,
     ) !VideoToolboxDecoder {
         const format_desc = try createFormatDescription(source_media);
 
@@ -24,11 +29,26 @@ pub const VideoToolboxDecoder = struct {
         frame_ctx_ptr.* = FrameContext{ .pixel_buffer = null };
         const session = try createDecompressionSession(format_desc, frame_ctx_ptr);
 
+        // Create Metal texture cache for zero-copy rendering
+        var texture_cache: vtb.CVMetalTextureCacheRef = undefined;
+        const cache_status = vtb.CVMetalTextureCacheCreate(
+            vtb.kCFAllocatorDefault,
+            null, // cache attributes
+            metal_device,
+            null, // texture attributes
+            &texture_cache,
+        );
+        if (cache_status != vtb.noErr) {
+            return error.TextureCacheCreationFailed;
+        }
+
         return .{
             .session = session,
             .format_desc = format_desc,
             .frame_ctx = frame_ctx_ptr,
             .source_media = source_media,
+            .texture_cache = texture_cache,
+            .metal_device = metal_device,
         };
     }
 
@@ -60,30 +80,92 @@ pub const VideoToolboxDecoder = struct {
 
         // Now frame_ctx.pixel_buffer contains the decoded frame!
         if (self.frame_ctx.pixel_buffer) |pb| {
-            try cpuPixelBufferData(pb); // CPU Decode Test fn
+            // TODO : TEST
+            const text_set = self.createMetalTextures(pb);
+            std.debug.print("text_set: {any}\n", .{text_set});
 
-            std.debug.print("Got pixel buffer: {*}\n", .{pb});
             return DecodedFrame{ .pixel_buffer = pb };
         } else {
             return error.DecodeFrameFailed;
         }
     }
 
-    pub fn cpuPixelBufferData(frame: vtb.CVPixelBufferRef) !void {
+    pub fn createMetalTextures(
+        self: *const VideoToolboxDecoder,
+        pixel_buffer: vtb.CVPixelBufferRef,
+    ) !MetalTextureSet {
+        const planes = vtb.CVPixelBufferGetPlaneCount(pixel_buffer);
+
+        if (planes != 3) {
+            return error.InvalidPixelBuffer;
+        }
+
+        var y_texture: vtb.CVMetalTextureRef = undefined;
+        const y_status = vtb.CVMetalTextureCacheCreateTextureFromImage(
+            vtb.kCFAllocatorDefault,
+            self.texture_cache,
+            pixel_buffer,
+            null, // no texture attributes
+            vtb.MTLPixelFormatR16Unorm,
+            vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 0),
+            vtb.CVPixelBufferGetHeightOfPlane(pixel_buffer, 0),
+            0, // plane index 0 = Y
+            &y_texture,
+        );
+        if (y_status != vtb.noErr) return error.YTextureCreationFailed;
+        errdefer vtb.CFRelease(y_texture);
+
+        var cbcr_texture: vtb.CVMetalTextureRef = undefined;
+        const cbcr_status = vtb.CVMetalTextureCacheCreateTextureFromImage(
+            vtb.kCFAllocatorDefault,
+            self.texture_cache,
+            pixel_buffer,
+            null, // no texture attributes
+            vtb.MTLPixelFormatRG16Unorm,
+            vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 1),
+            vtb.CVPixelBufferGetHeightOfPlane(pixel_buffer, 1),
+            1, // plane index 1 = CbCr
+            &cbcr_texture,
+        );
+        if (cbcr_status != vtb.noErr) return error.CbCrTextureCreationFailed;
+        errdefer vtb.CFRelease(cbcr_texture);
+
+        var alpha_texture: vtb.CVMetalTextureRef = undefined;
+        const alpha_status = vtb.CVMetalTextureCacheCreateTextureFromImage(
+            vtb.kCFAllocatorDefault,
+            self.texture_cache,
+            pixel_buffer,
+            null, // no texture attributes
+            vtb.MTLPixelFormatR16Unorm,
+            vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 2),
+            vtb.CVPixelBufferGetHeightOfPlane(pixel_buffer, 2),
+            2, // plane index 2 = Alpha
+            &alpha_texture,
+        );
+        if (alpha_status != vtb.noErr) return error.AlphaTextureCreationFailed;
+
+        return .{
+            .y = y_texture,
+            .cbcr = cbcr_texture,
+            .alpha = alpha_texture,
+        };
+    }
+
+    pub fn cpuInspectPixelBufferData(pixel_buffer: vtb.CVPixelBufferRef) !void {
 
         // Lock for read-only access
-        const lock_status = vtb.CVPixelBufferLockBaseAddress(frame, 0x00000001); // kCVPixelBufferLock_ReadOnly
+        const lock_status = vtb.CVPixelBufferLockBaseAddress(pixel_buffer, 0x00000001); // kCVPixelBufferLock_ReadOnly
         if (lock_status != vtb.noErr) {
             std.debug.print("❌ Failed to lock pixel buffer: {d}\n", .{lock_status});
             return;
         }
-        defer _ = vtb.CVPixelBufferUnlockBaseAddress(frame, 0);
+        defer _ = vtb.CVPixelBufferUnlockBaseAddress(pixel_buffer, 0);
 
         // Get pixel buffer dimensions and format
-        const width = vtb.CVPixelBufferGetWidth(frame);
-        const height = vtb.CVPixelBufferGetHeight(frame);
-        const bytes_per_row = vtb.CVPixelBufferGetBytesPerRow(frame);
-        const pixel_format = vtb.CVPixelBufferGetPixelFormatType(frame);
+        const width = vtb.CVPixelBufferGetWidth(pixel_buffer);
+        const height = vtb.CVPixelBufferGetHeight(pixel_buffer);
+        const bytes_per_row = vtb.CVPixelBufferGetBytesPerRow(pixel_buffer);
+        const pixel_format = vtb.CVPixelBufferGetPixelFormatType(pixel_buffer);
 
         // Format as readable string
         const format_bytes: [4]u8 = @bitCast(pixel_format);
@@ -94,28 +176,21 @@ pub const VideoToolboxDecoder = struct {
         std.debug.print("   Bytes per Row: {d}\n", .{bytes_per_row});
         std.debug.print("   Total Size: {d} bytes\n", .{bytes_per_row * height});
 
-        // // Get base address (pointer to pixel data)
-        // const base_addr = vtb.CVPixelBufferGetBaseAddress(frame);
-        // if (base_addr == null) {
-        //     std.debug.print("❌ Failed to get pixel buffer base address\n", .{});
-        //     return;
-        // }
-
-        const planes = vtb.CVPixelBufferGetPlaneCount(frame);
+        const planes = vtb.CVPixelBufferGetPlaneCount(pixel_buffer);
         std.debug.print("planes: {any}\n", .{planes});
 
         const plane_names = [_][]const u8{ "Y (Luma)", "CbCr (Chroma Interleaved)", "Alpha" };
 
         for (0..planes) |plane| {
-            const plane_address = vtb.CVPixelBufferGetBaseAddressOfPlane(frame, plane);
+            const plane_address = vtb.CVPixelBufferGetBaseAddressOfPlane(pixel_buffer, plane);
             if (plane_address == null) {
                 std.debug.print("❌ Failed to get plane {d} address\n", .{plane});
                 continue;
             }
 
-            const plane_width = vtb.CVPixelBufferGetWidthOfPlane(frame, plane);
-            const plane_height = vtb.CVPixelBufferGetHeightOfPlane(frame, plane);
-            const plane_bpr = vtb.CVPixelBufferGetBytesPerRowOfPlane(frame, plane);
+            const plane_width = vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, plane);
+            const plane_height = vtb.CVPixelBufferGetHeightOfPlane(pixel_buffer, plane);
+            const plane_bpr = vtb.CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer, plane);
 
             const plane_name = if (plane < plane_names.len) plane_names[plane] else "Unknown";
             std.debug.print("\n=== PLANE {d}: {s} ===\n", .{ plane, plane_name });
@@ -142,60 +217,13 @@ pub const VideoToolboxDecoder = struct {
         }
 
         std.debug.print("\n", .{});
-        // // Cast to byte pointer for inspection
-        // const pixel_data: [*]const u8 = @ptrCast(base_addr);
-
-        // // Calculate plane offsets for tri-planar YCbCr
-        // const y_plane_size = bytes_per_row * height;
-        // const cb_plane_start = y_plane_size;
-        // const cr_plane_start = y_plane_size * 2;
-        // const middle_row_offset = (height / 2) * bytes_per_row;
-
-        // std.debug.print("\n   === Y PLANE ===\n", .{});
-        // std.debug.print("   First row:\n   ", .{});
-        // for (0..32) |i| {
-        //     std.debug.print("{X:0>2} ", .{pixel_data[i]});
-        //     if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
-        // }
-        //
-        // std.debug.print("\n\n   Middle row:\n   ", .{});
-        // for (0..32) |i| {
-        //     std.debug.print("{X:0>2} ", .{pixel_data[middle_row_offset + i]});
-        //     if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
-        // }
-        //
-        // std.debug.print("\n\n   === Cb PLANE ===\n", .{});
-        // std.debug.print("   First row:\n   ", .{});
-        // for (0..32) |i| {
-        //     std.debug.print("{X:0>2} ", .{pixel_data[cb_plane_start + i]});
-        //     if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
-        // }
-        //
-        // std.debug.print("\n\n   Middle row:\n   ", .{});
-        // for (0..32) |i| {
-        //     std.debug.print("{X:0>2} ", .{pixel_data[cb_plane_start + middle_row_offset + i]});
-        //     if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
-        // }
-        //
-        // std.debug.print("\n\n   === Cr PLANE ===\n", .{});
-        // std.debug.print("   First row:\n   ", .{});
-        // for (0..32) |i| {
-        //     std.debug.print("{X:0>2} ", .{pixel_data[cr_plane_start + i]});
-        //     if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
-        // }
-        //
-        // std.debug.print("\n\n   Middle row:\n   ", .{});
-        // for (0..32) |i| {
-        //     std.debug.print("{X:0>2} ", .{pixel_data[cr_plane_start + middle_row_offset + i]});
-        //     if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
-        // }
-        //
     }
 
     pub fn deinit(self: *VideoToolboxDecoder) void {
         vtb.CFRelease(self.format_desc);
         vtb.VTDecompressionSessionInvalidate(self.session);
         vtb.CFRelease(self.session);
+        vtb.CFRelease(self.texture_cache);
         self.source_media.mctx.allocator.destroy(self.frame_ctx);
     }
 };
@@ -217,6 +245,30 @@ pub const DecodedFrame = struct {
 
     pub fn deinit(self: *const DecodedFrame) void {
         vtb.CFRelease(self.pixel_buffer);
+    }
+};
+
+pub const MetalTextureSet = struct {
+    y: vtb.CVMetalTextureRef,
+    cbcr: vtb.CVMetalTextureRef,
+    alpha: vtb.CVMetalTextureRef,
+
+    pub fn getMetalTextures(self: *const MetalTextureSet) struct {
+        y: vtb.MTLTextureRef,
+        cbcr: vtb.MTLTextureRef,
+        alpha: vtb.MTLTextureRef,
+    } {
+        return .{
+            .y = vtb.CVMetalTextureGetTexture(self.y),
+            .cbcr = vtb.CVMetalTextureGetTexture(self.cbcr),
+            .alpha = vtb.CVMetalTextureGetTexture(self.alpha),
+        };
+    }
+
+    pub fn deinit(self: *MetalTextureSet) void {
+        vtb.CFRelease(self.y);
+        vtb.CFRelease(self.cbcr);
+        vtb.CFRelease(self.alpha);
     }
 };
 

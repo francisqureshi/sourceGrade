@@ -233,11 +233,33 @@ vertex VideoVertexOut videoVertexShader(uint vertexID [[vertex_id]])
     return out;
 }
 
-// Sample video texture
+// Sample video texture - YCbCr 16-bit tri-planar (ProRes 4444)
+// Textures are 16-bit, automatically promoted to 32-bit float by Metal
 fragment float4 videoFragmentShader(
     VideoVertexOut in [[stage_in]],
-    texture2d<float> videoTexture [[texture(0)]])
+    texture2d<float> yTexture [[texture(0)]],      // Y (Luma) plane - R16Unorm
+    texture2d<float> cbcrTexture [[texture(1)]],   // CbCr (Chroma) plane - RG16Unorm
+    texture2d<float> alphaTexture [[texture(2)]])  // Alpha plane - R16Unorm
 {
     constexpr sampler textureSampler(filter::linear);
-    return videoTexture.sample(textureSampler, in.texCoord);
+
+    // Sample all three planes (16-bit textures → 32-bit float automatically)
+    float y = yTexture.sample(textureSampler, in.texCoord).r;
+    float2 cbcr = cbcrTexture.sample(textureSampler, in.texCoord).rg;
+    float alpha = alphaTexture.sample(textureSampler, in.texCoord).r;
+
+    // YCbCr to RGB conversion (Rec.709, video range)
+    // 'sa4s' uses video range: Y [16-235], CbCr [16-240] normalized to [0-1]
+
+    // Expand from video range to full range (all math in 32-bit float)
+    y = (y - 0.0625) / 0.859375;          // (y - 16/255) / (219/255)
+    float cb = (cbcr.r - 0.5) / 0.875;    // (cb - 128/255) / (224/255)
+    float cr = (cbcr.g - 0.5) / 0.875;    // (cr - 128/255) / (224/255)
+
+    // Rec.709 YCbCr to RGB matrix coefficients
+    float r = y + 1.5748 * cr;
+    float g = y - 0.1873 * cb - 0.4681 * cr;
+    float b = y + 1.8556 * cb;
+
+    return float4(r, g, b, alpha);
 }

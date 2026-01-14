@@ -102,7 +102,7 @@ pub fn main() !void {
     // try db_test.testPgsql();
 
     // Test IO
-    try testSourceIO();
+    // try testSourceIO();
 
     // Run Gui / App
     try app();

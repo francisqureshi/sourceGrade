@@ -171,16 +171,16 @@ pub const SourceMedia = struct {
         return error.notYetImplementedWIP;
     }
 
-    pub fn decodeSourceFrame(self: *SourceMedia, frame_idx: usize) !vtb.DecodedFrame {
-        // VideoToolBox Decode
-
-        //init Decoder if self.decoder == null..
-        self.decoder = self.decoder orelse try vtb.VideoToolboxDecoder.init(self);
-
-        // Decode frame via
-        const pixel_buffer = try self.decoder.?.decodeFrame(frame_idx);
-
-        return pixel_buffer;
+    pub fn decodeSourceFrame(
+        self: *SourceMedia,
+        frame_idx: usize,
+        metal_device: vtb.MTLDeviceRef, // Pass per-decode, not at init
+    ) !vtb.DecodedFrame {
+        // Lazy init with metal device
+        if (self.decoder == null) {
+            self.decoder = try vtb.VideoToolboxDecoder.init(self, metal_device);
+        }
+        return try self.decoder.?.decodeFrame(frame_idx);
     }
 
     /// Read a frame into the provided buffer

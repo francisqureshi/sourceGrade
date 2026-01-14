@@ -2,6 +2,8 @@ const std = @import("std");
 const metal = @import("metal");
 const imgui = @import("../gui/imgui.zig");
 
+const media = @import("../io/media.zig");
+
 // C bridge for Swift window
 const c = @cImport({
     @cInclude("metal_window.h");
@@ -38,7 +40,7 @@ pub const RenderContext = struct {
     imgui_ctx: *imgui.ImGuiContext,
     displaylink: ?*anyopaque,
     start_time: std.time.Instant,
-    video_reader: ?*anyopaque,
+    source_media: ?*media.SourceMedia,
     device_ptr: *anyopaque,
     video_fps: f64,
     config: RenderConfig,
@@ -78,7 +80,7 @@ pub fn initRenderContext(
     });
 
     // Create window (1600x900, normal window with title bar)
-    const window = c.metal_window_create(1920, 1080, false);
+    const window = c.metal_window_create(1600, 900, false);
     if (window == null) {
         std.debug.print("Failed to create window\n", .{});
         return error.WindowCreationFailed;
@@ -238,17 +240,28 @@ pub fn initRenderContext(
 
     const start_time = try std.time.Instant.now();
 
-    // Create video reader with empty path (no video loaded)
-    const video_reader = c.video_reader_create("", device_ptr);
+    // Create IO for video loading
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    // Note: We don't defer threaded.deinit() here because SourceMedia needs it
+    const io = threaded.io();
+
+    // Load test video file
+    const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
+    var source_media_ptr: ?*media.SourceMedia = null;
     var video_fps: f64 = 0;
-    if (video_reader == null) {
-        std.debug.print("Warning: Failed to load video file, falling back to rotating quad\n", .{});
-    } else {
-        var width: i32 = 0;
-        var height: i32 = 0;
-        var duration: f64 = 0;
-        c.video_reader_get_info(video_reader, &width, &height, &duration, &video_fps);
-        std.debug.print("✓ Loaded video: {}x{} @ {d:.2}fps, duration: {d:.2}s\n\n", .{ width, height, video_fps, duration });
+
+    if (media.SourceMedia.init(video_path, io, allocator)) |sm| {
+        source_media_ptr = try allocator.create(media.SourceMedia);
+        source_media_ptr.?.* = sm;
+        video_fps = @as(f64, @floatFromInt(sm.frame_rate.num)) / @as(f64, @floatFromInt(sm.frame_rate.den));
+        std.debug.print("✓ Loaded video: {d}x{d} @ {d:.2}fps, {d} frames\n\n", .{
+            sm.resolution.width,
+            sm.resolution.height,
+            video_fps,
+            sm.duration_in_frames,
+        });
+    } else |err| {
+        std.debug.print("Warning: Failed to load video file ({}), falling back to rotating quad\n", .{err});
     }
 
     // Create render context
@@ -264,7 +277,7 @@ pub fn initRenderContext(
         .imgui_ctx = imgui_ctx_owned,
         .displaylink = displaylink,
         .start_time = start_time,
-        .video_reader = video_reader,
+        .source_media = source_media_ptr,
         .device_ptr = device_ptr.?,
         .video_fps = video_fps,
         .config = config,
@@ -287,6 +300,13 @@ pub fn deinitRenderContext(result: *InitResult) void {
     result.imgui_ctx_owned.deinit();
     const allocator = std.heap.c_allocator; // Note: ideally we'd pass this in
     allocator.destroy(result.imgui_ctx_owned);
+
+    // Cleanup source media if loaded
+    if (result.context.source_media) |sm| {
+        sm.deinit();
+        allocator.destroy(sm);
+    }
+
     if (result.context.displaylink) |dl| {
         c.metal_displaylink_release(dl);
     }
@@ -305,10 +325,10 @@ pub fn renderThread(ctx: *RenderContext) void {
     const slider_value: f32 = 0.5;
     const playback_speed: f32 = 1.0; // 1.0 = normal speed, 0.5 = half speed, 2.0 = double speed
 
-    // Video frame timing - let CVMetalTextureCache manage texture lifecycle
+    // Video frame timing
     const base_frame_duration_ns = if (ctx.video_fps > 0) @as(u64, @intFromFloat(std.time.ns_per_s / ctx.video_fps)) else 0;
     var last_frame_time: u64 = 0;
-    var current_video_texture: ?*anyopaque = null;
+    var current_frame_index: usize = 0;
 
     while (true) : (frame += 1) {
         // Wait for vsync signal from CVDisplayLink
@@ -342,9 +362,14 @@ pub fn renderThread(ctx: *RenderContext) void {
         ctx.imgui_ctx.addText("Medium-48pt", 50, 300, 48.0, .{ 200, 200, 255, 255 }) catch {};
         ctx.imgui_ctx.addText("Small-24pt", 50, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
 
-        // Video frame timing - only advance frame when enough time has elapsed
-        var video_texture_ptr: ?*anyopaque = null;
-        if (ctx.video_reader) |reader| {
+        // Video frame timing - decode and create Metal textures from YCbCr
+        var metal_textures: ?struct {
+            y: metal.MetalTexture,
+            cbcr: metal.MetalTexture,
+            alpha: metal.MetalTexture,
+        } = null;
+
+        if (ctx.source_media) |sm| {
             const time_since_last_frame = elapsed_ns - last_frame_time;
 
             // Adjust frame duration by playback speed
@@ -355,18 +380,32 @@ pub fn renderThread(ctx: *RenderContext) void {
 
             // Time to advance to next frame?
             if (frame_duration_ns == 0 or time_since_last_frame >= frame_duration_ns) {
-                // Get next frame
-                current_video_texture = c.video_reader_get_next_frame(reader);
-                if (current_video_texture == null) {
-                    // End of video, restart
-                    c.video_reader_restart(reader);
-                    current_video_texture = c.video_reader_get_next_frame(reader);
-                }
+                // Decode frame from ProRes
+                const decoded_frame = sm.decodeSourceFrame(current_frame_index, @ptrCast(ctx.device_ptr)) catch |err| {
+                    std.debug.print("❌ Failed to decode frame: {}\n", .{err});
+                    continue;
+                };
+                defer decoded_frame.deinit();
 
+                // Create Metal textures from YCbCr planes
+                var texture_set = sm.decoder.?.createMetalTextures(decoded_frame.pixel_buffer) catch |err| {
+                    std.debug.print("❌ Failed to create Metal textures: {}\n", .{err});
+                    continue;
+                };
+                defer texture_set.deinit();
+
+                // Extract MTLTexture handles
+                const mtl_tex = texture_set.getMetalTextures();
+                metal_textures = .{
+                    .y = metal.MetalTexture.initFromPtr(mtl_tex.y),
+                    .cbcr = metal.MetalTexture.initFromPtr(mtl_tex.cbcr),
+                    .alpha = metal.MetalTexture.initFromPtr(mtl_tex.alpha),
+                };
+
+                // Advance to next frame
+                current_frame_index = (current_frame_index + 1) % @as(usize, @intCast(sm.duration_in_frames));
                 last_frame_time = elapsed_ns;
             }
-
-            video_texture_ptr = current_video_texture;
         }
 
         // Get drawable
@@ -406,15 +445,16 @@ pub fn renderThread(ctx: *RenderContext) void {
         var render_encoder = command_buffer.createRenderEncoder(&render_pass) catch continue;
         defer render_encoder.deinit();
 
-        // Layer 1: Video or rotating quad
-        if (video_texture_ptr) |vtp| {
-            // Render video frame
-            var video_texture = metal.MetalTexture.initFromPtr(vtp);
+        // Layer 1: Video (YCbCr tri-planar) or rotating quad
+        if (metal_textures) |*textures| {
+            // Render video frame with YCbCr→RGB conversion in shader
             render_encoder.setPipeline(&ctx.video_pipeline);
-            render_encoder.setFragmentTexture(&video_texture, 0);
+            render_encoder.setFragmentTexture(&textures.y, 0); // Y plane
+            render_encoder.setFragmentTexture(&textures.cbcr, 1); // CbCr plane
+            render_encoder.setFragmentTexture(&textures.alpha, 2); // Alpha plane
             render_encoder.drawPrimitives(.triangle_strip, 0, 4);
         } else {
-            // Render rotating quad
+            // Render rotating quad (fallback when no video loaded)
             render_encoder.setPipeline(&ctx.pipeline);
             render_encoder.setVertexBuffer(&ctx.vertex_buffer, 0, 0);
             render_encoder.setVertexBytes(@ptrCast(&rotation_angle), @sizeOf(f32), 1);
