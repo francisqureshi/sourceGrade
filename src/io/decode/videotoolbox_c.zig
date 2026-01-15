@@ -66,6 +66,18 @@ pub const MTLPixelFormatR16Unorm: MTLPixelFormat = 55;
 /// 16-bit dual channel normalized (0.0-1.0) - used for CbCr plane
 pub const MTLPixelFormatRG16Unorm: MTLPixelFormat = 65;
 
+/// Try alternate format - maybe the enum value is wrong?
+pub const MTLPixelFormatRG16Unorm_Alt: MTLPixelFormat = 105;
+
+/// 16-bit dual channel signed normalized (-1.0 to 1.0)
+pub const MTLPixelFormatRG16Snorm: MTLPixelFormat = 66;
+
+/// 8-bit dual channel normalized (0.0-1.0)
+pub const MTLPixelFormatRG8Unorm: MTLPixelFormat = 30;
+
+/// 8-bit single channel normalized (0.0-1.0)
+pub const MTLPixelFormatR8Unorm: MTLPixelFormat = 10;
+
 // ============================================================================
 // Basic types
 // ============================================================================

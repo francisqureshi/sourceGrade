@@ -71,19 +71,13 @@ pub const VideoToolboxDecoder = struct {
         const sample_buffer = try createSampleBuffer(block_buffer, timing_info, self.format_desc);
         defer vtb.CFRelease(sample_buffer);
 
-        // std.debug.print("sample_buffer: {*}\n", .{sample_buffer});
-
         // Phase 4.5: Decode the frame
         try decompress(self.session, sample_buffer);
 
         // return self.frame_ctx.pixel_buffer orelse error.DecodeFrameFailed;
 
-        // Now frame_ctx.pixel_buffer contains the decoded frame!
+        // Now frame_ctx.pixel_buffer contains the decoded frame
         if (self.frame_ctx.pixel_buffer) |pb| {
-            // TODO : TEST
-            const text_set = self.createMetalTextures(pb);
-            std.debug.print("text_set: {any}\n", .{text_set});
-
             return DecodedFrame{ .pixel_buffer = pb };
         } else {
             return error.DecodeFrameFailed;
@@ -100,14 +94,35 @@ pub const VideoToolboxDecoder = struct {
             return error.InvalidPixelBuffer;
         }
 
+        // Debug: Print detailed info once
+        const State = struct {
+            var printed: bool = false;
+        };
+        if (!State.printed) {
+            State.printed = true;
+            std.debug.print("\n🔍 TEXTURE CREATION DEBUG:\n", .{});
+            std.debug.print("Creating Y texture: width={}, height={}, format=R16Unorm\n", .{
+                vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 0) / 2,
+                vtb.CVPixelBufferGetHeightOfPlane(pixel_buffer, 0),
+            });
+            std.debug.print("Creating CbCr texture: width={}, height={}, format=RG16Unorm\n", .{
+                vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 1),
+                vtb.CVPixelBufferGetHeightOfPlane(pixel_buffer, 1),
+            });
+        }
+
+        // IMPORTANT: CVPixelBufferGetWidthOfPlane returns values that need to be halved
+        // for 16-bit formats. Actual texture width = reported_width / 2
+        // Likely because CVPixelBuffer reports "addressable width" not pixel count
         var y_texture: vtb.CVMetalTextureRef = undefined;
+        const y_width = vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 0);
         const y_status = vtb.CVMetalTextureCacheCreateTextureFromImage(
             vtb.kCFAllocatorDefault,
             self.texture_cache,
             pixel_buffer,
             null, // no texture attributes
             vtb.MTLPixelFormatR16Unorm,
-            vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 0),
+            y_width / 2, // Actual pixel width
             vtb.CVPixelBufferGetHeightOfPlane(pixel_buffer, 0),
             0, // plane index 0 = Y
             &y_texture,
@@ -116,13 +131,14 @@ pub const VideoToolboxDecoder = struct {
         errdefer vtb.CFRelease(y_texture);
 
         var cbcr_texture: vtb.CVMetalTextureRef = undefined;
+        const cbcr_width = vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 1);
         const cbcr_status = vtb.CVMetalTextureCacheCreateTextureFromImage(
             vtb.kCFAllocatorDefault,
             self.texture_cache,
             pixel_buffer,
             null, // no texture attributes
             vtb.MTLPixelFormatRG16Unorm,
-            vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 1),
+            cbcr_width, // Back to original
             vtb.CVPixelBufferGetHeightOfPlane(pixel_buffer, 1),
             1, // plane index 1 = CbCr
             &cbcr_texture,
@@ -131,18 +147,30 @@ pub const VideoToolboxDecoder = struct {
         errdefer vtb.CFRelease(cbcr_texture);
 
         var alpha_texture: vtb.CVMetalTextureRef = undefined;
+        const alpha_width = vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 2);
         const alpha_status = vtb.CVMetalTextureCacheCreateTextureFromImage(
             vtb.kCFAllocatorDefault,
             self.texture_cache,
             pixel_buffer,
             null, // no texture attributes
             vtb.MTLPixelFormatR16Unorm,
-            vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 2),
+            alpha_width / 2, // Actual pixel width (CVPixelBuffer reports byte width?)
             vtb.CVPixelBufferGetHeightOfPlane(pixel_buffer, 2),
             2, // plane index 2 = Alpha
             &alpha_texture,
         );
         if (alpha_status != vtb.noErr) return error.AlphaTextureCreationFailed;
+
+        // Debug: Check actual Metal texture dimensions
+        if (!State.printed) {
+            const y_mtl = vtb.CVMetalTextureGetTexture(y_texture);
+            const cbcr_mtl = vtb.CVMetalTextureGetTexture(cbcr_texture);
+            const alpha_mtl = vtb.CVMetalTextureGetTexture(alpha_texture);
+
+            // These are opaque pointers, but we can cast to get width/height
+            // For now, just print the pointers to verify they exist
+            std.debug.print("Metal textures created: Y={*}, CbCr={*}, Alpha={*}\n", .{ y_mtl, cbcr_mtl, alpha_mtl });
+        }
 
         return .{
             .y = y_texture,
@@ -297,20 +325,20 @@ export fn decompressionOutputCallback(
     _ = presentationTimeStamp;
     _ = presentationDuration;
 
-    // Extract pixel buffer information
-    const width = vtb.CVPixelBufferGetWidth(imageBuffer);
-    const height = vtb.CVPixelBufferGetHeight(imageBuffer);
-    const pixel_format = vtb.CVPixelBufferGetPixelFormatType(imageBuffer);
-    const bytes_per_row = vtb.CVPixelBufferGetBytesPerRow(imageBuffer);
-
-    // Convert pixel format to readable string
-    const format_bytes: [4]u8 = @bitCast(pixel_format);
-
-    std.debug.print("✅ Decoded CVPixelBuffer:\n", .{});
-    std.debug.print("   Resolution: {d}x{d}\n", .{ width, height });
-    std.debug.print("   Pixel Format: 0x{X:0>8} ('{s}')\n", .{ pixel_format, &format_bytes });
-    std.debug.print("   Bytes per Row: {d}\n", .{bytes_per_row});
-    std.debug.print("   Total Size: {d} bytes\n", .{bytes_per_row * height});
+    // // Extract pixel buffer information
+    // const width = vtb.CVPixelBufferGetWidth(imageBuffer);
+    // const height = vtb.CVPixelBufferGetHeight(imageBuffer);
+    // const pixel_format = vtb.CVPixelBufferGetPixelFormatType(imageBuffer);
+    // const bytes_per_row = vtb.CVPixelBufferGetBytesPerRow(imageBuffer);
+    //
+    // // Convert pixel format to readable string
+    // const format_bytes: [4]u8 = @bitCast(pixel_format);
+    //
+    // std.debug.print("   Decoded CVPixelBuffer:\n", .{});
+    // std.debug.print("   Resolution: {d}x{d}\n", .{ width, height });
+    // std.debug.print("   Pixel Format: 0x{X:0>8} ('{s}')\n", .{ pixel_format, &format_bytes });
+    // std.debug.print("   Bytes per Row: {d}\n", .{bytes_per_row});
+    // std.debug.print("   Total Size: {d} bytes\n", .{bytes_per_row * height});
 }
 
 fn createFormatDescription(source_media: *const media.SourceMedia) !vtb.CMVideoFormatDescriptionRef {
@@ -406,7 +434,7 @@ fn createDecompressionSession(
         return error.CreateDecompressionSessionFailed;
     }
 
-    std.debug.print("✅ Decompression session created successfully!\n", .{});
+    // std.debug.print("✅ Decompression session created successfully!\n", .{});
     return session.?;
 }
 

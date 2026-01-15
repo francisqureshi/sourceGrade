@@ -201,23 +201,45 @@ fragment float4 imguiFragmentShader(
 // Video Texture Shaders (for displaying video frames)
 // ============================================================================
 
+struct VideoUniforms {
+    float2 video_size;    // Video dimensions (width, height)
+    float2 viewport_size; // Window/viewport dimensions
+};
+
 struct VideoVertexOut {
     float4 position [[position]];
     float2 texCoord;
 };
 
-// Simple vertex shader for full-screen quad
-vertex VideoVertexOut videoVertexShader(uint vertexID [[vertex_id]])
+// Vertex shader with letterboxing to maintain aspect ratio
+vertex VideoVertexOut videoVertexShader(
+    uint vertexID [[vertex_id]],
+    constant VideoUniforms &uniforms [[buffer(0)]])
 {
     VideoVertexOut out;
 
-    // Full-screen quad coordinates
-    // vertexID 0,1,2,3 creates two triangles covering the screen
+    // Calculate aspect ratios
+    float video_aspect = uniforms.video_size.x / uniforms.video_size.y;
+    float viewport_aspect = uniforms.viewport_size.x / uniforms.viewport_size.y;
+
+    // Calculate scale to fit video in viewport (letterbox/pillarbox)
+    float2 scale;
+    if (video_aspect > viewport_aspect) {
+        // Video is wider - letterbox top/bottom
+        scale.x = 1.0;
+        scale.y = viewport_aspect / video_aspect;
+    } else {
+        // Video is taller - pillarbox left/right
+        scale.x = video_aspect / viewport_aspect;
+        scale.y = 1.0;
+    }
+
+    // Full-screen quad coordinates, scaled for aspect ratio
     float2 positions[4] = {
-        float2(-1.0, -1.0),  // bottom-left
-        float2( 1.0, -1.0),  // bottom-right
-        float2(-1.0,  1.0),  // top-left
-        float2( 1.0,  1.0)   // top-right
+        float2(-scale.x, -scale.y),  // bottom-left
+        float2( scale.x, -scale.y),  // bottom-right
+        float2(-scale.x,  scale.y),  // top-left
+        float2( scale.x,  scale.y)   // top-right
     };
 
     float2 texCoords[4] = {
@@ -245,21 +267,21 @@ fragment float4 videoFragmentShader(
 
     // Sample all three planes (16-bit textures → 32-bit float automatically)
     float y = yTexture.sample(textureSampler, in.texCoord).r;
-    float2 cbcr = cbcrTexture.sample(textureSampler, in.texCoord).rg;
+    float2 cbcr_raw = cbcrTexture.sample(textureSampler, in.texCoord).rg;
     float alpha = alphaTexture.sample(textureSampler, in.texCoord).r;
 
-    // YCbCr to RGB conversion (Rec.709, video range)
-    // 'sa4s' uses video range: Y [16-235], CbCr [16-240] normalized to [0-1]
+    // Try bit-flipping interpretation - maybe the 16-bit values are stored inverted
+    // Convert 0.0→1.0 to 1.0→0.0
+    float2 cbcr = float2(1.0 - cbcr_raw.r, 1.0 - cbcr_raw.g);
 
-    // Expand from video range to full range (all math in 32-bit float)
-    y = (y - 0.0625) / 0.859375;          // (y - 16/255) / (219/255)
-    float cb = (cbcr.r - 0.5) / 0.875;    // (cb - 128/255) / (224/255)
-    float cr = (cbcr.g - 0.5) / 0.875;    // (cr - 128/255) / (224/255)
+    // Center around 0
+    float cb = cbcr.r - 0.5;
+    float cr = cbcr.g - 0.5;
 
-    // Rec.709 YCbCr to RGB matrix coefficients
-    float r = y + 1.5748 * cr;
-    float g = y - 0.1873 * cb - 0.4681 * cr;
-    float b = y + 1.8556 * cb;
+    // Try BT.709 with smaller coefficients (maybe video range?)
+    float r = y + 1.402 * cr;
+    float g = y - 0.344136 * cb - 0.714136 * cr;
+    float b = y + 1.772 * cb;
 
     return float4(r, g, b, alpha);
 }

@@ -81,6 +81,7 @@ pub fn initRenderContext(
 
     // Create window (1600x900, normal window with title bar)
     const window = c.metal_window_create(1600, 900, false);
+    // const window = c.metal_window_create(1400, 1000, false);
     if (window == null) {
         std.debug.print("Failed to create window\n", .{});
         return error.WindowCreationFailed;
@@ -247,6 +248,8 @@ pub fn initRenderContext(
 
     // Load test video file
     const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
+    // const video_path = "/Users/fq/Desktop/AGMM/A004C002_250326_RQ2M_S01.mov";
+    // const video_path = "/Users/fq/Desktop/AGMM/ProRes444_with_Alpha.mov";
     var source_media_ptr: ?*media.SourceMedia = null;
     var video_fps: f64 = 0;
 
@@ -321,8 +324,8 @@ pub fn deinitRenderContext(result: *InitResult) void {
 /// Main render thread entry point. Runs until terminated.
 pub fn renderThread(ctx: *RenderContext) void {
     var frame: u64 = 0;
-    const speed: f32 = 3000;
-    const slider_value: f32 = 0.5;
+    // const speed: f32 = 3000;
+    // const slider_value: f32 = 0.5;
     const playback_speed: f32 = 1.0; // 1.0 = normal speed, 0.5 = half speed, 2.0 = double speed
 
     // Video frame timing
@@ -337,9 +340,9 @@ pub fn renderThread(ctx: *RenderContext) void {
         // Calculate rotation
         const current_time = std.time.Instant.now() catch continue;
         const elapsed_ns = current_time.since(ctx.start_time);
-        const elapsed_ms = @as(f32, @floatFromInt(elapsed_ns / std.time.ns_per_ms));
-        const rotation_angle: f32 = @mod(elapsed_ms, speed) / speed * 2.0 * std.math.pi;
-        const translation = [2]f32{ 0.5, 0.0 };
+        // const elapsed_ms = @as(f32, @floatFromInt(elapsed_ns / std.time.ns_per_ms));
+        // const rotation_angle: f32 = @mod(elapsed_ms, speed) / speed * 2.0 * std.math.pi;
+        // const translation = [2]f32{ 0.5, 0.0 };
 
         // Build IMGUI frame
         ctx.imgui_ctx.newFrame();
@@ -354,13 +357,13 @@ pub fn renderThread(ctx: *RenderContext) void {
         ctx.imgui_ctx.mouse_y = mouse_y;
         ctx.imgui_ctx.mouse_down = mouse_down;
 
-        ctx.imgui_ctx.addRect(1400, 50, 100, 100, imgui.ImGuiContext.packColor(slider_value, 1, 0, 1.0)) catch {};
-        ctx.imgui_ctx.addRect(1450, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
+        // ctx.imgui_ctx.addRect(1400, 50, 100, 100, imgui.ImGuiContext.packColor(slider_value, 1, 0, 1.0)) catch {};
+        // ctx.imgui_ctx.addRect(1450, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
 
-        // Add text using new unified system
-        ctx.imgui_ctx.addText("Large-196pt", 50, 200, 196.0, .{ 255, 255, 255, 255 }) catch {};
-        ctx.imgui_ctx.addText("Medium-48pt", 50, 300, 48.0, .{ 200, 200, 255, 255 }) catch {};
-        ctx.imgui_ctx.addText("Small-24pt", 50, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
+        // // Add text using new unified system
+        // ctx.imgui_ctx.addText("Large-196pt", 50, 200, 196.0, .{ 255, 255, 255, 255 }) catch {};
+        // ctx.imgui_ctx.addText("Medium-48pt", 50, 300, 48.0, .{ 200, 200, 255, 255 }) catch {};
+        // ctx.imgui_ctx.addText("Small-24pt", 50, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
 
         // Video frame timing - decode and create Metal textures from YCbCr
         var metal_textures: ?struct {
@@ -448,18 +451,43 @@ pub fn renderThread(ctx: *RenderContext) void {
         // Layer 1: Video (YCbCr tri-planar) or rotating quad
         if (metal_textures) |*textures| {
             // Render video frame with YCbCr→RGB conversion in shader
+            // Create VideoUniforms for letterboxing (matches Shaders.metal)
+            const VideoUniforms = extern struct {
+                video_size: [2]f32,
+                viewport_size: [2]f32,
+            };
+
+            const video_uniforms = VideoUniforms{
+                .video_size = .{
+                    @floatFromInt(ctx.source_media.?.resolution.width),
+                    @floatFromInt(ctx.source_media.?.resolution.height),
+                },
+                .viewport_size = .{ display_width_pts, display_height_pts },
+            };
+
+            // Debug: Print values once per second
+            if (@mod(frame, 60) == 0) {
+                std.debug.print("VideoUniforms: video={}x{}, viewport={}x{}\n", .{
+                    video_uniforms.video_size[0],
+                    video_uniforms.video_size[1],
+                    video_uniforms.viewport_size[0],
+                    video_uniforms.viewport_size[1],
+                });
+            }
+
             render_encoder.setPipeline(&ctx.video_pipeline);
+            render_encoder.setVertexBytes(@ptrCast(&video_uniforms), @sizeOf(VideoUniforms), 0);
             render_encoder.setFragmentTexture(&textures.y, 0); // Y plane
             render_encoder.setFragmentTexture(&textures.cbcr, 1); // CbCr plane
             render_encoder.setFragmentTexture(&textures.alpha, 2); // Alpha plane
             render_encoder.drawPrimitives(.triangle_strip, 0, 4);
-        } else {
-            // Render rotating quad (fallback when no video loaded)
-            render_encoder.setPipeline(&ctx.pipeline);
-            render_encoder.setVertexBuffer(&ctx.vertex_buffer, 0, 0);
-            render_encoder.setVertexBytes(@ptrCast(&rotation_angle), @sizeOf(f32), 1);
-            render_encoder.setVertexBytes(@ptrCast(&translation), @sizeOf([2]f32), 2);
-            render_encoder.drawIndexedPrimitives(.triangle, 12, &ctx.index_buffer, 0);
+            // } else {
+            //     // Render rotating quad (fallback when no video loaded)
+            //     render_encoder.setPipeline(&ctx.pipeline);
+            //     render_encoder.setVertexBuffer(&ctx.vertex_buffer, 0, 0);
+            //     render_encoder.setVertexBytes(@ptrCast(&rotation_angle), @sizeOf(f32), 1);
+            //     render_encoder.setVertexBytes(@ptrCast(&translation), @sizeOf([2]f32), 2);
+            //     render_encoder.drawIndexedPrimitives(.triangle, 12, &ctx.index_buffer, 0);
         }
 
         // Layer 2: IMGUI (unified shapes + text)

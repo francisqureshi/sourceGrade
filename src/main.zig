@@ -23,8 +23,8 @@ fn testSourceIO() !void {
     const io = threaded.io();
 
     // Open video file
-    const file_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
-    // const file_path = "/Users/fq/Desktop/AGMM/ProRes444_with_Alpha.mov";
+    // const file_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
+    const file_path = "/Users/fq/Desktop/AGMM/ProRes444_with_Alpha.mov";
     // const file_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
 
     // const file = Io.Dir.openFileAbsolute(io, video_path, .{}) catch |err| {
