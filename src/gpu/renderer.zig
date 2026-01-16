@@ -3,6 +3,7 @@ const metal = @import("metal");
 const imgui = @import("../gui/imgui.zig");
 
 const media = @import("../io/media.zig");
+const vtb = @import("../io/decode/vtb_decode.zig");
 
 // C bridge for Swift window
 const c = @cImport({
@@ -247,7 +248,8 @@ pub fn initRenderContext(
     const io = threaded.io();
 
     // Load test video file
-    const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
+    // const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
+    const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/A004C002_250326_RQ2M_S01.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/ProRes444_with_Alpha.mov";
     var source_media_ptr: ?*media.SourceMedia = null;
@@ -333,7 +335,28 @@ pub fn renderThread(ctx: *RenderContext) void {
     var last_frame_time: u64 = 0;
     var current_frame_index: usize = 0;
 
+    // CRITICAL: Video texture holders must persist across frames!
+    // These keep the CVPixelBuffer and Metal textures alive between decode and present
+    var metal_textures: ?struct {
+        y: metal.MetalTexture,
+        cbcr: metal.MetalTexture,
+        alpha: metal.MetalTexture,
+    } = null;
+    var decoded_frame_holder: ?vtb.DecodedFrame = null;
+    var texture_set_holder: ?vtb.MetalTextureSet = null;
+
     while (true) : (frame += 1) {
+        // Clean up PREVIOUS frame's resources (from last iteration)
+        // This happens BEFORE we start working on the new frame
+        if (decoded_frame_holder) |*df| {
+            df.deinit();
+            decoded_frame_holder = null;
+        }
+        if (texture_set_holder) |*ts| {
+            ts.deinit();
+            texture_set_holder = null;
+        }
+
         // Wait for vsync signal from CVDisplayLink
         frame_semaphore.wait();
 
@@ -366,12 +389,6 @@ pub fn renderThread(ctx: *RenderContext) void {
         // ctx.imgui_ctx.addText("Small-24pt", 50, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
 
         // Video frame timing - decode and create Metal textures from YCbCr
-        var metal_textures: ?struct {
-            y: metal.MetalTexture,
-            cbcr: metal.MetalTexture,
-            alpha: metal.MetalTexture,
-        } = null;
-
         if (ctx.source_media) |sm| {
             const time_since_last_frame = elapsed_ns - last_frame_time;
 
@@ -388,14 +405,14 @@ pub fn renderThread(ctx: *RenderContext) void {
                     std.debug.print("❌ Failed to decode frame: {}\n", .{err});
                     continue;
                 };
-                defer decoded_frame.deinit();
+                decoded_frame_holder = decoded_frame; // Keep alive until end of loop
 
                 // Create Metal textures from YCbCr planes
                 var texture_set = sm.decoder.?.createMetalTextures(decoded_frame.pixel_buffer) catch |err| {
                     std.debug.print("❌ Failed to create Metal textures: {}\n", .{err});
                     continue;
                 };
-                defer texture_set.deinit();
+                texture_set_holder = texture_set; // Keep alive until end of loop
 
                 // Extract MTLTexture handles
                 const mtl_tex = texture_set.getMetalTextures();

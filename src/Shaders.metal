@@ -255,6 +255,13 @@ vertex VideoVertexOut videoVertexShader(
     return out;
 }
 
+// Rec.709 Y'CbCr to RGB conversion matrix (video range)
+constant float3x3 ycbcr_to_rgb_rec709 = float3x3(
+    float3(1.164384,  1.164384,  1.164384),
+    float3(0.0,      -0.213249,  2.112402),
+    float3(1.792741, -0.532909,  0.0)
+);
+
 // Sample video texture - YCbCr 16-bit tri-planar (ProRes 4444)
 // Textures are 16-bit, automatically promoted to 32-bit float by Metal
 fragment float4 videoFragmentShader(
@@ -266,22 +273,25 @@ fragment float4 videoFragmentShader(
     constexpr sampler textureSampler(filter::linear);
 
     // Sample all three planes (16-bit textures → 32-bit float automatically)
-    float y = yTexture.sample(textureSampler, in.texCoord).r;
-    float2 cbcr_raw = cbcrTexture.sample(textureSampler, in.texCoord).rg;
+    // float y = yTexture.sample(textureSampler, in.texCoord).r;
+    float2 cbcr = cbcrTexture.sample(textureSampler, in.texCoord).rg;
     float alpha = alphaTexture.sample(textureSampler, in.texCoord).r;
 
-    // Try bit-flipping interpretation - maybe the 16-bit values are stored inverted
-    // Convert 0.0→1.0 to 1.0→0.0
-    float2 cbcr = float2(1.0 - cbcr_raw.r, 1.0 - cbcr_raw.g);
+    // DEBUG: Show raw Y channel to check if texture sampling is correct
+    float y = 1.0 - yTexture.sample(textureSampler, in.texCoord).r;
+    return float4(y, y, y, 1.0);
 
-    // Center around 0
-    float cb = cbcr.r - 0.5;
-    float cr = cbcr.g - 0.5;
+    // // TRY: Just use the values directly (full range)
+    // // Center CbCr around 0
+    // float cb = cbcr.g - 0.5;
+    // float cr = cbcr.r - 0.5;
 
-    // Try BT.709 with smaller coefficients (maybe video range?)
-    float r = y + 1.402 * cr;
-    float g = y - 0.344136 * cb - 0.714136 * cr;
-    float b = y + 1.772 * cb;
+    // // Simple Rec.709 full-range conversion
+    // float r = y + 1.5748 * cr;
+    // float g = y + 0.1873 * cb + 0.4681 * cr;
+    // float b = y + 1.8556 * cb;
 
-    return float4(r, g, b, alpha);
+    // // Return RGB directly without linearization
+    // // (VideoToolbox may already provide linear YCbCr data)
+    // return float4(saturate(r), saturate(g), saturate(b), alpha);
 }

@@ -47,6 +47,9 @@ pub const CFNumberRef = ?*opaque {};
 /// CoreFoundation type - base type for all CF objects
 pub const CFTypeRef = ?*opaque {};
 
+/// CoreVideo buffer reference - base type for pixel buffers
+pub const CVBufferRef = CVPixelBufferRef;
+
 /// Metal device - GPU device handle
 pub const MTLDeviceRef = ?*opaque {};
 
@@ -250,6 +253,12 @@ pub extern "c" var kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoD
 // ============================================================================
 
 /// Creates a decompression session for decoding compressed video frames
+/// Registers professional video workflow decoders (ProRes, etc.)
+/// Call once at app startup to access specialized Pro video decoders
+/// Without this, ProRes may be converted to other formats automatically
+/// Returns: noErr (0) on success
+pub extern "c" fn VTRegisterProfessionalVideoWorkflowVideoDecoders() OSStatus;
+
 /// Returns: noErr (0) on success, negative error code on failure
 /// Note: Call VTDecompressionSessionInvalidate() then CFRelease() when done
 pub extern "c" fn VTDecompressionSessionCreate(
@@ -695,6 +704,48 @@ pub extern "c" fn CVMetalTextureCacheFlush(
 ) void;
 
 // ============================================================================
+// CVBuffer Attachments - Color space and format metadata
+// ============================================================================
+
+/// Gets an attachment from a CVBuffer (like CVPixelBuffer)
+/// key: CFString for the attachment (e.g., kCVImageBufferYCbCrMatrixKey)
+/// attachmentMode: Pass NULL to ignore
+/// Returns: CFTypeRef containing the value, or NULL if not found
+pub extern "c" fn CVBufferGetAttachment(
+    buffer: CVBufferRef,
+    key: CFStringRef,
+    attachmentMode: ?*anyopaque,
+) CFTypeRef;
+
+/// Creates an immutable CFString from a C string
+/// cStr: Null-terminated C string
+/// encoding: Use kCFStringEncodingUTF8 (0x08000100)
+pub extern "c" fn CFStringCreateWithCString(
+    alloc: CFAllocatorRef,
+    cStr: [*:0]const u8,
+    encoding: u32,
+) CFStringRef;
+
+/// Gets the C string pointer from a CFString
+/// Returns: Pointer to null-terminated C string, valid while CFString exists
+pub extern "c" fn CFStringGetCStringPtr(
+    theString: CFStringRef,
+    encoding: u32,
+) ?[*:0]const u8;
+
+// CFString encoding constant
+pub const kCFStringEncodingUTF8: u32 = 0x08000100;
+
+// CVImageBuffer attachment keys (as C strings - we'll create CFStrings from these)
+pub const kCVImageBufferYCbCrMatrixKey: [*:0]const u8 = "CVImageBufferYCbCrMatrix";
+pub const kCVImageBufferColorPrimariesKey: [*:0]const u8 = "CVImageBufferColorPrimaries";
+pub const kCVImageBufferTransferFunctionKey: [*:0]const u8 = "CVImageBufferTransferFunction";
+pub const kCVImageBufferChromaLocationTopFieldKey: [*:0]const u8 = "CVImageBufferChromaLocationTopField";
+pub const kCVImageBufferChromaLocationBottomFieldKey: [*:0]const u8 = "CVImageBufferChromaLocationBottomField";
+pub const kCMFormatDescriptionExtension_Depth: [*:0]const u8 = "Depth";
+pub const kCMFormatDescriptionExtension_FullRangeVideo: [*:0]const u8 = "FullRangeVideo";
+
+// ============================================================================
 // CoreFoundation - CFType functions
 // ============================================================================
 
@@ -774,6 +825,12 @@ pub const kCFNumberSInt32Type: CFIndex = 3;
 
 /// CFNumber type for 64-bit floating point
 pub const kCFNumberFloat64Type: CFIndex = 13;
+
+/// Gets the boolean value from a CFBoolean
+/// Returns: true or false
+pub extern "c" fn CFBooleanGetValue(
+    boolean: CFTypeRef,
+) Boolean;
 
 // ============================================================================
 // OSStatus error codes

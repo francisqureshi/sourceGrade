@@ -20,6 +20,15 @@ pub const VideoToolboxDecoder = struct {
         source_media: *const media.SourceMedia,
         metal_device: vtb.MTLDeviceRef,
     ) !VideoToolboxDecoder {
+        // Register professional video workflow decoders (ProRes, etc.)
+        // This ensures we get native ProRes output formats without conversion
+        const register_status = vtb.VTRegisterProfessionalVideoWorkflowVideoDecoders();
+        if (register_status == vtb.noErr) {
+            std.debug.print("✓ Registered professional video decoders\n", .{});
+        } else {
+            std.debug.print("⚠ Failed to register professional decoders: {}\n", .{register_status});
+        }
+
         const format_desc = try createFormatDescription(source_media);
 
         // Check Fmt Description
@@ -100,6 +109,10 @@ pub const VideoToolboxDecoder = struct {
         };
         if (!State.printed) {
             State.printed = true;
+
+            // Inspect color space metadata from VideoToolbox
+            inspectColorSpaceMetadata(pixel_buffer);
+
             std.debug.print("\n🔍 TEXTURE CREATION DEBUG:\n", .{});
             std.debug.print("Creating Y texture: width={}, height={}, format=R16Unorm\n", .{
                 vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 0) / 2,
@@ -177,6 +190,75 @@ pub const VideoToolboxDecoder = struct {
             .cbcr = cbcr_texture,
             .alpha = alpha_texture,
         };
+    }
+
+    pub fn inspectColorSpaceMetadata(pixel_buffer: vtb.CVPixelBufferRef) void {
+        std.debug.print("\n🎨 COLOR SPACE METADATA:\n", .{});
+
+        // Helper to query and print an attachment
+        const queryAttachment = struct {
+            fn query(pb: vtb.CVPixelBufferRef, key_cstr: [*:0]const u8, name: []const u8) void {
+                const key = vtb.CFStringCreateWithCString(
+                    vtb.kCFAllocatorDefault,
+                    key_cstr,
+                    vtb.kCFStringEncodingUTF8,
+                );
+                defer vtb.CFRelease(key);
+
+                const value = vtb.CVBufferGetAttachment(pb, key, null);
+                if (value) |v| {
+                    // Try to get as CFString
+                    const str_ptr = vtb.CFStringGetCStringPtr(@ptrCast(v), vtb.kCFStringEncodingUTF8);
+                    if (str_ptr) |s| {
+                        std.debug.print("   {s}: {s}\n", .{ name, s });
+                    } else {
+                        std.debug.print("   {s}: <present but not string>\n", .{name});
+                    }
+                } else {
+                    std.debug.print("   {s}: <not found>\n", .{name});
+                }
+            }
+        }.query;
+
+        queryAttachment(pixel_buffer, vtb.kCVImageBufferYCbCrMatrixKey, "YCbCr Matrix");
+        queryAttachment(pixel_buffer, vtb.kCVImageBufferColorPrimariesKey, "Color Primaries");
+        queryAttachment(pixel_buffer, vtb.kCVImageBufferTransferFunctionKey, "Transfer Function");
+        queryAttachment(pixel_buffer, vtb.kCVImageBufferChromaLocationTopFieldKey, "Chroma Location (Top)");
+        queryAttachment(pixel_buffer, vtb.kCVImageBufferChromaLocationBottomFieldKey, "Chroma Location (Bottom)");
+
+        // Query bit depth
+        const depth_key = vtb.CFStringCreateWithCString(
+            vtb.kCFAllocatorDefault,
+            vtb.kCMFormatDescriptionExtension_Depth,
+            vtb.kCFStringEncodingUTF8,
+        );
+        defer vtb.CFRelease(depth_key);
+
+        const depth_value = vtb.CVBufferGetAttachment(pixel_buffer, depth_key, null);
+        if (depth_value) |v| {
+            var depth: i32 = 0;
+            if (vtb.CFNumberGetValue(@ptrCast(v), vtb.kCFNumberSInt32Type, &depth) != 0) {
+                std.debug.print("   Bit Depth: {}\n", .{depth});
+            }
+        } else {
+            std.debug.print("   Bit Depth: <not found>\n", .{});
+        }
+
+        // Query full range flag
+        const range_key = vtb.CFStringCreateWithCString(
+            vtb.kCFAllocatorDefault,
+            vtb.kCMFormatDescriptionExtension_FullRangeVideo,
+            vtb.kCFStringEncodingUTF8,
+        );
+        defer vtb.CFRelease(range_key);
+
+        const range_value = vtb.CVBufferGetAttachment(pixel_buffer, range_key, null);
+        if (range_value) |v| {
+            const is_full_range = vtb.CFBooleanGetValue(v) != 0;
+            std.debug.print("   Full Range: {}\n", .{is_full_range});
+        } else {
+            std.debug.print("   Full Range: <not found>\n", .{});
+        }
     }
 
     pub fn cpuInspectPixelBufferData(pixel_buffer: vtb.CVPixelBufferRef) !void {

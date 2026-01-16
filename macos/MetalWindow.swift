@@ -1,7 +1,7 @@
 import AppKit
+import CoreVideo
 import Metal
 import QuartzCore
-import CoreVideo
 
 /// Simple Metal view that wraps a CAMetalLayer
 class MetalView: NSView {
@@ -34,7 +34,10 @@ class MetalView: NSView {
         metalLayer.isOpaque = true  // CRITICAL: Tell CA this layer is fully opaque
 
         // Set Display P3 colorspace (like Ghostty) for Apple-style rendering
-        metalLayer.colorspace = CGColorSpace(name: CGColorSpace.displayP3)
+        // metalLayer.colorspace = CGColorSpace(name: CGColorSpace.displayP3)
+
+        // Trying sRGB for Decoder...
+        metalLayer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
 
         // Make the layer update when bounds change
         self.wantsLayer = true
@@ -94,7 +97,9 @@ class MetalView: NSView {
 /// C-compatible callbacks for Zig
 @_cdecl("metal_window_create")
 public
-func metal_window_create(width: Int32, height: Int32, borderless: Bool) -> UnsafeMutableRawPointer? {
+    func metal_window_create(width: Int32, height: Int32, borderless: Bool)
+    -> UnsafeMutableRawPointer?
+{
     let window = MetalWindow(
         width: CGFloat(width),
         height: CGFloat(height),
@@ -106,7 +111,8 @@ func metal_window_create(width: Int32, height: Int32, borderless: Bool) -> Unsaf
 }
 
 @_cdecl("metal_window_get_layer")
-public func metal_window_get_layer(_ windowPtr: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer? {
+public func metal_window_get_layer(_ windowPtr: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer?
+{
     let window = Unmanaged<MetalWindow>.fromOpaque(windowPtr).takeUnretainedValue()
     guard let metalView = window.contentView as? MetalView else { return nil }
 
@@ -115,7 +121,9 @@ public func metal_window_get_layer(_ windowPtr: UnsafeMutableRawPointer) -> Unsa
 }
 
 @_cdecl("metal_window_get_device")
-public func metal_window_get_device(_ windowPtr: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer? {
+public func metal_window_get_device(_ windowPtr: UnsafeMutableRawPointer)
+    -> UnsafeMutableRawPointer?
+{
     let window = Unmanaged<MetalWindow>.fromOpaque(windowPtr).takeUnretainedValue()
     guard let metalView = window.contentView as? MetalView else { return nil }
     guard let device = metalView.metalLayer.device else { return nil }
@@ -154,18 +162,22 @@ public func metal_window_is_running(_ windowPtr: UnsafeMutableRawPointer) -> Boo
 }
 
 @_cdecl("metal_layer_get_next_drawable")
-public func metal_layer_get_next_drawable(_ layerPtr: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer? {
+public func metal_layer_get_next_drawable(_ layerPtr: UnsafeMutableRawPointer)
+    -> UnsafeMutableRawPointer?
+{
     let layer = Unmanaged<CAMetalLayer>.fromOpaque(layerPtr).takeUnretainedValue()
     guard let drawable = layer.nextDrawable() else { return nil }
-    
+
     // Return the CAMetalDrawable pointer
     return Unmanaged.passRetained(drawable).toOpaque()
 }
 
 @_cdecl("metal_drawable_get_texture")
-public func metal_drawable_get_texture(_ drawablePtr: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer? {
+public func metal_drawable_get_texture(_ drawablePtr: UnsafeMutableRawPointer)
+    -> UnsafeMutableRawPointer?
+{
     let drawable = Unmanaged<CAMetalDrawable>.fromOpaque(drawablePtr).takeUnretainedValue()
-    
+
     // Return the MTLTexture pointer
     return Unmanaged.passRetained(drawable.texture).toOpaque()
 }
@@ -260,7 +272,9 @@ private func displayLinkCallback(
 }
 
 @_cdecl("metal_displaylink_create")
-public func metal_displaylink_create(_ windowPtr: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer? {
+public func metal_displaylink_create(_ windowPtr: UnsafeMutableRawPointer)
+    -> UnsafeMutableRawPointer?
+{
     let wrapper = MetalDisplayLinkWrapper()
 
     // Create CVDisplayLink
@@ -324,7 +338,8 @@ class MetalWindow: NSWindow {
         let contentRect = NSRect(x: 0, y: 0, width: width, height: height)
 
         // Choose window style
-        let styleMask: NSWindow.StyleMask = borderless
+        let styleMask: NSWindow.StyleMask =
+            borderless
             ? [.borderless]
             : [.titled, .closable, .resizable, .miniaturizable]
 
