@@ -87,6 +87,8 @@ pub const VideoToolboxDecoder = struct {
 
         // Now frame_ctx.pixel_buffer contains the decoded frame
         if (self.frame_ctx.pixel_buffer) |pb| {
+            try cpuInspectPixelBufferData(pb);
+
             return DecodedFrame{ .pixel_buffer = pb };
         } else {
             return error.DecodeFrameFailed;
@@ -124,18 +126,17 @@ pub const VideoToolboxDecoder = struct {
             });
         }
 
-        // IMPORTANT: CVPixelBufferGetWidthOfPlane returns values that need to be halved
-        // for 16-bit formats. Actual texture width = reported_width / 2
-        // Likely because CVPixelBuffer reports "addressable width" not pixel count
+        // TEST: Try without dividing width to see if that fixes Y channel reading
         var y_texture: vtb.CVMetalTextureRef = undefined;
         const y_width = vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 0);
+        std.debug.print("DEBUG: y_width from CVPixelBuffer = {}\n", .{y_width});
         const y_status = vtb.CVMetalTextureCacheCreateTextureFromImage(
             vtb.kCFAllocatorDefault,
             self.texture_cache,
             pixel_buffer,
             null, // no texture attributes
             vtb.MTLPixelFormatR16Unorm,
-            y_width / 2, // Actual pixel width
+            y_width, // TEST: Use full width without /2
             vtb.CVPixelBufferGetHeightOfPlane(pixel_buffer, 0),
             0, // plane index 0 = Y
             &y_texture,

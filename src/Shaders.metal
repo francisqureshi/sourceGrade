@@ -273,25 +273,19 @@ fragment float4 videoFragmentShader(
     constexpr sampler textureSampler(filter::linear);
 
     // Sample all three planes (16-bit textures → 32-bit float automatically)
-    // float y = yTexture.sample(textureSampler, in.texCoord).r;
+    // CRITICAL: Y channel is inverted! VideoToolbox outputs inverted luma
+    float y = 1.0 - yTexture.sample(textureSampler, in.texCoord).r;
     float2 cbcr = cbcrTexture.sample(textureSampler, in.texCoord).rg;
     float alpha = alphaTexture.sample(textureSampler, in.texCoord).r;
 
-    // DEBUG: Show raw Y channel to check if texture sampling is correct
-    float y = 1.0 - yTexture.sample(textureSampler, in.texCoord).r;
-    return float4(y, y, y, 1.0);
+    // Center CbCr around 0
+    float cb = cbcr.g - 0.5;
+    float cr = cbcr.r - 0.5;
 
-    // // TRY: Just use the values directly (full range)
-    // // Center CbCr around 0
-    // float cb = cbcr.g - 0.5;
-    // float cr = cbcr.r - 0.5;
+    // Rec.709 full-range YCbCr to RGB conversion
+    float r = y + 1.5748 * cr;
+    float g = y + 0.1873 * cb + 0.4681 * cr;
+    float b = y + 1.8556 * cb;
 
-    // // Simple Rec.709 full-range conversion
-    // float r = y + 1.5748 * cr;
-    // float g = y + 0.1873 * cb + 0.4681 * cr;
-    // float b = y + 1.8556 * cb;
-
-    // // Return RGB directly without linearization
-    // // (VideoToolbox may already provide linear YCbCr data)
-    // return float4(saturate(r), saturate(g), saturate(b), alpha);
+    return float4(saturate(r), saturate(g), saturate(b), alpha);
 }
