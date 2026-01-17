@@ -266,26 +266,15 @@ constant float3x3 ycbcr_to_rgb_rec709 = float3x3(
 // Textures are 16-bit, automatically promoted to 32-bit float by Metal
 fragment float4 videoFragmentShader(
     VideoVertexOut in [[stage_in]],
-    texture2d<float> yTexture [[texture(0)]],      // Y (Luma) plane - R16Unorm
-    texture2d<float> cbcrTexture [[texture(1)]],   // CbCr (Chroma) plane - RG16Unorm
+    texture2d<float> yTexture [[texture(0)]],      // Y plane - R16Unorm
+    texture2d<float> cbcrTexture [[texture(1)]],   // CbCr plane - RG16Unorm
     texture2d<float> alphaTexture [[texture(2)]])  // Alpha plane - R16Unorm
 {
     constexpr sampler textureSampler(filter::linear);
 
-    // Sample all three planes (16-bit textures → 32-bit float automatically)
-    // CRITICAL: Y channel is inverted! VideoToolbox outputs inverted luma
-    float y = 1.0 - yTexture.sample(textureSampler, in.texCoord).r;
-    float2 cbcr = cbcrTexture.sample(textureSampler, in.texCoord).rg;
-    float alpha = alphaTexture.sample(textureSampler, in.texCoord).r;
+    // Sample Y texture with plane-specific width (following WebRTC pattern)
+    float y = yTexture.sample(textureSampler, in.texCoord).r;
 
-    // Center CbCr around 0
-    float cb = cbcr.g - 0.5;
-    float cr = cbcr.r - 0.5;
-
-    // Rec.709 full-range YCbCr to RGB conversion
-    float r = y + 1.5748 * cr;
-    float g = y + 0.1873 * cb + 0.4681 * cr;
-    float b = y + 1.8556 * cb;
-
-    return float4(saturate(r), saturate(g), saturate(b), alpha);
+    // DEBUG: Show raw Y value
+    return float4(y, y, y, 1.0);
 }

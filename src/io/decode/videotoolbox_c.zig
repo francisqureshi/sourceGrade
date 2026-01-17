@@ -66,6 +66,9 @@ pub const MTLPixelFormat = u64;
 /// 16-bit single channel normalized (0.0-1.0) - used for Y and Alpha planes
 pub const MTLPixelFormatR16Unorm: MTLPixelFormat = 55;
 
+/// 16-bit single channel unsigned integer (TEST for debugging)
+pub const MTLPixelFormatR16Uint: MTLPixelFormat = 13;
+
 /// 16-bit dual channel normalized (0.0-1.0) - used for CbCr plane
 pub const MTLPixelFormatRG16Unorm: MTLPixelFormat = 65;
 

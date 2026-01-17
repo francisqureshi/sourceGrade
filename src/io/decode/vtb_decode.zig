@@ -126,18 +126,22 @@ pub const VideoToolboxDecoder = struct {
             });
         }
 
-        // TEST: Try without dividing width to see if that fixes Y channel reading
         var y_texture: vtb.CVMetalTextureRef = undefined;
+        // const y_width = vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 0);
+        // std.debug.print("DEBUG: y_width from CVPixelBuffer = {}\n", .{y_width});
+        // Try R16Unorm with plane-specific width (like WebRTC does for R8Unorm)
         const y_width = vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 0);
-        std.debug.print("DEBUG: y_width from CVPixelBuffer = {}\n", .{y_width});
+        const y_height = vtb.CVPixelBufferGetHeightOfPlane(pixel_buffer, 0);
+        std.debug.print("Y plane: width={}, height={}\n", .{ y_width, y_height });
+
         const y_status = vtb.CVMetalTextureCacheCreateTextureFromImage(
             vtb.kCFAllocatorDefault,
             self.texture_cache,
             pixel_buffer,
             null, // no texture attributes
-            vtb.MTLPixelFormatR16Unorm,
-            y_width, // TEST: Use full width without /2
-            vtb.CVPixelBufferGetHeightOfPlane(pixel_buffer, 0),
+            vtb.MTLPixelFormatR16Unorm,  // Back to R16Unorm
+            y_width,  // Use plane width directly (like WebRTC)
+            y_height,
             0, // plane index 0 = Y
             &y_texture,
         );
@@ -145,15 +149,15 @@ pub const VideoToolboxDecoder = struct {
         errdefer vtb.CFRelease(y_texture);
 
         var cbcr_texture: vtb.CVMetalTextureRef = undefined;
-        const cbcr_width = vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 1);
+        // const cbcr_width = vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 1);
         const cbcr_status = vtb.CVMetalTextureCacheCreateTextureFromImage(
             vtb.kCFAllocatorDefault,
             self.texture_cache,
             pixel_buffer,
             null, // no texture attributes
             vtb.MTLPixelFormatRG16Unorm,
-            cbcr_width, // Back to original
-            vtb.CVPixelBufferGetHeightOfPlane(pixel_buffer, 1),
+            vtb.CVPixelBufferGetWidth(pixel_buffer),
+            vtb.CVPixelBufferGetHeight(pixel_buffer),
             1, // plane index 1 = CbCr
             &cbcr_texture,
         );
@@ -161,15 +165,16 @@ pub const VideoToolboxDecoder = struct {
         errdefer vtb.CFRelease(cbcr_texture);
 
         var alpha_texture: vtb.CVMetalTextureRef = undefined;
-        const alpha_width = vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 2);
+        // const alpha_width = vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 2);
         const alpha_status = vtb.CVMetalTextureCacheCreateTextureFromImage(
             vtb.kCFAllocatorDefault,
             self.texture_cache,
             pixel_buffer,
             null, // no texture attributes
             vtb.MTLPixelFormatR16Unorm,
-            alpha_width / 2, // Actual pixel width (CVPixelBuffer reports byte width?)
-            vtb.CVPixelBufferGetHeightOfPlane(pixel_buffer, 2),
+            // alpha_width / 2, // Actual pixel width (CVPixelBuffer reports byte width?)
+            vtb.CVPixelBufferGetWidth(pixel_buffer),
+            vtb.CVPixelBufferGetHeight(pixel_buffer),
             2, // plane index 2 = Alpha
             &alpha_texture,
         );
@@ -316,13 +321,21 @@ pub const VideoToolboxDecoder = struct {
                 if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
             }
 
-            // Middle row sample
-            const middle_row_offset = (plane_height / 2) * plane_bpr;
-            std.debug.print("\n   Middle row (first 32 bytes):\n   ", .{});
-            for (0..32) |i| {
-                std.debug.print("{X:0>2} ", .{pixel_data[middle_row_offset + i]});
+            // Last 32 bytes
+            std.debug.print("First row (last 32 bytes):\n   ", .{});
+            const tail = plane_bpr - 32;
+            for (tail..plane_bpr) |i| {
+                std.debug.print("{X:0>2} ", .{pixel_data[i]});
                 if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
             }
+
+            // // Middle row sample
+            // const middle_row_offset = (plane_height / 2) * plane_bpr;
+            // std.debug.print("\n   Middle row (first 32 bytes):\n   ", .{});
+            // for (0..32) |i| {
+            //     std.debug.print("{X:0>2} ", .{pixel_data[middle_row_offset + i]});
+            //     if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
+            // }
 
             std.debug.print("\n", .{});
         }
