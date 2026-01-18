@@ -462,9 +462,9 @@ fn createDecompressionSession(
     frame_ctx: *FrameContext,
 ) !vtb.VTDecompressionSessionRef {
 
-    // Request BGRA output format - VideoToolbox will convert YCbCr to RGB for us
-    // Also request Metal compatibility
-    var pixel_format_value: i32 = @bitCast(@as(u32, vtb.kCVPixelFormatType_32BGRA));
+    // Request 64-bit ARGB output format (16-bit per channel) - preserves ProRes bit depth
+    // VideoToolbox will convert YCbCr to RGB for us
+    var pixel_format_value: i32 = @bitCast(@as(u32, vtb.kCVPixelFormatType_64ARGB));
     const pixel_format_num = vtb.CFNumberCreate(
         null,
         vtb.kCFNumberSInt32Type,
