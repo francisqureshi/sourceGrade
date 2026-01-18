@@ -142,10 +142,11 @@ pub const VideoToolboxDecoder = struct {
         // Choose Metal pixel format based on CVPixelBuffer format
         const metal_format: vtb.MTLPixelFormat = switch (pixel_format) {
             vtb.kCVPixelFormatType_32BGRA => vtb.MTLPixelFormatBGRA8Unorm,
+            vtb.kCVPixelFormatType_64ARGB => vtb.MTLPixelFormatRGBA16Unorm, // 64-bit ARGB -> RGBA16
             vtb.kCVPixelFormatType_4444AYpCbCr16 => vtb.MTLPixelFormatRGBA16Unorm,
             else => {
                 const format_bytes: [4]u8 = @bitCast(pixel_format);
-                std.debug.print("⚠️ Unknown pixel format: 0x{X:0>8} ('{s}'), trying BGRA8\n", .{ pixel_format, &format_bytes });
+                std.debug.print("⚠️ Unknown pixel format: 0x{X:0>8} ('{s}')\n", .{ pixel_format, &format_bytes });
                 return error.UnsupportedPixelFormat;
             },
         };
@@ -462,9 +463,10 @@ fn createDecompressionSession(
     frame_ctx: *FrameContext,
 ) !vtb.VTDecompressionSessionRef {
 
-    // Request 64-bit ARGB output format (16-bit per channel) - preserves ProRes bit depth
-    // VideoToolbox will convert YCbCr to RGB for us
-    var pixel_format_value: i32 = @bitCast(@as(u32, vtb.kCVPixelFormatType_64ARGB));
+    // Request BGRA output format - VideoToolbox will convert YCbCr to RGB for us
+    // Note: 64-bit ARGB (b64a) crashes - VideoToolbox doesn't support it for all codecs
+    // TODO: Try kCVPixelFormatType_64RGBAHalf or float formats for high bit depth
+    var pixel_format_value: i32 = @bitCast(@as(u32, vtb.kCVPixelFormatType_32BGRA));
     const pixel_format_num = vtb.CFNumberCreate(
         null,
         vtb.kCFNumberSInt32Type,
