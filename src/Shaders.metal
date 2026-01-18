@@ -255,26 +255,20 @@ vertex VideoVertexOut videoVertexShader(
     return out;
 }
 
-// Rec.709 Y'CbCr to RGB conversion matrix (video range)
-constant float3x3 ycbcr_to_rgb_rec709 = float3x3(
-    float3(1.164384,  1.164384,  1.164384),
-    float3(0.0,      -0.213249,  2.112402),
-    float3(1.792741, -0.532909,  0.0)
-);
-
-// Sample video texture - YCbCr 16-bit tri-planar (ProRes 4444)
-// Textures are 16-bit, automatically promoted to 32-bit float by Metal
+// Sample video texture - Packed AYUV 16-bit (y416 format from ProRes 4444)
+// y416 layout: [A16][Y16][Cb16][Cr16] per pixel (8 bytes total)
+// Metal RGBA16Unorm maps: R=A, G=Y, B=Cb, A=Cr
 fragment float4 videoFragmentShader(
     VideoVertexOut in [[stage_in]],
-    texture2d<float> yTexture [[texture(0)]],      // Y plane - R16Unorm
-    texture2d<float> cbcrTexture [[texture(1)]],   // CbCr plane - RG16Unorm
-    texture2d<float> alphaTexture [[texture(2)]])  // Alpha plane - R16Unorm
+    texture2d<float> packedTexture [[texture(0)]])  // AYUV packed as RGBA16Unorm
 {
     constexpr sampler textureSampler(filter::linear);
 
-    // Sample Y texture with plane-specific width (following WebRTC pattern)
-    float y = yTexture.sample(textureSampler, in.texCoord).r;
+    // Sample packed AYUV data (stored as RGBA16)
+    float4 ayuv = packedTexture.sample(textureSampler, in.texCoord);
 
-    // DEBUG: Show raw Y value
-    return float4(y, y, y, 1.0);
+    // DEBUG: Show raw channels to diagnose
+    // R=Alpha, G=Y, B=Cb, A=Cr for y416
+    // Show Y as greyscale
+    return float4(ayuv.g, ayuv.g, ayuv.g, 1.0);
 }

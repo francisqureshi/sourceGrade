@@ -249,9 +249,9 @@ pub fn initRenderContext(
 
     // Load test video file
     // const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
-    const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
+    // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/A004C002_250326_RQ2M_S01.mov";
-    // const video_path = "/Users/fq/Desktop/AGMM/ProRes444_with_Alpha.mov";
+    const video_path = "/Users/fq/Desktop/AGMM/ProRes444_with_Alpha.mov";
     var source_media_ptr: ?*media.SourceMedia = null;
     var video_fps: f64 = 0;
 
@@ -337,11 +337,8 @@ pub fn renderThread(ctx: *RenderContext) void {
 
     // CRITICAL: Video texture holders must persist across frames!
     // These keep the CVPixelBuffer and Metal textures alive between decode and present
-    var metal_textures: ?struct {
-        y: metal.MetalTexture,
-        cbcr: metal.MetalTexture,
-        alpha: metal.MetalTexture,
-    } = null;
+    // For y416 packed format, we use a single RGBA16 texture (not tri-planar)
+    var packed_metal_texture: ?metal.MetalTexture = null;
     var decoded_frame_holder: ?vtb.DecodedFrame = null;
     var texture_set_holder: ?vtb.MetalTextureSet = null;
 
@@ -407,20 +404,16 @@ pub fn renderThread(ctx: *RenderContext) void {
                 };
                 decoded_frame_holder = decoded_frame; // Keep alive until end of loop
 
-                // Create Metal textures from YCbCr planes
+                // Create Metal texture from packed AYUV buffer (y416 format)
                 var texture_set = sm.decoder.?.createMetalTextures(decoded_frame.pixel_buffer) catch |err| {
                     std.debug.print("❌ Failed to create Metal textures: {}\n", .{err});
                     continue;
                 };
                 texture_set_holder = texture_set; // Keep alive until end of loop
 
-                // Extract MTLTexture handles
-                const mtl_tex = texture_set.getMetalTextures();
-                metal_textures = .{
-                    .y = metal.MetalTexture.initFromPtr(mtl_tex.y),
-                    .cbcr = metal.MetalTexture.initFromPtr(mtl_tex.cbcr),
-                    .alpha = metal.MetalTexture.initFromPtr(mtl_tex.alpha),
-                };
+                // Extract MTLTexture handle (single packed texture for y416)
+                const mtl_tex = texture_set.getMetalTexture();
+                packed_metal_texture = metal.MetalTexture.initFromPtr(mtl_tex);
 
                 // Advance to next frame
                 current_frame_index = (current_frame_index + 1) % @as(usize, @intCast(sm.duration_in_frames));
@@ -465,8 +458,8 @@ pub fn renderThread(ctx: *RenderContext) void {
         var render_encoder = command_buffer.createRenderEncoder(&render_pass) catch continue;
         defer render_encoder.deinit();
 
-        // Layer 1: Video (YCbCr tri-planar) or rotating quad
-        if (metal_textures) |*textures| {
+        // Layer 1: Video (packed AYUV y416 format) or rotating quad
+        if (packed_metal_texture) |*texture| {
             // Render video frame with YCbCr→RGB conversion in shader
             // Create VideoUniforms for letterboxing (matches Shaders.metal)
             const VideoUniforms = extern struct {
@@ -494,9 +487,7 @@ pub fn renderThread(ctx: *RenderContext) void {
 
             render_encoder.setPipeline(&ctx.video_pipeline);
             render_encoder.setVertexBytes(@ptrCast(&video_uniforms), @sizeOf(VideoUniforms), 0);
-            render_encoder.setFragmentTexture(&textures.y, 0); // Y plane
-            render_encoder.setFragmentTexture(&textures.cbcr, 1); // CbCr plane
-            render_encoder.setFragmentTexture(&textures.alpha, 2); // Alpha plane
+            render_encoder.setFragmentTexture(texture, 0); // Packed AYUV texture
             render_encoder.drawPrimitives(.triangle_strip, 0, 4);
             // } else {
             //     // Render rotating quad (fallback when no video loaded)

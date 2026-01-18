@@ -8,6 +8,20 @@ const Allocator = std.mem.Allocator;
 const Io = std.Io;
 pub const log = std.log.scoped(.videoToolBox);
 
+/// For packed y416 format (kCVPixelFormatType_4444AYpCbCr16), we use a single RGBA16Unorm texture.
+/// The 64-bit AYUV data maps to Metal's RGBA16 as: R=A, G=Y, B=Cb, A=Cr
+pub const MetalTextureSet = struct {
+    texture: vtb.CVMetalTextureRef, // Single packed AYUV texture
+
+    pub fn getMetalTexture(self: *const MetalTextureSet) vtb.MTLTextureRef {
+        return vtb.CVMetalTextureGetTexture(self.texture);
+    }
+
+    pub fn deinit(self: *MetalTextureSet) void {
+        vtb.CFRelease(self.texture);
+    }
+};
+
 pub const VideoToolboxDecoder = struct {
     session: vtb.VTDecompressionSessionRef,
     format_desc: vtb.CMVideoFormatDescriptionRef,
@@ -95,107 +109,64 @@ pub const VideoToolboxDecoder = struct {
         }
     }
 
+    /// Creates Metal texture from CVPixelBuffer for packed y416 format.
+    /// y416 (kCVPixelFormatType_4444AYpCbCr16) is PACKED: 8 bytes per pixel [A16][Y16][Cb16][Cr16]
+    /// We map this to a single RGBA16Unorm texture where R=A, G=Y, B=Cb, A=Cr
     pub fn createMetalTextures(
         self: *const VideoToolboxDecoder,
         pixel_buffer: vtb.CVPixelBufferRef,
     ) !MetalTextureSet {
-        const planes = vtb.CVPixelBufferGetPlaneCount(pixel_buffer);
+        // For packed format, we create a single RGBA16Unorm texture
+        // Each pixel is 8 bytes (64 bits): A16 Y16 Cb16 Cr16
+        // Metal's RGBA16Unorm maps: R=first16, G=second16, B=third16, A=fourth16
+        // So: R=A, G=Y, B=Cb, A=Cr
+        const width = vtb.CVPixelBufferGetWidth(pixel_buffer);
+        const height = vtb.CVPixelBufferGetHeight(pixel_buffer);
 
-        if (planes != 3) {
-            return error.InvalidPixelBuffer;
-        }
-
-        // Debug: Print detailed info once
+        // Debug: Print info once
         const State = struct {
             var printed: bool = false;
         };
         if (!State.printed) {
             State.printed = true;
 
-            // Inspect color space metadata from VideoToolbox
             inspectColorSpaceMetadata(pixel_buffer);
 
-            std.debug.print("\n🔍 TEXTURE CREATION DEBUG:\n", .{});
-            std.debug.print("Creating Y texture: width={}, height={}, format=R16Unorm\n", .{
-                vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 0) / 2,
-                vtb.CVPixelBufferGetHeightOfPlane(pixel_buffer, 0),
-            });
-            std.debug.print("Creating CbCr texture: width={}, height={}, format=RG16Unorm\n", .{
-                vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 1),
-                vtb.CVPixelBufferGetHeightOfPlane(pixel_buffer, 1),
-            });
+            const planes = vtb.CVPixelBufferGetPlaneCount(pixel_buffer);
+            const bytes_per_row = vtb.CVPixelBufferGetBytesPerRow(pixel_buffer);
+            const pixel_format = vtb.CVPixelBufferGetPixelFormatType(pixel_buffer);
+            const format_bytes: [4]u8 = @bitCast(pixel_format);
+
+            std.debug.print("\n🔍 PACKED Y416 TEXTURE CREATION:\n", .{});
+            std.debug.print("   Pixel Format: 0x{X:0>8} ('{s}')\n", .{ pixel_format, &format_bytes });
+            std.debug.print("   Dimensions: {}x{}\n", .{ width, height });
+            std.debug.print("   Bytes per row: {} (expected: {} * 8 = {})\n", .{ bytes_per_row, width, width * 8 });
+            std.debug.print("   Plane count: {} (0 = non-planar/packed)\n", .{planes});
+            std.debug.print("   Creating RGBA16Unorm texture for packed AYUV data\n", .{});
         }
 
-        var y_texture: vtb.CVMetalTextureRef = undefined;
-        // const y_width = vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 0);
-        // std.debug.print("DEBUG: y_width from CVPixelBuffer = {}\n", .{y_width});
-        // Try R16Unorm with plane-specific width (like WebRTC does for R8Unorm)
-        const y_width = vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 0);
-        const y_height = vtb.CVPixelBufferGetHeightOfPlane(pixel_buffer, 0);
-        std.debug.print("Y plane: width={}, height={}\n", .{ y_width, y_height });
-
-        const y_status = vtb.CVMetalTextureCacheCreateTextureFromImage(
+        var packed_texture: vtb.CVMetalTextureRef = undefined;
+        const status = vtb.CVMetalTextureCacheCreateTextureFromImage(
             vtb.kCFAllocatorDefault,
             self.texture_cache,
             pixel_buffer,
             null, // no texture attributes
-            vtb.MTLPixelFormatR16Unorm, // Back to R16Unorm
-            y_width, // Use plane width directly (like WebRTC)
-            y_height,
-            0, // plane index 0 = Y
-            &y_texture,
+            vtb.MTLPixelFormatRGBA16Unorm, // 64-bit RGBA = AYUV packed
+            width,
+            height,
+            0, // plane index 0 (only plane for packed format)
+            &packed_texture,
         );
-        if (y_status != vtb.noErr) return error.YTextureCreationFailed;
-        errdefer vtb.CFRelease(y_texture);
 
-        var cbcr_texture: vtb.CVMetalTextureRef = undefined;
-        // const cbcr_width = vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 1);
-        const cbcr_status = vtb.CVMetalTextureCacheCreateTextureFromImage(
-            vtb.kCFAllocatorDefault,
-            self.texture_cache,
-            pixel_buffer,
-            null, // no texture attributes
-            vtb.MTLPixelFormatRG16Unorm,
-            vtb.CVPixelBufferGetWidth(pixel_buffer),
-            vtb.CVPixelBufferGetHeight(pixel_buffer),
-            1, // plane index 1 = CbCr
-            &cbcr_texture,
-        );
-        if (cbcr_status != vtb.noErr) return error.CbCrTextureCreationFailed;
-        errdefer vtb.CFRelease(cbcr_texture);
-
-        var alpha_texture: vtb.CVMetalTextureRef = undefined;
-        // const alpha_width = vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 2);
-        const alpha_status = vtb.CVMetalTextureCacheCreateTextureFromImage(
-            vtb.kCFAllocatorDefault,
-            self.texture_cache,
-            pixel_buffer,
-            null, // no texture attributes
-            vtb.MTLPixelFormatR16Unorm,
-            // alpha_width / 2, // Actual pixel width (CVPixelBuffer reports byte width?)
-            vtb.CVPixelBufferGetWidth(pixel_buffer),
-            vtb.CVPixelBufferGetHeight(pixel_buffer),
-            2, // plane index 2 = Alpha
-            &alpha_texture,
-        );
-        if (alpha_status != vtb.noErr) return error.AlphaTextureCreationFailed;
-
-        // Debug: Check actual Metal texture dimensions
-        if (!State.printed) {
-            const y_mtl = vtb.CVMetalTextureGetTexture(y_texture);
-            const cbcr_mtl = vtb.CVMetalTextureGetTexture(cbcr_texture);
-            const alpha_mtl = vtb.CVMetalTextureGetTexture(alpha_texture);
-
-            // These are opaque pointers, but we can cast to get width/height
-            // For now, just print the pointers to verify they exist
-            std.debug.print("Metal textures created: Y={*}, CbCr={*}, Alpha={*}\n", .{ y_mtl, cbcr_mtl, alpha_mtl });
+        if (status != vtb.noErr) {
+            std.debug.print("❌ Failed to create packed RGBA16Unorm texture: {}\n", .{status});
+            return error.TextureCreationFailed;
         }
 
-        return .{
-            .y = y_texture,
-            .cbcr = cbcr_texture,
-            .alpha = alpha_texture,
+        const result = MetalTextureSet{
+            .texture = packed_texture,
         };
+        return result;
     }
 
     pub fn inspectColorSpaceMetadata(pixel_buffer: vtb.CVPixelBufferRef) void {
@@ -359,6 +330,7 @@ const VideoToolboxError = error{
     CreateSampleBufferFailed,
     DecodeFrameFailed,
     DecoderWaitFailed,
+    TextureCreationFailed,
 };
 const FrameContext = struct {
     pixel_buffer: ?vtb.CVPixelBufferRef,
@@ -369,30 +341,6 @@ pub const DecodedFrame = struct {
 
     pub fn deinit(self: *const DecodedFrame) void {
         vtb.CFRelease(self.pixel_buffer);
-    }
-};
-
-pub const MetalTextureSet = struct {
-    y: vtb.CVMetalTextureRef,
-    cbcr: vtb.CVMetalTextureRef,
-    alpha: vtb.CVMetalTextureRef,
-
-    pub fn getMetalTextures(self: *const MetalTextureSet) struct {
-        y: vtb.MTLTextureRef,
-        cbcr: vtb.MTLTextureRef,
-        alpha: vtb.MTLTextureRef,
-    } {
-        return .{
-            .y = vtb.CVMetalTextureGetTexture(self.y),
-            .cbcr = vtb.CVMetalTextureGetTexture(self.cbcr),
-            .alpha = vtb.CVMetalTextureGetTexture(self.alpha),
-        };
-    }
-
-    pub fn deinit(self: *MetalTextureSet) void {
-        vtb.CFRelease(self.y);
-        vtb.CFRelease(self.cbcr);
-        vtb.CFRelease(self.alpha);
     }
 };
 
@@ -475,28 +423,12 @@ fn createDecompressionSession(
     frame_ctx: *FrameContext,
 ) !vtb.VTDecompressionSessionRef {
 
-    // Use highest quality 16-bit YCbCr format for ProRes 444/4444
-    // Testing revealed kCVPixelFormatType_4444AYpCbCr16 ('v416') is NOT supported on macOS 15
-    // The tri-planar 'sa4s' format works universally for all ProRes 444 variants (with/without alpha)
-    // TODO: Query VTSessionCopyProperty(kVTDecompressionPropertyKey_SupportedPixelFormatsOrderedByQuality)
-    //       and cache the best format in SourceMedia for optimal quality across all codecs
-    // var pixel_format: u32 = vtb.kCVPixelFormatType_444YpCbCr16VideoRange_16A_TriPlanar; // 'sa4s'
-    var pixel_format: u32 = vtb.kCVPixelFormatType_4444AYpCbCr16; // 'y416' seems to be the defacto... its used in ffmpeg...
-
-    const pixel_format_number = vtb.CFNumberCreate(
-        null,
-        vtb.kCFNumberSInt32Type,
-        &pixel_format,
-    );
-    defer vtb.CFRelease(pixel_format_number);
-
-    // Create arrays for dictionary
+    // Let VideoToolbox choose the best format - just request Metal compatibility
+    // For ProRes 4444, it typically chooses '&sv4' (bi-planar 16-bit 4:4:4 with alpha)
     const keys = [_]?*const anyopaque{
-        @ptrCast(vtb.kCVPixelBufferPixelFormatTypeKey),
         @ptrCast(vtb.kCVPixelBufferMetalCompatibilityKey),
     };
     const values = [_]?*const anyopaque{
-        @ptrCast(pixel_format_number),
         @ptrCast(vtb.kCFBooleanTrue),
     };
 
@@ -504,7 +436,7 @@ fn createDecompressionSession(
         null,
         &keys[0],
         &values[0],
-        2,
+        1,
         null,
         null,
     );
