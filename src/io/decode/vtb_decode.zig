@@ -139,8 +139,8 @@ pub const VideoToolboxDecoder = struct {
             self.texture_cache,
             pixel_buffer,
             null, // no texture attributes
-            vtb.MTLPixelFormatR16Unorm,  // Back to R16Unorm
-            y_width,  // Use plane width directly (like WebRTC)
+            vtb.MTLPixelFormatR16Unorm, // Back to R16Unorm
+            y_width, // Use plane width directly (like WebRTC)
             y_height,
             0, // plane index 0 = Y
             &y_texture,
@@ -474,12 +474,14 @@ fn createDecompressionSession(
     format_desc: vtb.CMVideoFormatDescriptionRef,
     frame_ctx: *FrameContext,
 ) !vtb.VTDecompressionSessionRef {
+
     // Use highest quality 16-bit YCbCr format for ProRes 444/4444
     // Testing revealed kCVPixelFormatType_4444AYpCbCr16 ('v416') is NOT supported on macOS 15
     // The tri-planar 'sa4s' format works universally for all ProRes 444 variants (with/without alpha)
     // TODO: Query VTSessionCopyProperty(kVTDecompressionPropertyKey_SupportedPixelFormatsOrderedByQuality)
     //       and cache the best format in SourceMedia for optimal quality across all codecs
-    var pixel_format: u32 = vtb.kCVPixelFormatType_444YpCbCr16VideoRange_16A_TriPlanar; // 'sa4s'
+    // var pixel_format: u32 = vtb.kCVPixelFormatType_444YpCbCr16VideoRange_16A_TriPlanar; // 'sa4s'
+    var pixel_format: u32 = vtb.kCVPixelFormatType_4444AYpCbCr16; // 'y416' seems to be the defacto... its used in ffmpeg...
 
     const pixel_format_number = vtb.CFNumberCreate(
         null,
@@ -528,6 +530,28 @@ fn createDecompressionSession(
     if (status != vtb.noErr) {
         std.debug.print("VTDecompressionSessionCreate failed: {d}\n", .{status});
         return error.CreateDecompressionSessionFailed;
+    }
+
+    // DEBUG: Print supported pixel formats
+    var props: ?*anyopaque = null;
+    const prop_status = vtb.VTSessionCopyProperty(
+        session,
+        vtb.kVTDecompressionPropertyKey_SupportedPixelFormatsOrderedByQuality,
+        null,
+        &props,
+    );
+    if (prop_status == vtb.noErr and props != null) {
+        std.debug.print("\n📋 Supported Pixel Formats (ordered by quality):\n", .{});
+        const count = vtb.CFArrayGetCount(@ptrCast(props));
+        std.debug.print("   Count: {}\n", .{count});
+        for (0..@intCast(count)) |i| {
+            const num = vtb.CFArrayGetValueAtIndex(@ptrCast(props), @intCast(i));
+            var format: u32 = 0;
+            _ = vtb.CFNumberGetValue(@ptrCast(@alignCast(@constCast(num))), vtb.kCFNumberSInt32Type, &format);
+            const bytes = @as([4]u8, @bitCast(format));
+            std.debug.print("   [{}] 0x{X:0>8} ('{c}{c}{c}{c}')\n", .{ i, format, bytes[3], bytes[2], bytes[1], bytes[0] });
+        }
+        vtb.CFRelease(props.?);
     }
 
     // std.debug.print("✅ Decompression session created successfully!\n", .{});
