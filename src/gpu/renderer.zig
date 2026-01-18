@@ -250,8 +250,10 @@ pub fn initRenderContext(
     // Load test video file
     // const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
+    const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalfAlpha.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/A004C002_250326_RQ2M_S01.mov";
-    const video_path = "/Users/fq/Desktop/AGMM/ProRes444_with_Alpha.mov";
+    // const video_path = "/Users/fq/Desktop/AGMM/ProRes444_with_Alpha.mov";
+
     var source_media_ptr: ?*media.SourceMedia = null;
     var video_fps: f64 = 0;
 
@@ -327,7 +329,7 @@ pub fn deinitRenderContext(result: *InitResult) void {
 pub fn renderThread(ctx: *RenderContext) void {
     var frame: u64 = 0;
     // const speed: f32 = 3000;
-    // const slider_value: f32 = 0.5;
+    // var slider_value: f32 = 0.5;
     const playback_speed: f32 = 1.0; // 1.0 = normal speed, 0.5 = half speed, 2.0 = double speed
 
     // Video frame timing
@@ -377,6 +379,7 @@ pub fn renderThread(ctx: *RenderContext) void {
         ctx.imgui_ctx.mouse_y = mouse_y;
         ctx.imgui_ctx.mouse_down = mouse_down;
 
+        // ctx.imgui_ctx.slider(1, 1400, 300, 100, 50, &slider_value, 0, 1) catch {};
         // ctx.imgui_ctx.addRect(1400, 50, 100, 100, imgui.ImGuiContext.packColor(slider_value, 1, 0, 1.0)) catch {};
         // ctx.imgui_ctx.addRect(1450, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
 
@@ -414,6 +417,22 @@ pub fn renderThread(ctx: *RenderContext) void {
                 // Extract MTLTexture handle (single packed texture for y416)
                 const mtl_tex = texture_set.getMetalTexture();
                 packed_metal_texture = metal.MetalTexture.initFromPtr(mtl_tex);
+
+                // Debug: Print actual Metal texture dimensions vs expected
+                const State = struct {
+                    var printed_texture_debug: bool = false;
+                };
+                if (!State.printed_texture_debug) {
+                    State.printed_texture_debug = true;
+                    const tex_width = packed_metal_texture.?.getWidth();
+                    const tex_height = packed_metal_texture.?.getHeight();
+                    std.debug.print("\n🔍 METAL TEXTURE DEBUG:\n", .{});
+                    std.debug.print("   Expected (from source_media): {}x{}\n", .{ sm.resolution.width, sm.resolution.height });
+                    std.debug.print("   Actual MTLTexture: {}x{}\n", .{ tex_width, tex_height });
+                    if (tex_width != sm.resolution.width) {
+                        std.debug.print("   ⚠️ WIDTH MISMATCH! Ratio: {d:.2}\n", .{@as(f64, @floatFromInt(tex_width)) / @as(f64, @floatFromInt(sm.resolution.width))});
+                    }
+                }
 
                 // Advance to next frame
                 current_frame_index = (current_frame_index + 1) % @as(usize, @intCast(sm.duration_in_frames));

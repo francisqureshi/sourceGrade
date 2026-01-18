@@ -257,18 +257,31 @@ vertex VideoVertexOut videoVertexShader(
 
 // Sample video texture - Packed AYUV 16-bit (y416 format from ProRes 4444)
 // y416 layout: [A16][Y16][Cb16][Cr16] per pixel (8 bytes total)
-// Metal RGBA16Unorm maps: R=A, G=Y, B=Cb, A=Cr
+//
+// Working: Even-X sampling across full UV range
 fragment float4 videoFragmentShader(
     VideoVertexOut in [[stage_in]],
-    texture2d<float> packedTexture [[texture(0)]])  // AYUV packed as RGBA16Unorm
+    texture2d<float> packedTexture [[texture(0)]])  // RGBA16Unorm
 {
-    constexpr sampler textureSampler(filter::linear);
+    uint texWidth = packedTexture.get_width();
+    uint texHeight = packedTexture.get_height();
 
-    // Sample packed AYUV data (stored as RGBA16)
-    float4 ayuv = packedTexture.sample(textureSampler, in.texCoord);
+    // Map UV to texture coordinates
+    uint rawX = uint(in.texCoord.x * float(texWidth - 1));
+    uint texY = uint(in.texCoord.y * float(texHeight - 1));
 
-    // DEBUG: Show raw channels to diagnose
-    // R=Alpha, G=Y, B=Cb, A=Cr for y416
-    // Show Y as greyscale
-    return float4(ayuv.g, ayuv.g, ayuv.g, 1.0);
+    // Force to even X coordinate (eliminates stripe artifacts from IOSurface mapping)
+    uint texX = rawX & ~1u;
+
+    float4 data = packedTexture.read(uint2(texX, texY));
+
+    // Unpack AYUV: R=Alpha, G=Y, B=Cb, A=Cr
+    float y = data.g;
+
+    // Exaggerate contrast to see the difference
+    // Y=0.49 (grey half) -> 0.98, Y=0.24 (red half) -> 0.48
+    float boosted = y * 2.0;
+
+    // Display boosted Y channel
+    return float4(boosted, boosted, boosted, 1.0);
 }

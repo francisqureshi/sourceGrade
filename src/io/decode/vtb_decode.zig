@@ -116,12 +116,11 @@ pub const VideoToolboxDecoder = struct {
         self: *const VideoToolboxDecoder,
         pixel_buffer: vtb.CVPixelBufferRef,
     ) !MetalTextureSet {
-        // For packed format, we create a single RGBA16Unorm texture
-        // Each pixel is 8 bytes (64 bits): A16 Y16 Cb16 Cr16
-        // Metal's RGBA16Unorm maps: R=first16, G=second16, B=third16, A=fourth16
-        // So: R=A, G=Y, B=Cb, A=Cr
+        // Get both overall and plane-specific dimensions (FFmpeg uses plane-specific)
         const width = vtb.CVPixelBufferGetWidth(pixel_buffer);
         const height = vtb.CVPixelBufferGetHeight(pixel_buffer);
+        const plane_width = vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 0);
+        const plane_height = vtb.CVPixelBufferGetHeightOfPlane(pixel_buffer, 0);
 
         // Debug: Print info once
         const State = struct {
@@ -134,26 +133,41 @@ pub const VideoToolboxDecoder = struct {
 
             const planes = vtb.CVPixelBufferGetPlaneCount(pixel_buffer);
             const bytes_per_row = vtb.CVPixelBufferGetBytesPerRow(pixel_buffer);
+            const plane_bytes_per_row = vtb.CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer, 0);
             const pixel_format = vtb.CVPixelBufferGetPixelFormatType(pixel_buffer);
             const format_bytes: [4]u8 = @bitCast(pixel_format);
 
             std.debug.print("\n🔍 PACKED Y416 TEXTURE CREATION:\n", .{});
             std.debug.print("   Pixel Format: 0x{X:0>8} ('{s}')\n", .{ pixel_format, &format_bytes });
-            std.debug.print("   Dimensions: {}x{}\n", .{ width, height });
-            std.debug.print("   Bytes per row: {} (expected: {} * 8 = {})\n", .{ bytes_per_row, width, width * 8 });
+            std.debug.print("   Overall Dimensions: {}x{}\n", .{ width, height });
+            std.debug.print("   Plane 0 Dimensions: {}x{}\n", .{ plane_width, plane_height });
+            std.debug.print("   Bytes per row (overall): {}\n", .{bytes_per_row});
+            std.debug.print("   Bytes per row (plane 0): {}\n", .{plane_bytes_per_row});
+            std.debug.print("   Expected for y416: {} * 8 = {}\n", .{ width, width * 8 });
             std.debug.print("   Plane count: {} (0 = non-planar/packed)\n", .{planes});
             std.debug.print("   Creating RGBA16Unorm texture for packed AYUV data\n", .{});
         }
 
+        // Use plane-specific dimensions like FFmpeg does
+        const tex_width = if (plane_width > 0) plane_width else width;
+        const tex_height = if (plane_height > 0) plane_height else height;
+
+        // Go back to RGBA16Unorm at normal width.
+        // We discovered that R channel reads correctly (solid grey),
+        // but G/B/A channels have stripe artifacts.
+        // The IOSurface doesn't properly map to RGBA16Unorm channels.
+        //
+        // The working approach: use RGBA16Unorm and only trust even-X pixels
+        // (the stripe pattern suggests odd pixels have garbage data)
         var packed_texture: vtb.CVMetalTextureRef = undefined;
         const status = vtb.CVMetalTextureCacheCreateTextureFromImage(
             vtb.kCFAllocatorDefault,
             self.texture_cache,
             pixel_buffer,
             null, // no texture attributes
-            vtb.MTLPixelFormatRGBA16Unorm, // 64-bit RGBA = AYUV packed
-            width,
-            height,
+            vtb.MTLPixelFormatRGBA16Unorm, // Back to RGBA16
+            tex_width,
+            tex_height,
             0, // plane index 0 (only plane for packed format)
             &packed_texture,
         );
@@ -265,6 +279,43 @@ pub const VideoToolboxDecoder = struct {
 
         const planes = vtb.CVPixelBufferGetPlaneCount(pixel_buffer);
         std.debug.print("planes: {any}\n", .{planes});
+
+        // For packed formats (plane count = 0), read from base address directly
+        if (planes == 0) {
+            const base_address = vtb.CVPixelBufferGetBaseAddress(pixel_buffer);
+            if (base_address) |addr| {
+                const pixel_data: [*]const u8 = @ptrCast(addr);
+                std.debug.print("\n=== PACKED FORMAT DATA ===\n", .{});
+                std.debug.print("   y416 layout: [A16][Y16][Cb16][Cr16] = 8 bytes per pixel\n", .{});
+
+                // Show first 4 pixels (32 bytes)
+                std.debug.print("   First 4 pixels (32 bytes):\n   ", .{});
+                for (0..32) |i| {
+                    std.debug.print("{X:0>2} ", .{pixel_data[i]});
+                    if ((i + 1) % 8 == 0) std.debug.print("| ", .{});
+                }
+
+                // Interpret as 16-bit values
+                std.debug.print("\n   As 16-bit values (first 2 pixels):\n", .{});
+                const u16_data: [*]const u16 = @ptrCast(@alignCast(addr));
+                std.debug.print("   Pixel 0: A={d}, Y={d}, Cb={d}, Cr={d}\n", .{
+                    u16_data[0], u16_data[1], u16_data[2], u16_data[3],
+                });
+                std.debug.print("   Pixel 1: A={d}, Y={d}, Cb={d}, Cr={d}\n", .{
+                    u16_data[4], u16_data[5], u16_data[6], u16_data[7],
+                });
+
+                // Show middle of frame (width/2) to see Red half
+                const mid_x_offset: usize = @intCast((width / 2) * 8); // 8 bytes per pixel
+                std.debug.print("   Pixel at x={d} (should be red half):\n", .{width / 2});
+                std.debug.print("   A={d}, Y={d}, Cb={d}, Cr={d}\n", .{
+                    u16_data[mid_x_offset / 2],
+                    u16_data[mid_x_offset / 2 + 1],
+                    u16_data[mid_x_offset / 2 + 2],
+                    u16_data[mid_x_offset / 2 + 3],
+                });
+            }
+        }
 
         const plane_names = [_][]const u8{ "Y (Luma)", "CbCr (Chroma Interleaved)", "Alpha" };
 
