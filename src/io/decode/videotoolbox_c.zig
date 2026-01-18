@@ -87,6 +87,9 @@ pub const MTLPixelFormatR8Unorm: MTLPixelFormat = 10;
 /// 64-bit RGBA normalized (16 bits per component) - for packed y416/AYUV
 pub const MTLPixelFormatRGBA16Unorm: MTLPixelFormat = 85;
 
+/// 32-bit BGRA normalized (8 bits per component) - common display format
+pub const MTLPixelFormatBGRA8Unorm: MTLPixelFormat = 80;
+
 // ============================================================================
 // Basic types
 // ============================================================================

@@ -255,33 +255,17 @@ vertex VideoVertexOut videoVertexShader(
     return out;
 }
 
-// Sample video texture - Packed AYUV 16-bit (y416 format from ProRes 4444)
-// y416 layout: [A16][Y16][Cb16][Cr16] per pixel (8 bytes total)
-//
-// Working: Even-X sampling across full UV range
+// Video texture shader - supports BGRA (from VideoToolbox YCbCr conversion)
 fragment float4 videoFragmentShader(
     VideoVertexOut in [[stage_in]],
-    texture2d<float> packedTexture [[texture(0)]])  // RGBA16Unorm
+    texture2d<float> videoTexture [[texture(0)]])
 {
-    uint texWidth = packedTexture.get_width();
-    uint texHeight = packedTexture.get_height();
+    constexpr sampler texSampler(filter::linear, address::clamp_to_edge);
 
-    // Map UV to texture coordinates
-    uint rawX = uint(in.texCoord.x * float(texWidth - 1));
-    uint texY = uint(in.texCoord.y * float(texHeight - 1));
+    // Sample the texture - VideoToolbox already converted to BGRA
+    float4 color = videoTexture.sample(texSampler, in.texCoord);
 
-    // Force to even X coordinate (eliminates stripe artifacts from IOSurface mapping)
-    uint texX = rawX & ~1u;
-
-    float4 data = packedTexture.read(uint2(texX, texY));
-
-    // Unpack AYUV: R=Alpha, G=Y, B=Cb, A=Cr
-    float y = data.g;
-
-    // Exaggerate contrast to see the difference
-    // Y=0.49 (grey half) -> 0.98, Y=0.24 (red half) -> 0.48
-    float boosted = y * 2.0;
-
-    // Display boosted Y channel
-    return float4(boosted, boosted, boosted, 1.0);
+    // BGRA format: color.b=Blue, color.g=Green, color.r=Red, color.a=Alpha
+    // Metal samples BGRA as RGBA, so we can use it directly
+    return color;
 }

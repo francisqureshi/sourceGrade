@@ -109,18 +109,15 @@ pub const VideoToolboxDecoder = struct {
         }
     }
 
-    /// Creates Metal texture from CVPixelBuffer for packed y416 format.
-    /// y416 (kCVPixelFormatType_4444AYpCbCr16) is PACKED: 8 bytes per pixel [A16][Y16][Cb16][Cr16]
-    /// We map this to a single RGBA16Unorm texture where R=A, G=Y, B=Cb, A=Cr
+    /// Creates Metal texture from CVPixelBuffer.
+    /// Now supports BGRA format (VideoToolbox converts YCbCr to RGB for us)
     pub fn createMetalTextures(
         self: *const VideoToolboxDecoder,
         pixel_buffer: vtb.CVPixelBufferRef,
     ) !MetalTextureSet {
-        // Get both overall and plane-specific dimensions (FFmpeg uses plane-specific)
         const width = vtb.CVPixelBufferGetWidth(pixel_buffer);
         const height = vtb.CVPixelBufferGetHeight(pixel_buffer);
-        const plane_width = vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, 0);
-        const plane_height = vtb.CVPixelBufferGetHeightOfPlane(pixel_buffer, 0);
+        const pixel_format = vtb.CVPixelBufferGetPixelFormatType(pixel_buffer);
 
         // Debug: Print info once
         const State = struct {
@@ -133,54 +130,45 @@ pub const VideoToolboxDecoder = struct {
 
             const planes = vtb.CVPixelBufferGetPlaneCount(pixel_buffer);
             const bytes_per_row = vtb.CVPixelBufferGetBytesPerRow(pixel_buffer);
-            const plane_bytes_per_row = vtb.CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer, 0);
-            const pixel_format = vtb.CVPixelBufferGetPixelFormatType(pixel_buffer);
             const format_bytes: [4]u8 = @bitCast(pixel_format);
 
-            std.debug.print("\n🔍 PACKED Y416 TEXTURE CREATION:\n", .{});
+            std.debug.print("\n🔍 TEXTURE CREATION:\n", .{});
             std.debug.print("   Pixel Format: 0x{X:0>8} ('{s}')\n", .{ pixel_format, &format_bytes });
-            std.debug.print("   Overall Dimensions: {}x{}\n", .{ width, height });
-            std.debug.print("   Plane 0 Dimensions: {}x{}\n", .{ plane_width, plane_height });
-            std.debug.print("   Bytes per row (overall): {}\n", .{bytes_per_row});
-            std.debug.print("   Bytes per row (plane 0): {}\n", .{plane_bytes_per_row});
-            std.debug.print("   Expected for y416: {} * 8 = {}\n", .{ width, width * 8 });
-            std.debug.print("   Plane count: {} (0 = non-planar/packed)\n", .{planes});
-            std.debug.print("   Creating RGBA16Unorm texture for packed AYUV data\n", .{});
+            std.debug.print("   Dimensions: {}x{}\n", .{ width, height });
+            std.debug.print("   Bytes per row: {}\n", .{bytes_per_row});
+            std.debug.print("   Plane count: {}\n", .{planes});
         }
 
-        // Use plane-specific dimensions like FFmpeg does
-        const tex_width = if (plane_width > 0) plane_width else width;
-        const tex_height = if (plane_height > 0) plane_height else height;
+        // Choose Metal pixel format based on CVPixelBuffer format
+        const metal_format: vtb.MTLPixelFormat = switch (pixel_format) {
+            vtb.kCVPixelFormatType_32BGRA => vtb.MTLPixelFormatBGRA8Unorm,
+            vtb.kCVPixelFormatType_4444AYpCbCr16 => vtb.MTLPixelFormatRGBA16Unorm,
+            else => {
+                const format_bytes: [4]u8 = @bitCast(pixel_format);
+                std.debug.print("⚠️ Unknown pixel format: 0x{X:0>8} ('{s}'), trying BGRA8\n", .{ pixel_format, &format_bytes });
+                return error.UnsupportedPixelFormat;
+            },
+        };
 
-        // Go back to RGBA16Unorm at normal width.
-        // We discovered that R channel reads correctly (solid grey),
-        // but G/B/A channels have stripe artifacts.
-        // The IOSurface doesn't properly map to RGBA16Unorm channels.
-        //
-        // The working approach: use RGBA16Unorm and only trust even-X pixels
-        // (the stripe pattern suggests odd pixels have garbage data)
-        var packed_texture: vtb.CVMetalTextureRef = undefined;
+        var texture: vtb.CVMetalTextureRef = undefined;
         const status = vtb.CVMetalTextureCacheCreateTextureFromImage(
             vtb.kCFAllocatorDefault,
             self.texture_cache,
             pixel_buffer,
-            null, // no texture attributes
-            vtb.MTLPixelFormatRGBA16Unorm, // Back to RGBA16
-            tex_width,
-            tex_height,
-            0, // plane index 0 (only plane for packed format)
-            &packed_texture,
+            null,
+            metal_format,
+            width,
+            height,
+            0,
+            &texture,
         );
 
         if (status != vtb.noErr) {
-            std.debug.print("❌ Failed to create packed RGBA16Unorm texture: {}\n", .{status});
+            std.debug.print("❌ Failed to create texture: {}\n", .{status});
             return error.TextureCreationFailed;
         }
 
-        const result = MetalTextureSet{
-            .texture = packed_texture,
-        };
-        return result;
+        return MetalTextureSet{ .texture = texture };
     }
 
     pub fn inspectColorSpaceMetadata(pixel_buffer: vtb.CVPixelBufferRef) void {
@@ -474,20 +462,30 @@ fn createDecompressionSession(
     frame_ctx: *FrameContext,
 ) !vtb.VTDecompressionSessionRef {
 
-    // Let VideoToolbox choose the best format - just request Metal compatibility
-    // For ProRes 4444, it typically chooses '&sv4' (bi-planar 16-bit 4:4:4 with alpha)
+    // Request BGRA output format - VideoToolbox will convert YCbCr to RGB for us
+    // Also request Metal compatibility
+    var pixel_format_value: i32 = @bitCast(@as(u32, vtb.kCVPixelFormatType_32BGRA));
+    const pixel_format_num = vtb.CFNumberCreate(
+        null,
+        vtb.kCFNumberSInt32Type,
+        &pixel_format_value,
+    );
+    defer if (pixel_format_num) |pf| vtb.CFRelease(pf);
+
     const keys = [_]?*const anyopaque{
         @ptrCast(vtb.kCVPixelBufferMetalCompatibilityKey),
+        @ptrCast(vtb.kCVPixelBufferPixelFormatTypeKey),
     };
     const values = [_]?*const anyopaque{
         @ptrCast(vtb.kCFBooleanTrue),
+        @ptrCast(pixel_format_num),
     };
 
     const pixel_attrs = vtb.CFDictionaryCreate(
         null,
         &keys[0],
         &values[0],
-        1,
+        2, // Now 2 key-value pairs
         null,
         null,
     );
