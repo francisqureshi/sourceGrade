@@ -101,7 +101,7 @@ pub const VideoToolboxDecoder = struct {
 
         // Now frame_ctx.pixel_buffer contains the decoded frame
         if (self.frame_ctx.pixel_buffer) |pb| {
-            try cpuInspectPixelBufferData(pb);
+            try cpuInspectPixelBufferData(pb); // CPU PixBuf check
 
             return DecodedFrame{ .pixel_buffer = pb };
         } else {
@@ -125,18 +125,10 @@ pub const VideoToolboxDecoder = struct {
         };
         if (!State.printed) {
             State.printed = true;
-
-            inspectColorSpaceMetadata(pixel_buffer);
-
-            const planes = vtb.CVPixelBufferGetPlaneCount(pixel_buffer);
             const bytes_per_row = vtb.CVPixelBufferGetBytesPerRow(pixel_buffer);
             const format_bytes: [4]u8 = @bitCast(pixel_format);
-
-            std.debug.print("\n🔍 TEXTURE CREATION:\n", .{});
-            std.debug.print("   Pixel Format: 0x{X:0>8} ('{s}')\n", .{ pixel_format, &format_bytes });
-            std.debug.print("   Dimensions: {}x{}\n", .{ width, height });
-            std.debug.print("   Bytes per row: {}\n", .{bytes_per_row});
-            std.debug.print("   Plane count: {}\n", .{planes});
+            const bits_per_pixel = (bytes_per_row * 8) / width;
+            std.debug.print("\n🎬 Video texture: {d}x{d}, {s} ({d}-bit/pixel)\n", .{ width, height, &format_bytes, bits_per_pixel });
         }
 
         // Choose Metal pixel format based on CVPixelBuffer format
@@ -147,7 +139,7 @@ pub const VideoToolboxDecoder = struct {
             vtb.kCVPixelFormatType_4444AYpCbCr16 => vtb.MTLPixelFormatRGBA16Unorm,
             else => {
                 const format_bytes: [4]u8 = @bitCast(pixel_format);
-                std.debug.print("⚠️ Unknown pixel format: 0x{X:0>8} ('{s}')\n", .{ pixel_format, &format_bytes });
+                std.debug.print("Unknown pixel format: 0x{X:0>8} ('{s}')\n", .{ pixel_format, &format_bytes });
                 return error.UnsupportedPixelFormat;
             },
         };
@@ -173,186 +165,22 @@ pub const VideoToolboxDecoder = struct {
         return MetalTextureSet{ .texture = texture };
     }
 
-    pub fn inspectColorSpaceMetadata(pixel_buffer: vtb.CVPixelBufferRef) void {
-        std.debug.print("\n🎨 COLOR SPACE METADATA:\n", .{});
-
-        // Helper to query and print an attachment
-        const queryAttachment = struct {
-            fn query(pb: vtb.CVPixelBufferRef, key_cstr: [*:0]const u8, name: []const u8) void {
-                const key = vtb.CFStringCreateWithCString(
-                    vtb.kCFAllocatorDefault,
-                    key_cstr,
-                    vtb.kCFStringEncodingUTF8,
-                );
-                defer vtb.CFRelease(key);
-
-                const value = vtb.CVBufferGetAttachment(pb, key, null);
-                if (value) |v| {
-                    // Try to get as CFString
-                    const str_ptr = vtb.CFStringGetCStringPtr(@ptrCast(v), vtb.kCFStringEncodingUTF8);
-                    if (str_ptr) |s| {
-                        std.debug.print("   {s}: {s}\n", .{ name, s });
-                    } else {
-                        std.debug.print("   {s}: <present but not string>\n", .{name});
-                    }
-                } else {
-                    std.debug.print("   {s}: <not found>\n", .{name});
-                }
-            }
-        }.query;
-
-        queryAttachment(pixel_buffer, vtb.kCVImageBufferYCbCrMatrixKey, "YCbCr Matrix");
-        queryAttachment(pixel_buffer, vtb.kCVImageBufferColorPrimariesKey, "Color Primaries");
-        queryAttachment(pixel_buffer, vtb.kCVImageBufferTransferFunctionKey, "Transfer Function");
-        queryAttachment(pixel_buffer, vtb.kCVImageBufferChromaLocationTopFieldKey, "Chroma Location (Top)");
-        queryAttachment(pixel_buffer, vtb.kCVImageBufferChromaLocationBottomFieldKey, "Chroma Location (Bottom)");
-
-        // Query bit depth
-        const depth_key = vtb.CFStringCreateWithCString(
-            vtb.kCFAllocatorDefault,
-            vtb.kCMFormatDescriptionExtension_Depth,
-            vtb.kCFStringEncodingUTF8,
-        );
-        defer vtb.CFRelease(depth_key);
-
-        const depth_value = vtb.CVBufferGetAttachment(pixel_buffer, depth_key, null);
-        if (depth_value) |v| {
-            var depth: i32 = 0;
-            if (vtb.CFNumberGetValue(@ptrCast(v), vtb.kCFNumberSInt32Type, &depth) != 0) {
-                std.debug.print("   Bit Depth: {}\n", .{depth});
-            }
-        } else {
-            std.debug.print("   Bit Depth: <not found>\n", .{});
-        }
-
-        // Query full range flag
-        const range_key = vtb.CFStringCreateWithCString(
-            vtb.kCFAllocatorDefault,
-            vtb.kCMFormatDescriptionExtension_FullRangeVideo,
-            vtb.kCFStringEncodingUTF8,
-        );
-        defer vtb.CFRelease(range_key);
-
-        const range_value = vtb.CVBufferGetAttachment(pixel_buffer, range_key, null);
-        if (range_value) |v| {
-            const is_full_range = vtb.CFBooleanGetValue(v) != 0;
-            std.debug.print("   Full Range: {}\n", .{is_full_range});
-        } else {
-            std.debug.print("   Full Range: <not found>\n", .{});
-        }
-    }
-
+    /// Debug: inspect pixel buffer data (prints once per session)
     pub fn cpuInspectPixelBufferData(pixel_buffer: vtb.CVPixelBufferRef) !void {
+        const State = struct {
+            var printed: bool = false;
+        };
+        if (State.printed) return;
+        State.printed = true;
 
-        // Lock for read-only access
-        const lock_status = vtb.CVPixelBufferLockBaseAddress(pixel_buffer, 0x00000001); // kCVPixelBufferLock_ReadOnly
-        if (lock_status != vtb.noErr) {
-            std.debug.print("❌ Failed to lock pixel buffer: {d}\n", .{lock_status});
-            return;
-        }
-        defer _ = vtb.CVPixelBufferUnlockBaseAddress(pixel_buffer, 0);
-
-        // Get pixel buffer dimensions and format
         const width = vtb.CVPixelBufferGetWidth(pixel_buffer);
         const height = vtb.CVPixelBufferGetHeight(pixel_buffer);
         const bytes_per_row = vtb.CVPixelBufferGetBytesPerRow(pixel_buffer);
         const pixel_format = vtb.CVPixelBufferGetPixelFormatType(pixel_buffer);
-
-        // Format as readable string
         const format_bytes: [4]u8 = @bitCast(pixel_format);
+        const bits_per_pixel = (bytes_per_row * 8) / width;
 
-        std.debug.print("\n📊 CVPixelBuffer Inspector:\n", .{});
-        std.debug.print("   Dimensions: {d}x{d}\n", .{ width, height });
-        std.debug.print("   Pixel Format: 0x{X:0>8} ('{s}')\n", .{ pixel_format, &format_bytes });
-        std.debug.print("   Bytes per Row: {d}\n", .{bytes_per_row});
-        std.debug.print("   Total Size: {d} bytes\n", .{bytes_per_row * height});
-
-        const planes = vtb.CVPixelBufferGetPlaneCount(pixel_buffer);
-        std.debug.print("planes: {any}\n", .{planes});
-
-        // For packed formats (plane count = 0), read from base address directly
-        if (planes == 0) {
-            const base_address = vtb.CVPixelBufferGetBaseAddress(pixel_buffer);
-            if (base_address) |addr| {
-                const pixel_data: [*]const u8 = @ptrCast(addr);
-                std.debug.print("\n=== PACKED FORMAT DATA ===\n", .{});
-                std.debug.print("   y416 layout: [A16][Y16][Cb16][Cr16] = 8 bytes per pixel\n", .{});
-
-                // Show first 4 pixels (32 bytes)
-                std.debug.print("   First 4 pixels (32 bytes):\n   ", .{});
-                for (0..32) |i| {
-                    std.debug.print("{X:0>2} ", .{pixel_data[i]});
-                    if ((i + 1) % 8 == 0) std.debug.print("| ", .{});
-                }
-
-                // Interpret as 16-bit values
-                std.debug.print("\n   As 16-bit values (first 2 pixels):\n", .{});
-                const u16_data: [*]const u16 = @ptrCast(@alignCast(addr));
-                std.debug.print("   Pixel 0: A={d}, Y={d}, Cb={d}, Cr={d}\n", .{
-                    u16_data[0], u16_data[1], u16_data[2], u16_data[3],
-                });
-                std.debug.print("   Pixel 1: A={d}, Y={d}, Cb={d}, Cr={d}\n", .{
-                    u16_data[4], u16_data[5], u16_data[6], u16_data[7],
-                });
-
-                // Show middle of frame (width/2) to see Red half
-                const mid_x_offset: usize = @intCast((width / 2) * 8); // 8 bytes per pixel
-                std.debug.print("   Pixel at x={d} (should be red half):\n", .{width / 2});
-                std.debug.print("   A={d}, Y={d}, Cb={d}, Cr={d}\n", .{
-                    u16_data[mid_x_offset / 2],
-                    u16_data[mid_x_offset / 2 + 1],
-                    u16_data[mid_x_offset / 2 + 2],
-                    u16_data[mid_x_offset / 2 + 3],
-                });
-            }
-        }
-
-        const plane_names = [_][]const u8{ "Y (Luma)", "CbCr (Chroma Interleaved)", "Alpha" };
-
-        for (0..planes) |plane| {
-            const plane_address = vtb.CVPixelBufferGetBaseAddressOfPlane(pixel_buffer, plane);
-            if (plane_address == null) {
-                std.debug.print("❌ Failed to get plane {d} address\n", .{plane});
-                continue;
-            }
-
-            const plane_width = vtb.CVPixelBufferGetWidthOfPlane(pixel_buffer, plane);
-            const plane_height = vtb.CVPixelBufferGetHeightOfPlane(pixel_buffer, plane);
-            const plane_bpr = vtb.CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer, plane);
-
-            const plane_name = if (plane < plane_names.len) plane_names[plane] else "Unknown";
-            std.debug.print("\n=== PLANE {d}: {s} ===\n", .{ plane, plane_name });
-            std.debug.print("   Size: {d}x{d}, Bytes per row: {d}\n", .{ plane_width, plane_height, plane_bpr });
-
-            const pixel_data: [*]const u8 = @ptrCast(plane_address);
-
-            // First row sample
-            std.debug.print("   First row (first 32 bytes):\n   ", .{});
-            for (0..32) |i| {
-                std.debug.print("{X:0>2} ", .{pixel_data[i]});
-                if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
-            }
-
-            // Last 32 bytes
-            std.debug.print("First row (last 32 bytes):\n   ", .{});
-            const tail = plane_bpr - 32;
-            for (tail..plane_bpr) |i| {
-                std.debug.print("{X:0>2} ", .{pixel_data[i]});
-                if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
-            }
-
-            // // Middle row sample
-            // const middle_row_offset = (plane_height / 2) * plane_bpr;
-            // std.debug.print("\n   Middle row (first 32 bytes):\n   ", .{});
-            // for (0..32) |i| {
-            //     std.debug.print("{X:0>2} ", .{pixel_data[middle_row_offset + i]});
-            //     if ((i + 1) % 16 == 0) std.debug.print("\n   ", .{});
-            // }
-
-            std.debug.print("\n", .{});
-        }
-
-        std.debug.print("\n", .{});
+        std.debug.print("📊 Decoded: {d}x{d}, {s} ({d}-bit/pixel)\n", .{ width, height, &format_bytes, bits_per_pixel });
     }
 
     pub fn deinit(self: *VideoToolboxDecoder) void {
@@ -465,7 +293,6 @@ fn createDecompressionSession(
 ) !vtb.VTDecompressionSessionRef {
 
     // Request 64-bit RGBA half-float output (16-bit float per channel)
-    // This preserves ProRes 4444 bit depth better than 8-bit BGRA
     var pixel_format_value: i32 = @bitCast(@as(u32, vtb.kCVPixelFormatType_64RGBAHalf));
     const pixel_format_num = vtb.CFNumberCreate(
         null,
@@ -500,14 +327,14 @@ fn createDecompressionSession(
     };
 
     // Create decompression session
-    var session: vtb.VTDecompressionSessionRef = null;
+    var decompression_session: vtb.VTDecompressionSessionRef = null;
     const status = vtb.VTDecompressionSessionCreate(
         null, // allocator
         format_desc,
         null, // Let VideoToolbox choose decoder automatically
         pixel_attrs, // BGRA + Metal compatible output
         &callback_record,
-        &session,
+        &decompression_session,
     );
 
     if (status != vtb.noErr) {
@@ -515,7 +342,13 @@ fn createDecompressionSession(
         return error.CreateDecompressionSessionFailed;
     }
 
-    // DEBUG: Print supported pixel formats
+    // try getSupportedPixelFormats(session);
+
+    return decompression_session.?;
+}
+
+/// DEBUG: Print supported pixel formats
+fn getSupportedPixelFormats(session: vtb.VTDecompressionSessionRef) !void {
     var props: ?*anyopaque = null;
     const prop_status = vtb.VTSessionCopyProperty(
         session,
@@ -536,9 +369,6 @@ fn createDecompressionSession(
         }
         vtb.CFRelease(props.?);
     }
-
-    // std.debug.print("✅ Decompression session created successfully!\n", .{});
-    return session.?;
 }
 
 fn createBlockBuffer(frame_data: []u8) !vtb.CMBlockBufferRef {

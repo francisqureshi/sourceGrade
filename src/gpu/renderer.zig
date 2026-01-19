@@ -120,8 +120,9 @@ pub fn initRenderContext(
     const queue = try device.createCommandQueue();
     std.debug.print("✓ Created command queue\n", .{});
 
-    // Load shaders
-    const shader_source = @embedFile("../Shaders.metal");
+    // Load shaders (concatenate UI and video shader files)
+    const shader_source = @embedFile("../Shaders.metal") ++ @embedFile("../VideoShaders.metal");
+
     var library = try device.createLibraryFromSource(shader_source);
     defer library.deinit();
     std.debug.print("✓ Compiled shader library\n", .{});
