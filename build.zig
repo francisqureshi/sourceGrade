@@ -118,7 +118,6 @@ pub fn build(b: *std.Build) void {
     });
     const swift_dylib = swift_compile.addOutputFileArg("libMetalWindow.dylib");
     swift_compile.addFileArg(b.path("macos/MetalWindow.swift"));
-    swift_compile.addFileArg(b.path("macos/VideoReader.swift"));
     swift_compile.addArgs(&.{
         "-emit-module",
         "-module-name",
@@ -222,30 +221,6 @@ pub fn build(b: *std.Build) void {
         "-exported_symbol",
         "-Xlinker",
         "_metal_displaylink_release",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_video_reader_create",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_video_reader_get_next_frame",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_video_reader_restart",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_video_reader_get_info",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_video_reader_release",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_video_texture_release",
     });
 
     // Link the Swift dylib
