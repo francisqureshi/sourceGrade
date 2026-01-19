@@ -244,7 +244,8 @@ pub fn initRenderContext(
     const start_time = try std.time.Instant.now();
 
     // Video path to load (will be loaded in render thread for proper I/O threading)
-    const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
+    const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
+    // const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalfAlpha.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/A004C002_250326_RQ2M_S01.mov";
@@ -276,7 +277,7 @@ pub fn initRenderContext(
     };
 }
 
-pub fn deinitRenderContext(result: *InitResult) void {
+pub fn deinitRenderContext(allocator: std.mem.Allocator, result: *InitResult) void {
     result.context.queue.deinit();
     result.context.pipeline.deinit();
     result.context.imgui_pipeline.deinit();
@@ -284,7 +285,6 @@ pub fn deinitRenderContext(result: *InitResult) void {
     result.context.vertex_buffer.deinit();
     result.context.index_buffer.deinit();
     result.imgui_ctx_owned.deinit();
-    const allocator = std.heap.c_allocator; // Note: ideally we'd pass this in
     allocator.destroy(result.imgui_ctx_owned);
 
     // Note: source_media is managed by render thread (initialized and cleaned up there)
@@ -304,7 +304,7 @@ pub fn deinitRenderContext(result: *InitResult) void {
 pub fn renderThread(ctx: *RenderContext) void {
     var frame: u64 = 0;
     // const speed: f32 = 3000;
-    // var slider_value: f32 = 0.5;
+    var slider_value: f32 = 0.5;
     const playback_speed: f32 = 1.0; // 1.0 = normal speed, 0.5 = half speed, 2.0 = double speed
 
     // Initialize I/O in render thread (CRITICAL: I/O must be initialized on the thread that uses it)
@@ -345,7 +345,7 @@ pub fn renderThread(ctx: *RenderContext) void {
 
     // CRITICAL: Video texture holders must persist across frames!
     // These keep the CVPixelBuffer and Metal textures alive between decode and present
-    // For y416 packed format, we use a single RGBA16 texture (not tri-planar)
+    // For y416 packed format, we use a single RGBA16 texture
     var packed_metal_texture: ?metal.MetalTexture = null;
     var decoded_frame_holder: ?vtb.DecodedFrame = null;
     var texture_set_holder: ?vtb.MetalTextureSet = null;
@@ -385,14 +385,14 @@ pub fn renderThread(ctx: *RenderContext) void {
         ctx.imgui_ctx.mouse_y = mouse_y;
         ctx.imgui_ctx.mouse_down = mouse_down;
 
-        // ctx.imgui_ctx.slider(1, 1400, 300, 100, 50, &slider_value, 0, 1) catch {};
-        // ctx.imgui_ctx.addRect(1400, 50, 100, 100, imgui.ImGuiContext.packColor(slider_value, 1, 0, 1.0)) catch {};
-        // ctx.imgui_ctx.addRect(1450, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
+        ctx.imgui_ctx.slider(1, 1400, 300, 100, 50, &slider_value, 0, 1) catch {};
+        ctx.imgui_ctx.addRect(1400, 50, 100, 100, imgui.ImGuiContext.packColor(slider_value, 1, 0, 1.0)) catch {};
+        ctx.imgui_ctx.addRect(1450, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
 
         // // Add text using new unified system
         // ctx.imgui_ctx.addText("Large-196pt", 50, 200, 196.0, .{ 255, 255, 255, 255 }) catch {};
         // ctx.imgui_ctx.addText("Medium-48pt", 50, 300, 48.0, .{ 200, 200, 255, 255 }) catch {};
-        // ctx.imgui_ctx.addText("Small-24pt", 50, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
+        ctx.imgui_ctx.addText("Small-24pt", 50, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
 
         // Video frame timing - decode and create Metal textures from YCbCr
         if (source_media) |sm| {

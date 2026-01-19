@@ -84,7 +84,7 @@ fn app() !void {
     };
 
     var render_result = try renderer.initRenderContext(allocator, config);
-    defer renderer.deinitRenderContext(&render_result);
+    defer renderer.deinitRenderContext(allocator, &render_result);
 
     // Spawn render thread
     const thread = try std.Thread.spawn(.{}, renderer.renderThread, .{&render_result.context});
