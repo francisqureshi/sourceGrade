@@ -40,6 +40,12 @@ void* metal_drawable_get_texture(void* drawable);
 /// Present drawable
 void metal_drawable_present(void* drawable);
 
+/// Release drawable (balance passRetained from get_next_drawable)
+void metal_drawable_release(void* drawable);
+
+/// Release texture (balance passRetained from get_texture)
+void metal_texture_release(void* texture);
+
 /// Process window events
 void metal_window_process_events(void* window);
 

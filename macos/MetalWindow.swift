@@ -144,6 +144,26 @@ public func metal_window_init_app() {
     let _ = NSApplication.shared
     NSApplication.shared.setActivationPolicy(.regular)
     NSApplication.shared.activate(ignoringOtherApps: true)
+
+    // Create main menu with Quit item (Cmd+Q)
+    let mainMenu = NSMenu()
+
+    // Application menu (first menu, uses app name)
+    let appMenuItem = NSMenuItem()
+    mainMenu.addItem(appMenuItem)
+
+    let appMenu = NSMenu()
+    appMenuItem.submenu = appMenu
+
+    // Quit menu item
+    let quitItem = NSMenuItem(
+        title: "Quit",
+        action: #selector(NSApplication.terminate(_:)),
+        keyEquivalent: "q"
+    )
+    appMenu.addItem(quitItem)
+
+    NSApplication.shared.mainMenu = mainMenu
 }
 
 @_cdecl("metal_window_run_app")
@@ -186,6 +206,18 @@ public func metal_drawable_get_texture(_ drawablePtr: UnsafeMutableRawPointer)
 public func metal_drawable_present(_ drawablePtr: UnsafeMutableRawPointer) {
     let drawable = Unmanaged<CAMetalDrawable>.fromOpaque(drawablePtr).takeUnretainedValue()
     drawable.present()
+}
+
+@_cdecl("metal_drawable_release")
+public func metal_drawable_release(_ drawablePtr: UnsafeMutableRawPointer) {
+    // Balance the passRetained from metal_layer_get_next_drawable
+    let _ = Unmanaged<CAMetalDrawable>.fromOpaque(drawablePtr).takeRetainedValue()
+}
+
+@_cdecl("metal_texture_release")
+public func metal_texture_release(_ texturePtr: UnsafeMutableRawPointer) {
+    // Balance the passRetained from metal_drawable_get_texture
+    let _ = Unmanaged<AnyObject>.fromOpaque(texturePtr).takeRetainedValue()
 }
 
 @_cdecl("metal_window_process_events")

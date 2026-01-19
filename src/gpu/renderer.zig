@@ -41,10 +41,10 @@ pub const RenderContext = struct {
     imgui_ctx: *imgui.ImGuiContext,
     displaylink: ?*anyopaque,
     start_time: std.time.Instant,
-    source_media: ?*media.SourceMedia,
     device_ptr: *anyopaque,
-    video_fps: f64,
     config: RenderConfig,
+    allocator: std.mem.Allocator,
+    video_path: ?[]const u8,
 };
 
 // ============================================================================
@@ -243,36 +243,14 @@ pub fn initRenderContext(
 
     const start_time = try std.time.Instant.now();
 
-    // Create IO for video loading
-    var threaded: std.Io.Threaded = .init_single_threaded;
-    // Note: We don't defer threaded.deinit() here because SourceMedia needs it
-    const io = threaded.io();
-
-    // Load test video file
+    // Video path to load (will be loaded in render thread for proper I/O threading)
     const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalfAlpha.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/A004C002_250326_RQ2M_S01.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/ProRes444_with_Alpha.mov";
 
-    var source_media_ptr: ?*media.SourceMedia = null;
-    var video_fps: f64 = 0;
-
-    if (media.SourceMedia.init(video_path, io, allocator)) |sm| {
-        source_media_ptr = try allocator.create(media.SourceMedia);
-        source_media_ptr.?.* = sm;
-        video_fps = @as(f64, @floatFromInt(sm.frame_rate.num)) / @as(f64, @floatFromInt(sm.frame_rate.den));
-        std.debug.print("✓ Loaded video: {d}x{d} @ {d:.2}fps, {d} frames\n\n", .{
-            sm.resolution.width,
-            sm.resolution.height,
-            video_fps,
-            sm.duration_in_frames,
-        });
-    } else |err| {
-        std.debug.print("Warning: Failed to load video file ({}), falling back to rotating quad\n", .{err});
-    }
-
-    // Create render context
+    // Create render context (video loading deferred to render thread)
     const render_ctx = RenderContext{
         .window = window.?,
         .layer = layer.?,
@@ -285,10 +263,10 @@ pub fn initRenderContext(
         .imgui_ctx = imgui_ctx_owned,
         .displaylink = displaylink,
         .start_time = start_time,
-        .source_media = source_media_ptr,
         .device_ptr = device_ptr.?,
-        .video_fps = video_fps,
         .config = config,
+        .allocator = allocator,
+        .video_path = video_path,
     };
 
     return InitResult{
@@ -309,11 +287,7 @@ pub fn deinitRenderContext(result: *InitResult) void {
     const allocator = std.heap.c_allocator; // Note: ideally we'd pass this in
     allocator.destroy(result.imgui_ctx_owned);
 
-    // Cleanup source media if loaded
-    if (result.context.source_media) |sm| {
-        sm.deinit();
-        allocator.destroy(sm);
-    }
+    // Note: source_media is managed by render thread (initialized and cleaned up there)
 
     if (result.context.displaylink) |dl| {
         c.metal_displaylink_release(dl);
@@ -333,8 +307,39 @@ pub fn renderThread(ctx: *RenderContext) void {
     // var slider_value: f32 = 0.5;
     const playback_speed: f32 = 1.0; // 1.0 = normal speed, 0.5 = half speed, 2.0 = double speed
 
+    // Initialize I/O in render thread (CRITICAL: I/O must be initialized on the thread that uses it)
+    var threaded = std.Io.Threaded.init(ctx.allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    // Load video in render thread
+    var source_media: ?*media.SourceMedia = null;
+    var video_fps: f64 = 0;
+
+    if (ctx.video_path) |video_path| {
+        if (media.SourceMedia.init(video_path, io, ctx.allocator)) |sm| {
+            source_media = ctx.allocator.create(media.SourceMedia) catch null;
+            if (source_media) |ptr| {
+                ptr.* = sm;
+                video_fps = @as(f64, @floatFromInt(sm.frame_rate.num)) / @as(f64, @floatFromInt(sm.frame_rate.den));
+                std.debug.print("✓ Loaded video: {d}x{d} @ {d:.2}fps, {d} frames\n\n", .{
+                    sm.resolution.width,
+                    sm.resolution.height,
+                    video_fps,
+                    sm.duration_in_frames,
+                });
+            }
+        } else |err| {
+            std.debug.print("Warning: Failed to load video file ({}), falling back to rotating quad\n", .{err});
+        }
+    }
+    defer if (source_media) |sm| {
+        sm.deinit();
+        ctx.allocator.destroy(sm);
+    };
+
     // Video frame timing
-    const base_frame_duration_ns = if (ctx.video_fps > 0) @as(u64, @intFromFloat(std.time.ns_per_s / ctx.video_fps)) else 0;
+    const base_frame_duration_ns = if (video_fps > 0) @as(u64, @intFromFloat(std.time.ns_per_s / video_fps)) else 0;
     var last_frame_time: u64 = 0;
     var current_frame_index: usize = 0;
 
@@ -390,7 +395,7 @@ pub fn renderThread(ctx: *RenderContext) void {
         // ctx.imgui_ctx.addText("Small-24pt", 50, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
 
         // Video frame timing - decode and create Metal textures from YCbCr
-        if (ctx.source_media) |sm| {
+        if (source_media) |sm| {
             const time_since_last_frame = elapsed_ns - last_frame_time;
 
             // Adjust frame duration by playback speed
@@ -489,8 +494,8 @@ pub fn renderThread(ctx: *RenderContext) void {
 
             const video_uniforms = VideoUniforms{
                 .video_size = .{
-                    @floatFromInt(ctx.source_media.?.resolution.width),
-                    @floatFromInt(ctx.source_media.?.resolution.height),
+                    @floatFromInt(source_media.?.resolution.width),
+                    @floatFromInt(source_media.?.resolution.height),
                 },
                 .viewport_size = .{ display_width_pts, display_height_pts },
             };
@@ -551,6 +556,10 @@ pub fn renderThread(ctx: *RenderContext) void {
 
         command_buffer.present(drawable_ptr);
         command_buffer.commit();
+
+        // Release retained drawable and texture to prevent memory leaks
+        c.metal_drawable_release(drawable_ptr);
+        c.metal_texture_release(texture_ptr);
     }
 }
 
