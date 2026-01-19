@@ -248,9 +248,9 @@ pub fn initRenderContext(
     const io = threaded.io();
 
     // Load test video file
-    // const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
+    const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
-    const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalfAlpha.mov";
+    // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalfAlpha.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/A004C002_250326_RQ2M_S01.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/ProRes444_with_Alpha.mov";
 

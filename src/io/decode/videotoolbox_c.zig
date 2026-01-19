@@ -90,6 +90,9 @@ pub const MTLPixelFormatRGBA16Unorm: MTLPixelFormat = 85;
 /// 32-bit BGRA normalized (8 bits per component) - common display format
 pub const MTLPixelFormatBGRA8Unorm: MTLPixelFormat = 80;
 
+/// 64-bit RGBA half-float (16-bit float per component)
+pub const MTLPixelFormatRGBA16Float: MTLPixelFormat = 115;
+
 // ============================================================================
 // Basic types
 // ============================================================================
@@ -200,6 +203,9 @@ pub const kCVPixelFormatType_32ARGB = 0x41524742; // 'ARGB'
 
 /// 64-bit ARGB pixel format (16 bits per component) - preserves ProRes 4444 bit depth
 pub const kCVPixelFormatType_64ARGB = 0x62363461; // 'b64a'
+
+/// 64-bit RGBA half-float (16-bit float per component)
+pub const kCVPixelFormatType_64RGBAHalf = 0x52476841; // 'RGhA'
 
 /// 128-bit RGBA float (32-bit float per component) - native float format
 pub const kCVPixelFormatType_128RGBAFloat = 0x52474261; //RGBf' (note: check actual FourCC)

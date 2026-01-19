@@ -255,17 +255,15 @@ vertex VideoVertexOut videoVertexShader(
     return out;
 }
 
-// Video texture shader - supports BGRA (from VideoToolbox YCbCr conversion)
+// Video texture shader - supports BGRA and RGBA16Float (from VideoToolbox)
 fragment float4 videoFragmentShader(
     VideoVertexOut in [[stage_in]],
     texture2d<float> videoTexture [[texture(0)]])
 {
     constexpr sampler texSampler(filter::linear, address::clamp_to_edge);
 
-    // Sample the texture - VideoToolbox already converted to BGRA
+    // Sample the texture - VideoToolbox already converted to RGB
     float4 color = videoTexture.sample(texSampler, in.texCoord);
 
-    // BGRA format: color.b=Blue, color.g=Green, color.r=Red, color.a=Alpha
-    // Metal samples BGRA as RGBA, so we can use it directly
     return color;
 }
