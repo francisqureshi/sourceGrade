@@ -36,8 +36,6 @@ pub const RenderContext = struct {
     pipeline: metal.MetalRenderPipelineState,
     imgui_pipeline: metal.MetalRenderPipelineState,
     video_pipeline: metal.MetalRenderPipelineState,
-    vertex_buffer: metal.MetalBuffer,
-    index_buffer: metal.MetalBuffer,
     imgui_ctx: *imgui.ImGuiContext,
     displaylink: ?*anyopaque,
     start_time: std.time.Instant,
@@ -178,41 +176,6 @@ pub fn initRenderContext(
     const video_pipeline = try video_vertex_fn.createRenderPipeline(&device, &video_fragment_fn, video_pipeline_desc);
     std.debug.print("✓ Created video render pipeline\n\n", .{});
 
-    // Create vertex buffer with triangle data
-    // Using extern struct with explicit alignment to match Metal's expectations
-    const VertexData = extern struct {
-        position: [2]f32 align(4),
-        color: [4]f32 align(4),
-    };
-
-    // Quad vertices with center (5 vertices: center + 4 corners)
-    const all_vertices = [_]VertexData{
-        .{ .position = .{ 0.0, 0.0 }, .color = .{ 1.0, 1.0, 1.0, 1.0 } }, // center: white
-        .{ .position = .{ -0.25, 0.25 }, .color = .{ 1.0, 0.0, 0.0, 1.0 } }, // top-left: red
-        .{ .position = .{ 0.25, 0.25 }, .color = .{ 0.0, 0.0, 1.0, 1.0 } }, // top-right: blue
-        .{ .position = .{ 0.25, -0.25 }, .color = .{ 1.0, 1.0, 0.0, 1.0 } }, // bottom-right: yellow
-        .{ .position = .{ -0.25, -0.25 }, .color = .{ 0.0, 1.0, 0.0, 1.0 } }, // bottom-left: green
-    };
-
-    // Indices for 4 triangles (each triangle shares the center vertex)
-    const quad_indices = [_]u16{
-        0, 1, 2, // center, top-left, top-right
-        0, 2, 3, // center, top-right, bottom-right
-        0, 3, 4, // center, bottom-right, bottom-left
-        0, 4, 1, // center, bottom-left, top-left
-    };
-
-    const vertex_data_bytes = std.mem.sliceAsBytes(&all_vertices);
-    var vertex_buffer = try device.createBuffer(@intCast(vertex_data_bytes.len));
-    vertex_buffer.upload(vertex_data_bytes);
-
-    const index_data_bytes = std.mem.sliceAsBytes(&quad_indices);
-    var index_buffer = try device.createBuffer(@intCast(index_data_bytes.len));
-    index_buffer.upload(index_data_bytes);
-
-    std.debug.print("✓ Created vertex buffer ({} bytes, {} vertices)\n", .{ vertex_data_bytes.len, all_vertices.len });
-    std.debug.print("✓ Created index buffer ({} bytes, {} indices)\n", .{ index_data_bytes.len, quad_indices.len });
-
     // Initialize IMGUI context on heap so pointer stays valid
     const imgui_ctx_owned = try allocator.create(imgui.ImGuiContext);
     imgui_ctx_owned.* = try imgui.ImGuiContext.init(allocator, &device, pixel_format);
@@ -244,8 +207,9 @@ pub fn initRenderContext(
     const start_time = try std.time.Instant.now();
 
     // Video path to load (will be loaded in render thread for proper I/O threading)
-    const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
-    // const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
+    // const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
+    // const video_path = "/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov";
+    const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalfAlpha.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/A004C002_250326_RQ2M_S01.mov";
@@ -259,8 +223,6 @@ pub fn initRenderContext(
         .pipeline = pipeline,
         .imgui_pipeline = imgui_pipeline,
         .video_pipeline = video_pipeline,
-        .vertex_buffer = vertex_buffer,
-        .index_buffer = index_buffer,
         .imgui_ctx = imgui_ctx_owned,
         .displaylink = displaylink,
         .start_time = start_time,
@@ -282,12 +244,8 @@ pub fn deinitRenderContext(allocator: std.mem.Allocator, result: *InitResult) vo
     result.context.pipeline.deinit();
     result.context.imgui_pipeline.deinit();
     result.context.video_pipeline.deinit();
-    result.context.vertex_buffer.deinit();
-    result.context.index_buffer.deinit();
     result.imgui_ctx_owned.deinit();
     allocator.destroy(result.imgui_ctx_owned);
-
-    // Note: source_media is managed by render thread (initialized and cleaned up there)
 
     if (result.context.displaylink) |dl| {
         c.metal_displaylink_release(dl);
@@ -330,7 +288,7 @@ pub fn renderThread(ctx: *RenderContext) void {
                 });
             }
         } else |err| {
-            std.debug.print("Warning: Failed to load video file ({}), falling back to rotating quad\n", .{err});
+            std.debug.print("Warning: Failed to load video file ({})\n", .{err});
         }
     }
     defer if (source_media) |sm| {
@@ -483,7 +441,7 @@ pub fn renderThread(ctx: *RenderContext) void {
         var render_encoder = command_buffer.createRenderEncoder(&render_pass) catch continue;
         defer render_encoder.deinit();
 
-        // Layer 1: Video (packed AYUV y416 format) or rotating quad
+        // Layer 1: Video (packed AYUV y416 format)
         if (packed_metal_texture) |*texture| {
             // Render video frame with YCbCr→RGB conversion in shader
             // Create VideoUniforms for letterboxing (matches Shaders.metal)
@@ -514,13 +472,6 @@ pub fn renderThread(ctx: *RenderContext) void {
             render_encoder.setVertexBytes(@ptrCast(&video_uniforms), @sizeOf(VideoUniforms), 0);
             render_encoder.setFragmentTexture(texture, 0); // Packed AYUV texture
             render_encoder.drawPrimitives(.triangle_strip, 0, 4);
-            // } else {
-            //     // Render rotating quad (fallback when no video loaded)
-            //     render_encoder.setPipeline(&ctx.pipeline);
-            //     render_encoder.setVertexBuffer(&ctx.vertex_buffer, 0, 0);
-            //     render_encoder.setVertexBytes(@ptrCast(&rotation_angle), @sizeOf(f32), 1);
-            //     render_encoder.setVertexBytes(@ptrCast(&translation), @sizeOf([2]f32), 2);
-            //     render_encoder.drawIndexedPrimitives(.triangle, 12, &ctx.index_buffer, 0);
         }
 
         // Layer 2: IMGUI (unified shapes + text)
