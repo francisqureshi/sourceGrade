@@ -274,6 +274,7 @@ pub fn renderThread(ctx: *RenderContext) void {
     var source_media: ?*media.SourceMedia = null;
     var video_fps: f64 = 0;
 
+    // FIXME : Messy is this 'RenderThread' really a qausi-player ? We need a dedicated place for the import and allocatoion on SourceMedias
     if (ctx.video_path) |video_path| {
         if (media.SourceMedia.init(video_path, io, ctx.allocator)) |sm| {
             source_media = ctx.allocator.create(media.SourceMedia) catch null;
@@ -323,13 +324,6 @@ pub fn renderThread(ctx: *RenderContext) void {
         // Wait for vsync signal from CVDisplayLink
         frame_semaphore.wait();
 
-        // Calculate rotation
-        const current_time = std.time.Instant.now() catch continue;
-        const elapsed_ns = current_time.since(ctx.start_time);
-        // const elapsed_ms = @as(f32, @floatFromInt(elapsed_ns / std.time.ns_per_ms));
-        // const rotation_angle: f32 = @mod(elapsed_ms, speed) / speed * 2.0 * std.math.pi;
-        // const translation = [2]f32{ 0.5, 0.0 };
-
         // Build IMGUI frame
         ctx.imgui_ctx.newFrame();
 
@@ -351,6 +345,10 @@ pub fn renderThread(ctx: *RenderContext) void {
         // ctx.imgui_ctx.addText("Large-196pt", 50, 200, 196.0, .{ 255, 255, 255, 255 }) catch {};
         // ctx.imgui_ctx.addText("Medium-48pt", 50, 300, 48.0, .{ 200, 200, 255, 255 }) catch {};
         ctx.imgui_ctx.addText("Small-24pt", 50, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
+
+        // time
+        const current_time = std.time.Instant.now() catch continue;
+        const elapsed_ns = current_time.since(ctx.start_time);
 
         // Video frame timing - decode and create Metal textures from YCbCr
         if (source_media) |sm| {
