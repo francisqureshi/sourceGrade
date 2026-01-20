@@ -207,9 +207,9 @@ pub fn initRenderContext(
     const start_time = try std.time.Instant.now();
 
     // Video path to load (will be loaded in render thread for proper I/O threading)
-    // const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
+    const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov";
-    const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
+    // const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalfAlpha.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/A004C002_250326_RQ2M_S01.mov";
@@ -260,8 +260,6 @@ pub fn deinitRenderContext(allocator: std.mem.Allocator, result: *InitResult) vo
 
 /// Main render thread entry point. Runs until terminated.
 pub fn renderThread(ctx: *RenderContext) void {
-    var frame: u64 = 0;
-    // const speed: f32 = 3000;
     var slider_value: f32 = 0.5;
     const playback_speed: f32 = 1.0; // 1.0 = normal speed, 0.5 = half speed, 2.0 = double speed
 
@@ -271,8 +269,8 @@ pub fn renderThread(ctx: *RenderContext) void {
     const io = threaded.io();
 
     // Load video in render thread
-    var source_media: ?*media.SourceMedia = null;
     var video_fps: f64 = 0;
+    var source_media: ?*media.SourceMedia = null;
 
     // FIXME : Messy is this 'RenderThread' really a qausi-player ? We need a dedicated place for the import and allocatoion on SourceMedias
     if (ctx.video_path) |video_path| {
@@ -298,6 +296,7 @@ pub fn renderThread(ctx: *RenderContext) void {
     };
 
     // Video frame timing
+    var frame: u64 = 0;
     const base_frame_duration_ns = if (video_fps > 0) @as(u64, @intFromFloat(std.time.ns_per_s / video_fps)) else 0;
     var last_frame_time: u64 = 0;
     var current_frame_index: usize = 0;
