@@ -12,7 +12,7 @@ CREATE TABLE projects (
 
 -- Source media (actual files on disk)
 CREATE TABLE sources (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY,
     
     -- File metadata
     path TEXT NOT NULL UNIQUE,
