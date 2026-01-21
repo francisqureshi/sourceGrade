@@ -25,49 +25,28 @@ fn testSourceIO() !void {
     // Open video file
     // const file_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
     // const file_path = "/Users/fq/Desktop/AGMM/ProRes444_with_Alpha.mov";
-    const file_path = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
+    // const file_path = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
+    const file_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
+    const path_two = "/Users/mac10/Desktop/A_0006C002_251202_172939_a1CLB_S002.mov";
 
-    // const file_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
-
-    // const file = Io.Dir.openFileAbsolute(io, video_path, .{}) catch |err| {
-    //     std.debug.print("Could not open test video file: {}\n", .{err});
-    //     return;
-    // };
-    // defer file.close(io);
-
-    // Create media context
-    // const mctx = media.MediaContext{ .file = file, .io = io, .allocator = allocator };
-
-    // Parse media file
-    // var source_media = try media.SourceMedia.init(mctx);
     var source_media = try media.SourceMedia.init(file_path, io, allocator);
     defer source_media.deinit();
 
+    var source_media_two = try media.SourceMedia.init(path_two, io, allocator);
+    defer source_media_two.deinit();
+
     std.debug.print("\n✓ Parsed source media: {s}\n", .{source_media.file_name});
     std.debug.print("  Resolution: {d}x{d}\n", .{ source_media.resolution.width, source_media.resolution.height });
-    std.debug.print("  Duration: {d} frames\n", .{source_media.duration_in_frames});
-    std.debug.print("  Frame rate: {d}/{d} = {d:.2}fps\n", .{ source_media.frame_rate.num, source_media.frame_rate.den, source_media.frame_rate_float });
-    std.debug.print("  StartTC: {s} --- End TC: {s}\n", .{ source_media.start_timecode, source_media.end_timecode });
+
+    std.debug.print("\n✓ Parsed source media: {s}\n", .{source_media_two.file_name});
+    std.debug.print("  Resolution: {d}x{d}\n", .{ source_media_two.resolution.width, source_media_two.resolution.height });
 
     // Add parsed source to Db..
-    // try db_test.addSourceToDB(allocator, source_media);
+    const db_pool = try db_test.startDb(allocator, io);
+    defer db_pool.deinit();
 
-    std.debug.print("\n\n=== VideoToolBox Decoder ===\n\n", .{});
-    // VideoToolBox Decode
-
-    const frames: usize = 1;
-    // const frames: usize = @intCast(source_media.duration_in_frames);
-
-    for (0..frames) |f_idx| {
-        const frame = try source_media.decodeSourceFrame(f_idx);
-        defer frame.deinit();
-
-        const width = vtbFW.CVPixelBufferGetWidth(frame.pixel_buffer);
-        const height = vtbFW.CVPixelBufferGetHeight(frame.pixel_buffer);
-        const format = vtbFW.CVPixelBufferGetPixelFormatType(frame.pixel_buffer);
-
-        std.debug.print("✅ Decoded: {d}x{d}, format: 0x{X:0>8}\n", .{ width, height, format });
-    }
+    try db_test.addSourceToDb(db_pool, &source_media);
+    try db_test.addSourceToDb(db_pool, &source_media_two);
 }
 
 fn app() !void {
@@ -104,8 +83,8 @@ pub fn main() !void {
     // try db_test.testPgsql();
 
     // Test IO
-    // try testSourceIO();
+    try testSourceIO();
 
     // Run Gui / App
-    try app();
+    // try app();
 }

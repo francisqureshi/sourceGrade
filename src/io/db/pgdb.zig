@@ -7,7 +7,7 @@ const media = @import("../media.zig");
 pub const log = std.log.scoped(.pgSQL);
 
 const Project = struct {
-    id: i32,
+    id: []const u8,
     name: []const u8,
     frame_rate: ?f64, // Can be null
     created_at: i64, // PostgreSQL timestamp as Unix microseconds
@@ -15,7 +15,7 @@ const Project = struct {
 
 // Source struct mirrors the sources table schema
 pub const Source = struct {
-    id: i32,
+    id: []const u8,
     path: []const u8,
     filename: []const u8,
     file_modified_at: ?i64,
@@ -106,7 +106,7 @@ pub fn getProjectById(pool: *pg.Pool, project_id: i32) !?Project {
 
     // Manually extract or use .to() for struct mapping
     return Project{
-        .id = row.getCol(i32, "id"),
+        .id = row.getCol([]const u8, "id"),
         .name = row.getCol([]const u8, "name"),
         .frame_rate = row.getCol(?f64, "frame_rate"),
         .created_at = row.getCol(i64, "created_at"),
@@ -139,7 +139,7 @@ pub fn resetDatabase(pool: *pg.Pool) !void {
 // Source Media Database Functions
 // ============================================================================
 
-pub fn createSource(pool: *pg.Pool, source_media: *const media.SourceMedia) !i32 {
+pub fn createSource(pool: *pg.Pool, source_media: *const media.SourceMedia) ![16]u8 {
     var conn = try pool.acquire();
     defer conn.release();
 
@@ -174,14 +174,17 @@ pub fn createSource(pool: *pg.Pool, source_media: *const media.SourceMedia) !i32
     defer result.deinit();
 
     if (try result.next()) |row| {
-        const id = row.get(i32, 0);
-        std.debug.print("✓ Created source ID: {d}\n", .{id});
+        var id: [16]u8 = undefined;
+        @memcpy(&id, row.get([]const u8, 0));
+        // const id = row.get([]const u8, 0);
+        const hex_id = try pg.uuidToHex(&id);
+        std.debug.print("✓ Created source ID: {s}\n", .{hex_id});
         return id;
     }
     return error.NoSourceCreated;
 }
 
-pub fn getSourceById(pool: *pg.Pool, source_id: i32) !?Source {
+pub fn getSourceById(pool: *pg.Pool, source_id: []const u8) !?Source {
     var conn = try pool.acquire();
     defer conn.release();
 
@@ -200,7 +203,7 @@ pub fn getSourceById(pool: *pg.Pool, source_id: i32) !?Source {
     defer row.deinit() catch {};
 
     return Source{
-        .id = row.getCol(i32, "id"),
+        .id = row.getCol([]const u8, "id"),
         .path = row.getCol([]const u8, "path"),
         .filename = row.getCol([]const u8, "filename"),
         .file_modified_at = row.getCol(?i64, "file_modified_at"),
@@ -243,7 +246,7 @@ pub fn listSources(pool: *pg.Pool) !void {
     std.debug.print("\n=== Sources ===\n", .{});
 
     var mapper = result.mapper(struct {
-        id: i32,
+        id: []const u8,
         filename: []const u8,
         width: i32,
         height: i32,
@@ -255,9 +258,11 @@ pub fn listSources(pool: *pg.Pool) !void {
 
     while (try mapper.next()) |source| {
         const fps = @as(f32, @floatFromInt(source.frame_rate_num)) / @as(f32, @floatFromInt(source.frame_rate_den));
+        const hex_id = try pg.uuidToHex(source.id);
+
         std.debug.print(
-            "ID: {d} | {s} | {d}x{d} | {d} frames @ {d:.2}fps | {s}\n",
-            .{ source.id, source.filename, source.width, source.height, source.duration_frames, fps, source.codec },
+            "ID: {s} | {s} | {d}x{d} | {d} frames @ {d:.2}fps | {s}\n",
+            .{ &hex_id, source.filename, source.width, source.height, source.duration_frames, fps, source.codec },
         );
     }
 }
@@ -272,7 +277,8 @@ pub fn initializeDatabase(pool: *pg.Pool) !void {
     // Recreate sources table with full schema
     _ = try conn.exec(
         \\CREATE TABLE sources (
-        \\    id SERIAL PRIMARY KEY,
+        // \\    id SERIAL PRIMARY KEY,
+        \\    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         \\    
         \\    -- File metadata
         \\    path TEXT NOT NULL UNIQUE,
@@ -370,7 +376,7 @@ pub fn resetAndInitializeDatabase(pool: *pg.Pool) !void {
     // Recreate sources table with full schema
     _ = try conn.exec(
         \\CREATE TABLE sources (
-        \\    id SERIAL PRIMARY KEY,
+        \\    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         \\    
         \\    -- File metadata
         \\    path TEXT NOT NULL UNIQUE,
@@ -433,7 +439,7 @@ pub fn resetAndInitializeDatabase(pool: *pg.Pool) !void {
         \\CREATE TABLE timeline_clips (
         \\    id SERIAL PRIMARY KEY,
         \\    timeline_id INT REFERENCES timelines(id) ON DELETE CASCADE,
-        \\    source_id INT REFERENCES sources(id) ON DELETE RESTRICT,
+        \\    source_id UUID REFERENCES sources(id) ON DELETE RESTRICT,
         \\    
         \\    source_in_frame INT NOT NULL,
         \\    source_out_frame INT NOT NULL,

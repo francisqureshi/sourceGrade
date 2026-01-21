@@ -26,6 +26,7 @@ pub const Rational = struct {
 pub const SourceMedia = struct {
     mctx: MediaContext,
     file_path: []const u8,
+    db_uuid: ?[16]u8,
     file_name: []const u8,
     container_resolution: Resolution,
     resolution: Resolution,
@@ -114,7 +115,6 @@ pub const SourceMedia = struct {
         var start_tc_buffer: [32]u8 = undefined;
 
         const start_timecode_slice = try smpte_calc.getTC(start_frame_number, &start_tc_buffer);
-        std.debug.print("start_timecode_slice: {s}\n", .{start_timecode_slice});
         const start_timecode = try mctx.allocator.dupe(u8, start_timecode_slice);
         errdefer mctx.allocator.free(start_timecode);
 
@@ -147,6 +147,7 @@ pub const SourceMedia = struct {
             .mctx = mctx,
             .file_name = file_name,
             .file_path = file_path,
+            .db_uuid = null,
             .resolution = resolution,
             .container_resolution = resolution, // Same as resolution for now
             .frame_rate = frame_rate,

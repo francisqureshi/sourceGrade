@@ -1,3 +1,6 @@
+// Need to sometimes run the psql server via:
+// pg_ctl -D /opt/homebrew/var/postgresql@16 -o "-p 5433" -l /opt/homebrew/var/postgresql@16/server.log start
+
 const std = @import("std");
 const builtin = @import("builtin");
 
@@ -31,8 +34,8 @@ pub fn testPgsql() !void {
             .host = "127.0.0.1",
         },
         .auth = .{
-            // .username = "mac10",
-            .username = "fq",
+            .username = "mac10",
+            // .username = "fq",
             .database = "sourcegrade",
             .timeout = 10_000,
         },
@@ -63,36 +66,46 @@ pub fn testPgsql() !void {
     try pgdb.listProjects(pool);
 }
 
-pub fn addSourceToDB(allocator: Allocator, source_media: media.SourceMedia) !void {
+pub fn startDb(allocator: Allocator, io: std.Io) !*pg.Pool {
     // Initialize database
-    var io_impl = std.Io.Threaded.init(allocator, .{});
-    defer io_impl.deinit();
-    const db_io = io_impl.io();
 
-    var pool = pg.Pool.init(allocator, .{ .io = db_io, .size = 5, .connect = .{
-        .port = 5433,
-        .host = "127.0.0.1",
-    }, .auth = .{
-        .username = "fq",
-        .database = "sourcegrade",
-        .timeout = 10_000,
-    } }) catch |err| {
+    const pool = pg.Pool.init(allocator, .{
+        .io = io,
+        .size = 5,
+        .connect = .{
+            .port = 5433,
+            .host = "127.0.0.1",
+        },
+        .auth = .{
+            // .username = "fq",
+            .username = "mac10",
+            .database = "sourcegrade",
+            .timeout = 10_000,
+        },
+    }) catch |err| {
         log.err("Failed to connect to database: {}", .{err});
-        return;
+        return err;
     };
-    defer pool.deinit();
+    errdefer pool.deinit(); // Now, the caller handles deinit
 
     // Initialize database schema
     try pgdb.resetAndInitializeDatabase(pool);
 
+    return pool;
+}
+
+pub fn addSourceToDb(pool: *pg.Pool, source_media: *media.SourceMedia) !void {
+
     // Store source in database
-    const source_id = try pgdb.createSource(pool, &source_media);
-    std.debug.print("✓ Created source ID: {d}\n", .{source_id});
+    const source_id = try pgdb.createSource(pool, source_media);
 
     // Retrieve and verify
-    if (try pgdb.getSourceById(pool, source_id)) |retrieved| {
+    if (try pgdb.getSourceById(pool, &source_id)) |retrieved| {
         std.debug.print("\n✓ Retrieved source from database:\n", .{});
-        std.debug.print("  ID: {d}\n", .{retrieved.id});
+
+        const hex_id = try pg.uuidToHex(retrieved.id);
+
+        std.debug.print("  ID: {s}\n", .{&hex_id});
         std.debug.print("  File: {s}\n", .{retrieved.filename});
         std.debug.print("  Codec: {s}\n", .{retrieved.codec});
         std.debug.print("    → Codec bytes: ", .{});
@@ -111,6 +124,5 @@ pub fn addSourceToDB(allocator: Allocator, source_media: media.SourceMedia) !voi
 
     // List all sources
     // Initialize database schema
-    try pgdb.resetAndInitializeDatabase(pool);
     try pgdb.listSources(pool);
 }
