@@ -13,43 +13,6 @@ const Project = struct {
     created_at: i64, // PostgreSQL timestamp as Unix microseconds
 };
 
-// Source struct mirrors the sources table schema
-pub const Source = struct {
-    id: []const u8,
-    path: []const u8,
-    filename: []const u8,
-    file_modified_at: ?i64,
-    file_size_bytes: ?i64,
-
-    codec: []const u8,
-
-    width: i32,
-    height: i32,
-    container_width: ?i32,
-    container_height: ?i32,
-
-    frame_rate_num: i32,
-    frame_rate_den: i32,
-    frame_rate_float: ?f64,
-
-    time_base_num: ?i32,
-    time_base_den: ?i32,
-
-    start_timecode: []const u8,
-    end_timecode: ?[]const u8,
-    drop_frame: bool,
-    start_frame_number: i64,
-    end_frame_number: ?i64,
-
-    duration_frames: i64,
-
-    reel_name: ?[]const u8,
-    color_space: ?[]const u8,
-
-    created_at: i64,
-    modified_at: i64,
-};
-
 pub fn createProject(pool: *pg.Pool, name: []const u8, frame_rate: f64) !i32 {
     var conn = try pool.acquire();
     defer conn.release();
@@ -135,9 +98,9 @@ pub fn resetDatabase(pool: *pg.Pool) !void {
     std.debug.print("Database reset complete\n", .{});
 }
 
-// ============================================================================
+
 // Source Media Database Functions
-// ============================================================================
+// 
 
 pub fn createSource(pool: *pg.Pool, source_media: *const media.SourceMedia) ![16]u8 {
     var conn = try pool.acquire();
