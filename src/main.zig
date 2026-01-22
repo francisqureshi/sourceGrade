@@ -1,8 +1,11 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const pg = @import("pg");
 const media = @import("io/media.zig");
+
+const pg = @import("pg");
+const pgdb = @import("io/db/pgdb.zig");
 const db_test = @import("io/db/init_db.zig");
+
 const renderer = @import("gpu/renderer.zig");
 const vtbFW = @import("io/decode/videotoolbox_c.zig");
 
@@ -23,11 +26,12 @@ fn testSourceIO() !void {
     const io = threaded.io();
 
     // Open video file
-    // const file_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
+    const file_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
+    const path_two = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
+
     // const file_path = "/Users/fq/Desktop/AGMM/ProRes444_with_Alpha.mov";
-    // const file_path = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
-    const file_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
-    const path_two = "/Users/mac10/Desktop/A_0006C002_251202_172939_a1CLB_S002.mov";
+    // const file_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
+    // const path_two = "/Users/mac10/Desktop/A_0006C002_251202_172939_a1CLB_S002.mov";
 
     var source_media = try media.SourceMedia.init(file_path, io, allocator);
     defer source_media.deinit();
@@ -47,6 +51,23 @@ fn testSourceIO() !void {
 
     try db_test.addSourceToDb(db_pool, &source_media);
     try db_test.addSourceToDb(db_pool, &source_media_two);
+}
+
+fn testHydrate() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    // Initialize Io
+    var threaded: Io.Threaded = .init_single_threaded;
+    defer threaded.deinit();
+    const io = threaded.io();
+
+    const db_pool = try db_test.startDb(allocator, io);
+    defer db_pool.deinit();
+
+    try pgdb.listSources(db_pool);
+    try pgdb.hydrateSourceMediaPool(db_pool, io, allocator);
 }
 
 fn app() !void {
@@ -83,7 +104,10 @@ pub fn main() !void {
     // try db_test.testPgsql();
 
     // Test IO
-    try testSourceIO();
+    // try testSourceIO();
+
+    // Test reading db / hydrate
+    try testHydrate();
 
     // Run Gui / App
     // try app();

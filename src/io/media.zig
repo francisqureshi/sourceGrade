@@ -167,9 +167,18 @@ pub const SourceMedia = struct {
         };
     }
 
-    pub fn fromDb() !void {
-        // TODO: Implement from DB load in init.
-        return error.notYetImplementedWIP;
+    pub fn addUUID(self: *SourceMedia, uuid: [16]u8) void {
+        self.db_uuid = uuid;
+        return;
+    }
+
+    pub fn initFromDb(db_uuid: [16]u8, fp: []const u8, io: std.Io, allocator: Allocator) !SourceMedia {
+        var source_media = try SourceMedia.init(fp, io, allocator);
+
+        SourceMedia.addUUID(&source_media, db_uuid);
+        // std.debug.print("source_media: {any}\n", .{source_media});
+
+        return source_media;
     }
 
     pub fn decodeSourceFrame(

@@ -34,8 +34,8 @@ pub fn testPgsql() !void {
             .host = "127.0.0.1",
         },
         .auth = .{
-            .username = "mac10",
-            // .username = "fq",
+            // .username = "mac10",
+            .username = "fq",
             .database = "sourcegrade",
             .timeout = 10_000,
         },
@@ -77,8 +77,8 @@ pub fn startDb(allocator: Allocator, io: std.Io) !*pg.Pool {
             .host = "127.0.0.1",
         },
         .auth = .{
-            // .username = "fq",
-            .username = "mac10",
+            .username = "fq",
+            // .username = "mac10",
             .database = "sourcegrade",
             .timeout = 10_000,
         },
@@ -89,7 +89,7 @@ pub fn startDb(allocator: Allocator, io: std.Io) !*pg.Pool {
     errdefer pool.deinit(); // Now, the caller handles deinit
 
     // Initialize database schema
-    try pgdb.resetAndInitializeDatabase(pool);
+    // try pgdb.resetAndInitializeDatabase(pool);
 
     return pool;
 }

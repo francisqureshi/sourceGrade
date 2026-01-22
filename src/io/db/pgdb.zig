@@ -4,6 +4,8 @@ const builtin = @import("builtin");
 const pg = @import("pg");
 const media = @import("../media.zig");
 
+const Allocator = std.mem.Allocator;
+const Io = std.Io;
 pub const log = std.log.scoped(.pgSQL);
 
 const Project = struct {
@@ -11,6 +13,43 @@ const Project = struct {
     name: []const u8,
     frame_rate: ?f64, // Can be null
     created_at: i64, // PostgreSQL timestamp as Unix microseconds
+};
+
+// Source struct mirrors the sources table schema
+pub const dbSource = struct {
+    id: []const u8,
+    path: []const u8,
+    filename: []const u8,
+    file_modified_at: ?i64,
+    file_size_bytes: ?i64,
+
+    codec: []const u8,
+
+    width: i32,
+    height: i32,
+    container_width: ?i32,
+    container_height: ?i32,
+
+    frame_rate_num: i32,
+    frame_rate_den: i32,
+    frame_rate_float: ?f64,
+
+    time_base_num: ?i32,
+    time_base_den: ?i32,
+
+    start_timecode: []const u8,
+    end_timecode: ?[]const u8,
+    drop_frame: bool,
+    start_frame_number: i64,
+    end_frame_number: ?i64,
+
+    duration_frames: i64,
+
+    reel_name: ?[]const u8,
+    color_space: ?[]const u8,
+
+    created_at: i64,
+    modified_at: i64,
 };
 
 pub fn createProject(pool: *pg.Pool, name: []const u8, frame_rate: f64) !i32 {
@@ -47,7 +86,7 @@ pub fn listProjects(pool: *pg.Pool) !void {
 
     var mapper = result.mapper(Project, .{ .dupe = true });
     while (try mapper.next()) |project| {
-        std.debug.print("ID: {d} | Name: {s} | FPS: {?d}\n", .{
+        std.debug.print("ID: {s} | Name: {s} | FPS: {?d}\n", .{
             project.id,
             project.name,
             project.frame_rate,
@@ -98,11 +137,9 @@ pub fn resetDatabase(pool: *pg.Pool) !void {
     std.debug.print("Database reset complete\n", .{});
 }
 
-
 // Source Media Database Functions
-// 
 
-pub fn createSource(pool: *pg.Pool, source_media: *const media.SourceMedia) ![16]u8 {
+pub fn createSource(pool: *pg.Pool, source_media: *media.SourceMedia) ![16]u8 {
     var conn = try pool.acquire();
     defer conn.release();
 
@@ -139,15 +176,52 @@ pub fn createSource(pool: *pg.Pool, source_media: *const media.SourceMedia) ![16
     if (try result.next()) |row| {
         var id: [16]u8 = undefined;
         @memcpy(&id, row.get([]const u8, 0));
-        // const id = row.get([]const u8, 0);
         const hex_id = try pg.uuidToHex(&id);
         std.debug.print("✓ Created source ID: {s}\n", .{hex_id});
+
+        // Add UUID to SourceMedia
+        source_media.addUUID(id);
+
         return id;
     }
     return error.NoSourceCreated;
 }
 
-pub fn getSourceById(pool: *pg.Pool, source_id: []const u8) !?Source {
+pub fn hydrateSourceMediaPool(db_pool: *pg.Pool, io: Io, allocator: Allocator) !void {
+    var conn = try db_pool.acquire();
+    defer conn.release();
+
+    var result = try conn.queryOpts(
+        \\SELECT id, path 
+        \\FROM sources
+        \\ORDER BY created_at DESC
+    , .{}, .{ .column_names = true });
+    defer result.deinit();
+
+    std.debug.print("\n=== Rehydrated Sources ===\n", .{});
+
+    var mapper = result.mapper(struct {
+        id: []const u8,
+        path: []const u8,
+    }, .{ .dupe = true });
+
+    while (try mapper.next()) |db_source| {
+        const uuid: [16]u8 = db_source.id[0..16].*;
+
+        var source_media = try media.SourceMedia.initFromDb(uuid, db_source.path, io, allocator);
+        defer source_media.deinit();
+
+        const hex_id = try pg.uuidToHex(db_source.id);
+
+        std.debug.print(
+            "ID: {s} | {s} | {d}x{d} | {d} frames @ {d:.2}fps | {s}\n",
+            .{ &hex_id, source_media.file_name, source_media.resolution.width, source_media.resolution.height, source_media.duration_in_frames, source_media.frame_rate_float, source_media.codec },
+        );
+    }
+}
+
+/// FIXEME: This should maybe now just be a look up to source_pool and return the SourceMedia...
+pub fn getSourceById(pool: *pg.Pool, source_id: []const u8) !?dbSource {
     var conn = try pool.acquire();
     defer conn.release();
 
@@ -165,7 +239,7 @@ pub fn getSourceById(pool: *pg.Pool, source_id: []const u8) !?Source {
     , .{source_id}, .{ .column_names = true })) orelse return null;
     defer row.deinit() catch {};
 
-    return Source{
+    return dbSource{
         .id = row.getCol([]const u8, "id"),
         .path = row.getCol([]const u8, "path"),
         .filename = row.getCol([]const u8, "filename"),
@@ -228,86 +302,6 @@ pub fn listSources(pool: *pg.Pool) !void {
             .{ &hex_id, source.filename, source.width, source.height, source.duration_frames, fps, source.codec },
         );
     }
-}
-
-pub fn initializeDatabase(pool: *pg.Pool) !void {
-    var conn = try pool.acquire();
-    defer conn.release();
-
-    // Drop existing dependent tables if they exist (for development/testing)
-    _ = try conn.exec("DROP TABLE IF EXISTS timeline_clips, grade_nodes, timelines, sources CASCADE", .{});
-
-    // Recreate sources table with full schema
-    _ = try conn.exec(
-        \\CREATE TABLE sources (
-        // \\    id SERIAL PRIMARY KEY,
-        \\    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        \\    
-        \\    -- File metadata
-        \\    path TEXT NOT NULL UNIQUE,
-        \\    filename TEXT NOT NULL,
-        \\    file_modified_at TIMESTAMPTZ,
-        \\    file_size_bytes BIGINT,
-        \\    
-        \\    -- Video codec and format
-        \\    codec TEXT,
-        \\    
-        \\    -- Resolution (display)
-        \\    width INT,
-        \\    height INT,
-        \\    container_width INT,
-        \\    container_height INT,
-        \\    
-        \\    -- Frame rate (store as rational to maintain precision)
-        \\    frame_rate_num INT,
-        \\    frame_rate_den INT,
-        \\    frame_rate_float NUMERIC(10,4),
-        \\    
-        \\    -- Time base (for timeline calculations)
-        \\    time_base_num INT,
-        \\    time_base_den INT,
-        \\    
-        \\    -- Timecode and frame info
-        \\    start_timecode TEXT,
-        \\    end_timecode TEXT,
-        \\    drop_frame BOOLEAN DEFAULT FALSE,
-        \\    start_frame_number BIGINT DEFAULT 0,
-        \\    end_frame_number BIGINT,
-        \\    
-        \\    -- Duration
-        \\    duration_frames BIGINT,
-        \\    
-        \\    -- Metadata
-        \\    reel_name TEXT,
-        \\    color_space TEXT,
-        \\    
-        \\    created_at TIMESTAMPTZ DEFAULT NOW(),
-        \\    modified_at TIMESTAMPTZ DEFAULT NOW()
-        \\)
-    , .{});
-
-    // Create index
-    _ = try conn.exec("CREATE INDEX idx_sources_path ON sources(path)", .{});
-
-    // Create update trigger (if it doesn't exist)
-    _ = try conn.exec(
-        \\CREATE OR REPLACE FUNCTION update_modified_at()
-        \\RETURNS TRIGGER AS $$
-        \\BEGIN
-        \\    NEW.modified_at = NOW();
-        \\    RETURN NEW;
-        \\END;
-        \\$$ LANGUAGE plpgsql
-    , .{});
-
-    _ = try conn.exec(
-        \\CREATE TRIGGER update_sources_modified_at
-        \\    BEFORE UPDATE ON sources
-        \\    FOR EACH ROW
-        \\    EXECUTE FUNCTION update_modified_at()
-    , .{});
-
-    std.debug.print("✓ Database initialized with new sources schema\n", .{});
 }
 
 pub fn resetAndInitializeDatabase(pool: *pg.Pool) !void {
