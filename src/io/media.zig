@@ -13,6 +13,29 @@ pub const MediaContext = struct {
     allocator: Allocator,
 };
 
+/// Optional Overiddable type that holds original detected value
+/// and a user set 'override' value
+/// use .get() to return current value.
+/// else use .original to explictly get original value.
+pub fn Attr(comptime T: type) type {
+    return struct {
+        original: T,
+        override: ?T = null,
+
+        pub fn get(self: @This()) T {
+            return self.override orelse self.original;
+        }
+
+        pub fn isOverridden(self: @This()) bool {
+            return self.override != null;
+        }
+
+        pub fn reset(self: *@This()) void {
+            self.override = null;
+        }
+    };
+}
+
 pub const Resolution = struct {
     width: usize,
     height: usize,
@@ -30,6 +53,7 @@ pub const SourceMedia = struct {
     file_name: []const u8,
     container_resolution: Resolution,
     resolution: Resolution,
+    resolutionx: Attr(Resolution),
     frame_rate: Rational,
     drop_frame: bool,
     frame_rate_float: f32,

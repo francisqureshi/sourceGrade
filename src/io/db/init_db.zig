@@ -12,63 +12,13 @@ const Allocator = std.mem.Allocator;
 // const Io = std.Io;
 pub const log = std.log.scoped(.pgSQL);
 
-pub fn testPgsql() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = if (builtin.mode == .Debug) gpa.allocator() else std.heap.c_allocator;
-
-    // Try to avoid std.Io.Threaded due to EAGAIN bug
-    // Initialize std.Io for networking
-    var io_impl = std.Io.Threaded.init(allocator, .{});
-    defer io_impl.deinit();
-    const io = io_impl.io();
+pub fn startDb(allocator: Allocator, io: std.Io) !*pg.Pool {
+    // Initialize database
 
     // While a connection can be created directly, pools should be used in most
     // cases. The pool's `acquire` method, to get a connection is thread-safe.
     // The pool may start 1 background thread to reconnect disconnected
     // connections (or connections in an invalid state).
-    var pool = pg.Pool.init(allocator, .{
-        .io = io,
-        .size = 5,
-        .connect = .{
-            .port = 5433,
-            .host = "127.0.0.1",
-        },
-        .auth = .{
-            // .username = "mac10",
-            .username = "fq",
-            .database = "sourcegrade",
-            .timeout = 10_000,
-        },
-    }) catch |err| {
-        log.err("Failed to connect: {}", .{err});
-        std.process.exit(1);
-    };
-    defer pool.deinit();
-
-    // Initialize database schema
-    try pgdb.resetAndInitializeDatabase(pool);
-
-    // Create a new project
-    const project_id = try pgdb.createProject(pool, "testProject", 23.976);
-    std.debug.print("Created project ID: {d}\n", .{project_id});
-
-    // List all projects
-    try pgdb.listProjects(pool);
-
-    // Retreive project
-    const project = try pgdb.getProjectById(pool, project_id);
-    std.debug.print("project: {any}\n", .{project});
-
-    // delete project
-    try pgdb.deleteProject(pool, project_id);
-
-    // List all projects
-    try pgdb.listProjects(pool);
-}
-
-pub fn startDb(allocator: Allocator, io: std.Io) !*pg.Pool {
-    // Initialize database
-
     const pool = pg.Pool.init(allocator, .{
         .io = io,
         .size = 5,
@@ -77,8 +27,8 @@ pub fn startDb(allocator: Allocator, io: std.Io) !*pg.Pool {
             .host = "127.0.0.1",
         },
         .auth = .{
-            .username = "fq",
-            // .username = "mac10",
+            // .username = "fq",
+            .username = "mac10",
             .database = "sourcegrade",
             .timeout = 10_000,
         },
@@ -125,4 +75,27 @@ pub fn addSourceToDb(pool: *pg.Pool, source_media: *media.SourceMedia) !void {
     // List all sources
     // Initialize database schema
     try pgdb.listSources(pool);
+}
+
+pub fn testPgsql(pool: *pg.Pool) !void {
+
+    // Initialize database schema
+    try pgdb.resetAndInitializeDatabase(pool);
+
+    // Create a new project
+    const project_id = try pgdb.createProject(pool, "testProject", 23.976);
+    std.debug.print("Created project ID: {d}\n", .{project_id});
+
+    // List all projects
+    try pgdb.listProjects(pool);
+
+    // Retreive project
+    const project = try pgdb.getProjectById(pool, project_id);
+    std.debug.print("project: {any}\n", .{project});
+
+    // delete project
+    try pgdb.deleteProject(pool, project_id);
+
+    // List all projects
+    try pgdb.listProjects(pool);
 }
