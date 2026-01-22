@@ -4,6 +4,8 @@ const builtin = @import("builtin");
 const pg = @import("pg");
 const media = @import("../media.zig");
 
+const sources = @import("../sources.zig");
+
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 pub const log = std.log.scoped(.pgSQL);
@@ -209,14 +211,16 @@ pub fn hydrateSourceMediaPool(db_pool: *pg.Pool, io: Io, allocator: Allocator) !
         const uuid: [16]u8 = db_source.id[0..16].*;
 
         var source_media = try media.SourceMedia.initFromDb(uuid, db_source.path, io, allocator);
-        defer source_media.deinit();
 
+        try sources.source_pool.put(allocator, uuid, &source_media);
         const hex_id = try pg.uuidToHex(db_source.id);
 
         std.debug.print(
             "ID: {s} | {s} | {d}x{d} | {d} frames @ {d:.2}fps | {s}\n",
             .{ &hex_id, source_media.file_name, source_media.resolution.width, source_media.resolution.height, source_media.duration_in_frames, source_media.frame_rate_float, source_media.codec },
         );
+        defer source_media.deinit();
+        defer sources.source_pool.deinit(allocator);
     }
 }
 

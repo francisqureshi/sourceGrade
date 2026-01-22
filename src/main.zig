@@ -11,6 +11,8 @@ const vtbFW = @import("io/decode/videotoolbox_c.zig");
 
 const vtb = @import("io/decode/vtb_decode.zig");
 
+const sources = @import("io/sources.zig");
+
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 pub const log = std.log.scoped(.pgSQL);
@@ -70,6 +72,12 @@ fn testHydrate() !void {
     try pgdb.hydrateSourceMediaPool(db_pool, io, allocator);
 }
 
+fn inspectSourcePool() !void {
+    for (0..sources.source_pool.entries.len) |source| {
+        std.debug.print("source: {any}\n", .{source});
+    }
+}
+
 fn app() !void {
 
     // Setup Main allocator
@@ -108,6 +116,9 @@ pub fn main() !void {
 
     // Test reading db / hydrate
     try testHydrate();
+
+    //Inspect source_pool
+    try inspectSourcePool();
 
     // Run Gui / App
     // try app();
