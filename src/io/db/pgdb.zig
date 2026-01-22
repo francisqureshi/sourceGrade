@@ -210,17 +210,20 @@ pub fn hydrateSourceMediaPool(db_pool: *pg.Pool, io: Io, allocator: Allocator) !
     while (try mapper.next()) |db_source| {
         const uuid: [16]u8 = db_source.id[0..16].*;
 
-        var source_media = try media.SourceMedia.initFromDb(uuid, db_source.path, io, allocator);
+        // Hea allocate hydrated SM..
+        const source_media = try allocator.create(media.SourceMedia);
+        // var source_media = try media.SourceMedia.initFromDb(uuid, db_source.path, io, allocator);
 
-        try sources.source_pool.put(allocator, uuid, &source_media);
+        source_media.* = try media.SourceMedia.initFromDb(uuid, db_source.path, io, allocator);
+        try sources.source_pool.put(allocator, uuid, source_media);
+
+        // try sources.source_pool.put(allocator, uuid, &source_media);
         const hex_id = try pg.uuidToHex(db_source.id);
 
         std.debug.print(
             "ID: {s} | {s} | {d}x{d} | {d} frames @ {d:.2}fps | {s}\n",
             .{ &hex_id, source_media.file_name, source_media.resolution.width, source_media.resolution.height, source_media.duration_in_frames, source_media.frame_rate_float, source_media.codec },
         );
-        defer source_media.deinit();
-        defer sources.source_pool.deinit(allocator);
     }
 }
 

@@ -70,12 +70,18 @@ fn testHydrate() !void {
 
     try pgdb.listSources(db_pool);
     try pgdb.hydrateSourceMediaPool(db_pool, io, allocator);
+
+    //Inspect source_pool
+    try inspectSourcePool(allocator);
 }
 
-fn inspectSourcePool() !void {
-    for (0..sources.source_pool.entries.len) |source| {
+fn inspectSourcePool(allocator: Allocator) !void {
+    for (sources.source_pool.values()) |source| {
         std.debug.print("source: {any}\n", .{source});
+        defer source.deinit();
+        allocator.destroy(source);
     }
+    defer sources.source_pool.deinit(allocator);
 }
 
 fn app() !void {
@@ -116,9 +122,6 @@ pub fn main() !void {
 
     // Test reading db / hydrate
     try testHydrate();
-
-    //Inspect source_pool
-    try inspectSourcePool();
 
     // Run Gui / App
     // try app();
