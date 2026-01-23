@@ -2,6 +2,8 @@ const std = @import("std");
 const smpte = @import("smpte");
 const mov = @import("mov.zig");
 
+const assert = std.debug.assert;
+
 const vtb = @import("decode/vtb_decode.zig");
 
 const Allocator = std.mem.Allocator;
@@ -53,8 +55,7 @@ pub const SourceMedia = struct {
     file_name: []const u8,
     container_resolution: Resolution,
     resolution: Resolution,
-    resolutionx: Attr(Resolution),
-    frame_rate: Rational,
+    frame_rate: Attr(Rational),
     drop_frame: bool,
     frame_rate_float: f32,
     time_base: Rational,
@@ -120,7 +121,8 @@ pub const SourceMedia = struct {
         errdefer mctx.allocator.free(stsd_data);
 
         const frame_duration = if (stts.len > 0) stts[0].sample_duration else return error.NoFrameDuration;
-        const frame_rate = Rational{ .num = mdhd.timescale, .den = frame_duration };
+        const frame_rate: Attr(Rational) = .{ .original = Rational{ .num = mdhd.timescale, .den = frame_duration } };
+        const time_base = Rational{ .num = mdhd.timescale, .den = 1 }; // e.g 12800/1
         const frame_rate_float = @as(f32, @floatFromInt(mdhd.timescale)) / @as(f32, @floatFromInt(frame_duration));
 
         // Extract timecode metadata if available
@@ -135,7 +137,7 @@ pub const SourceMedia = struct {
             0;
 
         // Create SMPTE calculator
-        const smpte_calc = smpte.SMPTE.initFromRational(frame_rate, drop_frame);
+        const smpte_calc = smpte.SMPTE.initFromRational(frame_rate.get(), drop_frame);
         var start_tc_buffer: [32]u8 = undefined;
 
         const start_timecode_slice = try smpte_calc.getTC(start_frame_number, &start_tc_buffer);
@@ -177,7 +179,7 @@ pub const SourceMedia = struct {
             .frame_rate = frame_rate,
             .frame_rate_float = frame_rate_float,
             .drop_frame = drop_frame,
-            .time_base = frame_rate, // Same as frame_rate for now
+            .time_base = time_base, // Same as frame_rate for now
             .start_timecode = start_timecode,
             .end_timecode = end_timecode,
             .duration_in_frames = duration_in_frames,
@@ -239,6 +241,18 @@ pub const SourceMedia = struct {
         return self.frames[frame_index].size;
     }
 
+    pub fn totalSize(self: *const SourceMedia) usize {
+        var total: usize = @sizeOf(SourceMedia); // 360 bytes
+        total += self.frames.len * @sizeOf(mov.FrameInfo);
+        total += self.file_path.len;
+        total += self.file_name.len;
+        total += self.codec.len;
+        total += self.stsd_data.len;
+        total += self.start_timecode.len;
+        total += self.end_timecode.len;
+        return total;
+    }
+
     pub fn deinit(self: *SourceMedia) void {
         // self.decoder.?.deinit();
         if (self.decoder) |*decoder| {
@@ -281,7 +295,7 @@ pub fn main() !void {
     defer test_source.deinit();
 
     std.debug.print("Resolution: {d}x{d}\n", .{ test_source.resolution.width, test_source.resolution.height });
-    std.debug.print("Frame Rate: {d}/{d} = {d:.2} fps\n", .{ test_source.frame_rate.num, test_source.frame_rate.den, test_source.frame_rate_float });
+    std.debug.print("Frame Rate: {d}/{d} = {d:.2} fps\n", .{ test_source.frame_rate.get().num, test_source.frame_rate.get().den, test_source.frame_rate_float });
     std.debug.print("Drop Frame: {}\n", .{test_source.drop_frame});
     std.debug.print("Start Source Frame: {d}\n", .{test_source.start_frame_number});
     std.debug.print("End Source Frame: {d}\n", .{test_source.end_frame_number});
@@ -300,4 +314,17 @@ pub fn main() !void {
         const bytes_read = try test_source.readFrame(0, buffer);
         std.debug.print("Read {d} bytes from frame 0\n", .{bytes_read});
     }
+}
+
+test "Attr optional type" {
+    // Test Overridable
+    var thing: Attr(f32) = .{ .original = 1.0 };
+    thing.override = 6346.5435;
+
+    assert(thing.get() == 6346.5435);
+    assert(thing.original == 1.0);
+
+    thing.reset();
+    assert(thing.get() == 1.0);
+    assert(thing.override == null);
 }

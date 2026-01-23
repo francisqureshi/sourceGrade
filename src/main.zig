@@ -28,13 +28,13 @@ fn testSourceIO() !void {
     const io = threaded.io();
 
     // Open video file
-    // const file_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
-    // const path_two = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
+    const file_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
+    const path_two = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
 
     // const file_path = "/Users/fq/Desktop/AGMM/ProRes444_with_Alpha.mov";
 
-    const file_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
-    const path_two = "/Users/mac10/Desktop/A_0006C002_251202_172939_a1CLB_S002.mov";
+    // const file_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
+    // const path_two = "/Users/mac10/Desktop/A_0006C002_251202_172939_a1CLB_S002.mov";
 
     var source_media = try media.SourceMedia.init(file_path, io, allocator);
     defer source_media.deinit();
@@ -115,18 +115,6 @@ fn app() !void {
 pub fn main() !void {
     std.debug.print("=== sourceGrade ===\n\n", .{});
 
-    // Test Overridable
-    {
-        var thing: media.Attr(f32) = .{ .original = 1.0 };
-        std.debug.print("thing: {d}\n", .{thing.original});
-        thing.override = 6346.5435;
-        std.debug.print("thing via .get: {d}\n", .{thing.get()});
-        std.debug.print("thing.original: {d}\n", .{thing.original});
-        std.debug.print("thing.override: {?d}\n", .{thing.override});
-        thing.reset();
-        std.debug.print("thing via .get after reset: {d}\n", .{thing.get()});
-    }
-
     // Test PgSQL
     // try db_test.testPgsql();
 
@@ -134,8 +122,8 @@ pub fn main() !void {
     // try testSourceIO();
 
     // Test reading db / hydrate
-    // try testHydrate();
+    try testHydrate();
 
     // Run Gui / App
-    // try app();
+    try app();
 }

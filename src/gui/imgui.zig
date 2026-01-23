@@ -356,8 +356,6 @@ pub const ImGuiContext = struct {
     /// Immediate-mode button widget
     /// Returns true if button was clicked this frame
     pub fn button(self: *ImGuiContext, id: u32, x: f32, y: f32, w: f32, h: f32, label: []const u8) !bool {
-        _ = label; // TODO: text rendering (requires font atlas)
-
         const is_hot = self.isInRect(x, y, w, h);
         const is_active = self.active_id == id;
 
@@ -384,6 +382,8 @@ pub const ImGuiContext = struct {
             packColor(0.3, 0.3, 0.3, 1.0); // Normal
 
         try self.addRect(x, y, w, h, color);
+
+        addText(self, label, ((w / 2) + x), (y + (h / 2)), 16, .{ 255, 255, 255, 255 }) catch {};
 
         return clicked;
     }

@@ -141,6 +141,7 @@ pub fn resetDatabase(pool: *pg.Pool) !void {
 
 // Source Media Database Functions
 
+/// Create Source entry in DB from SourceMedia.. WIP
 pub fn createSource(pool: *pg.Pool, source_media: *media.SourceMedia) ![16]u8 {
     var conn = try pool.acquire();
     defer conn.release();
@@ -150,7 +151,7 @@ pub fn createSource(pool: *pg.Pool, source_media: *media.SourceMedia) ![16]u8 {
     std.debug.print("File: {s}\n", .{source_media.file_name});
     std.debug.print("Codec: {s}\n", .{source_media.codec});
     std.debug.print("Resolution: {d}x{d}\n", .{ source_media.resolution.width, source_media.resolution.height });
-    std.debug.print("Frame rate: {d}/{d}\n", .{ source_media.frame_rate.num, source_media.frame_rate.den });
+    std.debug.print("Original Frame rate: {d}/{d}\n", .{ source_media.frame_rate.original.num, source_media.frame_rate.original.den });
 
     // Simplified INSERT - omit optional/complex fields for now
     const result = try conn.query(
@@ -166,8 +167,8 @@ pub fn createSource(pool: *pg.Pool, source_media: *media.SourceMedia) ![16]u8 {
         source_media.codec,
         @as(i32, @intCast(source_media.resolution.width)),
         @as(i32, @intCast(source_media.resolution.height)),
-        @as(i32, @intCast(source_media.frame_rate.num)),
-        @as(i32, @intCast(source_media.frame_rate.den)),
+        @as(i32, @intCast(source_media.frame_rate.original.num)), // Pass Orignal Vals here
+        @as(i32, @intCast(source_media.frame_rate.original.den)), // then we will pass optional overrides l8r
         source_media.start_timecode,
         source_media.end_timecode,
         source_media.drop_frame,
@@ -210,8 +211,9 @@ pub fn hydrateSourceMediaPool(db_pool: *pg.Pool, io: Io, allocator: Allocator) !
     while (try mapper.next()) |db_source| {
         const uuid: [16]u8 = db_source.id[0..16].*;
 
-        // Hea allocate hydrated SM..
+        // Heap allocate hydrated SM..
         const source_media = try allocator.create(media.SourceMedia);
+
         // var source_media = try media.SourceMedia.initFromDb(uuid, db_source.path, io, allocator);
 
         source_media.* = try media.SourceMedia.initFromDb(uuid, db_source.path, io, allocator);
@@ -219,6 +221,8 @@ pub fn hydrateSourceMediaPool(db_pool: *pg.Pool, io: Io, allocator: Allocator) !
 
         // try sources.source_pool.put(allocator, uuid, &source_media);
         const hex_id = try pg.uuidToHex(db_source.id);
+
+        std.debug.print("source_media size: {d} bytes \n", .{source_media.totalSize()});
 
         std.debug.print(
             "ID: {s} | {s} | {d}x{d} | {d} frames @ {d:.2}fps | {s}\n",

@@ -399,13 +399,13 @@ fn createSampleTimingInfo(
 ) vtb.CMSampleTimingInfo {
     // PTS = frame_index × frame_duration / timescale
     // For frame 0: PTS = 0
-    const pts_value: i64 = @as(i64, @intCast(frame_index)) * @as(i64, @intCast(source_media.frame_rate.den));
-    const pts = vtb.CMTimeMake(pts_value, @as(i32, @intCast(source_media.frame_rate.num)));
+    const pts_value: i64 = @as(i64, @intCast(frame_index)) * @as(i64, @intCast(source_media.frame_rate.original.den));
+    const pts = vtb.CMTimeMake(pts_value, @as(i32, @intCast(source_media.frame_rate.original.num)));
 
     // Duration = frame_duration / timescale
     const duration = vtb.CMTimeMake(
-        @as(i64, @intCast(source_media.frame_rate.den)),
-        @as(i32, @intCast(source_media.frame_rate.num)),
+        @as(i64, @intCast(source_media.frame_rate.original.den)),
+        @as(i32, @intCast(source_media.frame_rate.original.num)),
     );
 
     // DTS (decode timestamp) is usually same as PTS for intraframe codecs like ProRes

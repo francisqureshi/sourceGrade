@@ -39,6 +39,7 @@ pub const RenderContext = struct {
     imgui_ctx: *imgui.ImGuiContext,
     displaylink: ?*anyopaque,
     start_time: std.time.Instant,
+
     device_ptr: *anyopaque,
     config: RenderConfig,
     allocator: std.mem.Allocator,
@@ -80,7 +81,6 @@ pub fn initRenderContext(
 
     // Create window (1600x900, normal window with title bar)
     const window = c.metal_window_create(1600, 900, false);
-    // const window = c.metal_window_create(1400, 1000, false);
     if (window == null) {
         std.debug.print("Failed to create window\n", .{});
         return error.WindowCreationFailed;
@@ -207,8 +207,8 @@ pub fn initRenderContext(
     const start_time = try std.time.Instant.now();
 
     // Video path to load (will be loaded in render thread for proper I/O threading)
-    const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
-    // const video_path = "/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov";
+    // const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
+    const video_path = "/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalfAlpha.mov";
@@ -261,7 +261,10 @@ pub fn deinitRenderContext(allocator: std.mem.Allocator, result: *InitResult) vo
 /// Main render thread entry point. Runs until terminated.
 pub fn renderThread(ctx: *RenderContext) void {
     var slider_value: f32 = 0.5;
-    const playback_speed: f32 = 1.0; // 1.0 = normal speed, 0.5 = half speed, 2.0 = double speed
+    var playback_speed: f32 = 1.0; // 1.0 = normal speed, 0.5 = half speed, 2.0 = double speed
+    var is_playing: bool = false;
+    var playback_time_ns: u64 = 0;
+    var last_wall_time_ns: u64 = 0;
 
     // Initialize I/O in render thread (CRITICAL: I/O must be initialized on the thread that uses it)
     var threaded = std.Io.Threaded.init(ctx.allocator, .{});
@@ -278,7 +281,7 @@ pub fn renderThread(ctx: *RenderContext) void {
             source_media = ctx.allocator.create(media.SourceMedia) catch null;
             if (source_media) |ptr| {
                 ptr.* = sm;
-                video_fps = @as(f64, @floatFromInt(sm.frame_rate.num)) / @as(f64, @floatFromInt(sm.frame_rate.den));
+                video_fps = @as(f64, @floatFromInt(sm.frame_rate.get().num)) / @as(f64, @floatFromInt(sm.frame_rate.get().den));
                 std.debug.print("✓ Loaded video: {d}x{d} @ {d:.2}fps, {d} frames\n\n", .{
                     sm.resolution.width,
                     sm.resolution.height,
@@ -300,6 +303,7 @@ pub fn renderThread(ctx: *RenderContext) void {
     const base_frame_duration_ns = if (video_fps > 0) @as(u64, @intFromFloat(std.time.ns_per_s / video_fps)) else 0;
     var last_frame_time: u64 = 0;
     var current_frame_index: usize = 0;
+    var last_decoded_frame_index: ?usize = null;
 
     // CRITICAL: Video texture holders must persist across frames!
     // These keep the CVPixelBuffer and Metal textures alive between decode and present
@@ -339,19 +343,35 @@ pub fn renderThread(ctx: *RenderContext) void {
         ctx.imgui_ctx.slider(1, 1400, 300, 100, 50, &slider_value, 0, 1) catch {};
         ctx.imgui_ctx.addRect(1400, 50, 100, 100, imgui.ImGuiContext.packColor(slider_value, 1, 0, 1.0)) catch {};
         ctx.imgui_ctx.addRect(1450, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
+        ctx.imgui_ctx.slider(2, 600, 800, 400, 10, &playback_speed, 0, 2) catch {};
+
+        const button_text: []const u8 = if (is_playing) "pause" else "play";
+
+        const clicked = ctx.imgui_ctx.button(3, 600, 450, 200, 50, button_text) catch false;
+
+        if (clicked) {
+            is_playing = !is_playing;
+            std.debug.print("is_playing: {}\n", .{is_playing});
+        }
 
         // // Add text using new unified system
         // ctx.imgui_ctx.addText("Large-196pt", 50, 200, 196.0, .{ 255, 255, 255, 255 }) catch {};
         // ctx.imgui_ctx.addText("Medium-48pt", 50, 300, 48.0, .{ 200, 200, 255, 255 }) catch {};
-        ctx.imgui_ctx.addText("Small-24pt", 50, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
+        // ctx.imgui_ctx.addText("Small-24pt", 50, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
 
         // time
         const current_time = std.time.Instant.now() catch continue;
-        const elapsed_ns = current_time.since(ctx.start_time);
+        const current_wall_ns = current_time.since(ctx.start_time);
+        const delta_ns = current_wall_ns - last_wall_time_ns;
+        last_wall_time_ns = current_wall_ns;
+
+        if (is_playing) {
+            playback_time_ns += @as(u64, @intFromFloat(@as(f64, @floatFromInt(delta_ns)) * playback_speed));
+        }
 
         // Video frame timing - decode and create Metal textures from YCbCr
         if (source_media) |sm| {
-            const time_since_last_frame = elapsed_ns - last_frame_time;
+            const time_since_last_frame = playback_time_ns - last_frame_time;
 
             // Adjust frame duration by playback speed
             const frame_duration_ns = if (playback_speed > 0.0)
@@ -359,8 +379,14 @@ pub fn renderThread(ctx: *RenderContext) void {
             else
                 base_frame_duration_ns;
 
-            // Time to advance to next frame?
-            if (frame_duration_ns == 0 or time_since_last_frame >= frame_duration_ns) {
+            // Should we decode? Yes if:
+            // - Frame index changed (first frame, seek, or playback advanced)
+            // - OR we're playing and enough time has passed
+            const frame_changed = last_decoded_frame_index == null or last_decoded_frame_index.? != current_frame_index;
+            const time_to_advance = is_playing and frame_duration_ns > 0 and time_since_last_frame >= frame_duration_ns;
+            const should_decode = frame_changed or time_to_advance;
+
+            if (should_decode) {
                 // Decode frame from ProRes
                 const decoded_frame = sm.decodeSourceFrame(current_frame_index, @ptrCast(ctx.device_ptr)) catch |err| {
                     std.debug.print("❌ Failed to decode frame: {}\n", .{err});
@@ -379,6 +405,9 @@ pub fn renderThread(ctx: *RenderContext) void {
                 const mtl_tex = texture_set.getMetalTexture();
                 packed_metal_texture = metal.MetalTexture.initFromPtr(mtl_tex);
 
+                // Mark this frame as decoded
+                last_decoded_frame_index = current_frame_index;
+
                 // Debug: Print actual Metal texture dimensions vs expected
                 const State = struct {
                     var printed_texture_debug: bool = false;
@@ -395,9 +424,11 @@ pub fn renderThread(ctx: *RenderContext) void {
                     }
                 }
 
-                // Advance to next frame
-                current_frame_index = (current_frame_index + 1) % @as(usize, @intCast(sm.duration_in_frames));
-                last_frame_time = elapsed_ns;
+                // Advance to next frame only if playing and time elapsed
+                if (time_to_advance) {
+                    current_frame_index = (current_frame_index + 1) % @as(usize, @intCast(sm.duration_in_frames));
+                    last_frame_time = playback_time_ns;
+                }
             }
         }
 
@@ -454,16 +485,6 @@ pub fn renderThread(ctx: *RenderContext) void {
                 },
                 .viewport_size = .{ display_width_pts, display_height_pts },
             };
-
-            // Debug: Print values once per second
-            if (@mod(frame, 60) == 0) {
-                std.debug.print("VideoUniforms: video={}x{}, viewport={}x{}\n", .{
-                    video_uniforms.video_size[0],
-                    video_uniforms.video_size[1],
-                    video_uniforms.viewport_size[0],
-                    video_uniforms.viewport_size[1],
-                });
-            }
 
             render_encoder.setPipeline(&ctx.video_pipeline);
             render_encoder.setVertexBytes(@ptrCast(&video_uniforms), @sizeOf(VideoUniforms), 0);
