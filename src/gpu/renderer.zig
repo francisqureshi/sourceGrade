@@ -207,8 +207,8 @@ pub fn initRenderContext(
     const start_time = try std.time.Instant.now();
 
     // Video path to load (will be loaded in render thread for proper I/O threading)
-    // const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
-    const video_path = "/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov";
+    const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
+    // const video_path = "/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalfAlpha.mov";
@@ -298,8 +298,7 @@ pub fn renderThread(ctx: *RenderContext) void {
         ctx.allocator.destroy(sm);
     };
 
-    // Video frame timing
-    var frame: u64 = 0;
+    var ui_frame: u64 = 0;
     const base_frame_duration_ns = if (video_fps > 0) @as(u64, @intFromFloat(std.time.ns_per_s / video_fps)) else 0;
     var last_frame_time: u64 = 0;
     var current_frame_index: usize = 0;
@@ -312,7 +311,7 @@ pub fn renderThread(ctx: *RenderContext) void {
     var decoded_frame_holder: ?vtb.DecodedFrame = null;
     var texture_set_holder: ?vtb.MetalTextureSet = null;
 
-    while (true) : (frame += 1) {
+    while (true) : (ui_frame += 1) {
         // Clean up PREVIOUS frame's resources (from last iteration)
         // This happens BEFORE we start working on the new frame
         if (decoded_frame_holder) |*df| {
@@ -359,6 +358,8 @@ pub fn renderThread(ctx: *RenderContext) void {
         // ctx.imgui_ctx.addText("Medium-48pt", 50, 300, 48.0, .{ 200, 200, 255, 255 }) catch {};
         // ctx.imgui_ctx.addText("Small-24pt", 50, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
 
+        // ============= Video Player
+        //
         // time
         const current_time = std.time.Instant.now() catch continue;
         const current_wall_ns = current_time.since(ctx.start_time);
@@ -416,12 +417,9 @@ pub fn renderThread(ctx: *RenderContext) void {
                     State.printed_texture_debug = true;
                     const tex_width = packed_metal_texture.?.getWidth();
                     const tex_height = packed_metal_texture.?.getHeight();
-                    std.debug.print("\n🔍 METAL TEXTURE DEBUG:\n", .{});
+                    std.debug.print("\nMETAL TEXTURE DEBUG:\n", .{});
                     std.debug.print("   Expected (from source_media): {}x{}\n", .{ sm.resolution.width, sm.resolution.height });
-                    std.debug.print("   Actual MTLTexture: {}x{}\n", .{ tex_width, tex_height });
-                    if (tex_width != sm.resolution.width) {
-                        std.debug.print("   ⚠️ WIDTH MISMATCH! Ratio: {d:.2}\n", .{@as(f64, @floatFromInt(tex_width)) / @as(f64, @floatFromInt(sm.resolution.width))});
-                    }
+                    std.debug.print("   MTLTexture: {}x{}\n", .{ tex_width, tex_height });
                 }
 
                 // Advance to next frame only if playing and time elapsed
