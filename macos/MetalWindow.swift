@@ -92,6 +92,24 @@ class MetalView: NSView {
         mouseX = Float(location.x)
         mouseY = Float(bounds.height - location.y)
     }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+
+        // Remove old tracking areas (resize)
+        for trackingArea in trackingAreas {
+            removeTrackingArea(trackingArea)
+        }
+
+        // Add new tracking area covering entire view
+        let trackingArea = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+    }
 }
 
 /// C-compatible callbacks for Zig

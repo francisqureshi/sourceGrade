@@ -314,16 +314,6 @@ pub fn renderThread(ctx: *RenderContext) void {
     var texture_set_holder: ?vtb.MetalTextureSet = null;
 
     while (true) : (ui_frame += 1) {
-        // Clean up PREVIOUS frame's resources (from last iteration)
-        // This happens BEFORE we start working on the new frame
-        if (decoded_frame_holder) |*df| {
-            df.deinit();
-            decoded_frame_holder = null;
-        }
-        if (texture_set_holder) |*ts| {
-            ts.deinit();
-            texture_set_holder = null;
-        }
 
         // Wait for vsync signal from CVDisplayLink
         frame_semaphore.wait();
@@ -344,12 +334,13 @@ pub fn renderThread(ctx: *RenderContext) void {
         ctx.imgui_ctx.slider(1, 1400, 300, 100, 50, &slider_value, 0, 1) catch {};
         ctx.imgui_ctx.addRect(1400, 50, 100, 100, imgui.ImGuiContext.packColor(slider_value, 1, 0, 1.0)) catch {};
         ctx.imgui_ctx.addRect(1450, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
-        ctx.imgui_ctx.slider(2, 600, 800, 400, 10, &playback_speed, 0, 2) catch {};
+        ctx.imgui_ctx.slider(2, 600, 800, 400, 10, &playback_speed, 0, 4) catch {};
 
-        const button_text: []const u8 = if (is_playing != 0.0) "pause" else "play";
+        const fwd_button_text: []const u8 = if (is_playing != 0.0) "pause" else "play >";
+        const rev_button_text: []const u8 = if (is_playing != 0.0) "pause" else "< play";
 
-        const fwd_clicked = ctx.imgui_ctx.button(3, 400, 450, 150, 50, button_text) catch false;
-        const rev_clicked = ctx.imgui_ctx.button(4, 800, 450, 150, 50, button_text) catch false;
+        const rev_clicked = ctx.imgui_ctx.button(3, 445, 450, 150, 50, rev_button_text) catch false;
+        const fwd_clicked = ctx.imgui_ctx.button(4, 605, 450, 150, 50, fwd_button_text) catch false;
 
         if (fwd_clicked) {
             if (is_playing == 0.0) is_playing = 1.0 else is_playing = 0.0;
@@ -361,10 +352,18 @@ pub fn renderThread(ctx: *RenderContext) void {
             std.debug.print("is_playing: {}\n", .{is_playing});
         }
 
+        var disp_frame_buf: [1024]u8 = undefined;
+        const disp_frame_num = std.fmt.bufPrint(
+            &disp_frame_buf,
+            "Frame: {d} Playback Speed: {d:.2}",
+            .{ current_frame_index, playback_speed },
+        ) catch "CantGetFrame";
+        ctx.imgui_ctx.addText(disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};
+
         // // Add text using new unified system
-        // ctx.imgui_ctx.addText("Large-196pt", 50, 200, 196.0, .{ 255, 255, 255, 255 }) catch {};
-        // ctx.imgui_ctx.addText("Medium-48pt", 50, 300, 48.0, .{ 200, 200, 255, 255 }) catch {};
-        // ctx.imgui_ctx.addText("Small-24pt", 50, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
+        ctx.imgui_ctx.addText("Large-196pt", 0, 0, 196.0, .{ 255, 255, 255, 255 }) catch {};
+        ctx.imgui_ctx.addText("Medium-48pt", 0, 300, 48.0, .{ 200, 200, 255, 255 }) catch {};
+        ctx.imgui_ctx.addText("Small-24pt", 0, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
 
         // ============= Video Player
         // ============= Video Player
@@ -404,8 +403,17 @@ pub fn renderThread(ctx: *RenderContext) void {
             const should_decode = frame_changed or advance;
 
             if (should_decode) {
+                // Clean up previous frame resources before next decode
+                if (decoded_frame_holder) |*df| {
+                    df.deinit();
+                    decoded_frame_holder = null;
+                }
+                if (texture_set_holder) |*ts| {
+                    ts.deinit();
+                    texture_set_holder = null;
+                }
 
-                // Decode frame from ProRes
+                std.debug.print("Decoding frame {} (last={?}, advance={})\n", .{ current_frame_index, last_decoded_frame_index, advance });
                 const decoded_frame = sm.decodeSourceFrame(current_frame_index, @ptrCast(ctx.device_ptr)) catch |err| {
                     std.debug.print("❌ Failed to decode frame: {}\n", .{err});
                     continue;
@@ -422,9 +430,6 @@ pub fn renderThread(ctx: *RenderContext) void {
                 // Extract MTLTexture handle (single packed texture for y416)
                 const mtl_tex = texture_set.getMetalTexture();
                 packed_metal_texture = metal.MetalTexture.initFromPtr(mtl_tex);
-
-                // Mark this frame as decoded
-                last_decoded_frame_index = current_frame_index;
 
                 // Debug: Print actual Metal texture dimensions vs expected
                 const State = struct {
@@ -453,6 +458,9 @@ pub fn renderThread(ctx: *RenderContext) void {
                     }
                     last_frame_time = playback_time_ns;
                 }
+
+                // Mark this frame as decoded
+                last_decoded_frame_index = current_frame_index;
             }
         }
 

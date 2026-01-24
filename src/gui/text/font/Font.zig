@@ -12,6 +12,9 @@ ct_font: ct.CTFontRef,
 /// Font size in points
 size: f32,
 
+/// Font ascent (height above baseline)
+ascent: f32,
+
 pub fn init(name: [:0]const u8, size: f32) !Font {
     const cf_name = ct.createCFString(name) orelse return error.CFStringCreateFailed;
     defer ct.releaseCF(cf_name);
@@ -22,9 +25,12 @@ pub fn init(name: [:0]const u8, size: f32) !Font {
         null,
     ) orelse return error.FontNotFound;
 
+    const ascent = ct.CTFontGetAscent(ct_font);
+
     return .{
         .ct_font = ct_font,
         .size = size,
+        .ascent = @floatCast(ascent),
     };
 }
 

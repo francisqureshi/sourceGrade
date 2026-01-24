@@ -110,6 +110,11 @@ pub extern "c" fn CTFontDrawGlyphs(
     context: CGContextRef,
 ) void;
 
+// Font metrics
+pub extern "c" fn CTFontGetAscent(font: CTFontRef) CGFloat;
+pub extern "c" fn CTFontGetDescent(font: CTFontRef) CGFloat;
+pub extern "c" fn CTFontGetLeading(font: CTFontRef) CGFloat;
+
 // CoreGraphics bitmap context functions
 pub extern "c" fn CGBitmapContextCreate(
     data: ?*anyopaque,

@@ -96,6 +96,7 @@ pub const ImGuiContext = struct {
 
         // Initialize font system
         const font_name: [:0]const u8 = "IBM Plex Mono";
+        // const font_name: [:0]const u8 = "Helvetica"; // check non-mono
         const default_font_size: f32 = 48.0;
         const atlas_size: u32 = 2048;
 
@@ -542,9 +543,10 @@ pub const ImGuiContext = struct {
 
         // Coordinates in points (NOT scaled - shader will handle conversion)
         var cursor_x = x;
-        const base_y = y;
+        const baseline_y = y + (entry.font.ascent / self.backing_scale_factor); // + to offset to y-top
         const packed_color = packColorBytes(color);
 
+        var is_first_char = true;
         for (text) |char| {
             const codepoint: u21 = char;
 
@@ -560,10 +562,14 @@ pub const ImGuiContext = struct {
             const width_pts = @as(f32, @floatFromInt(glyph.width)) / scale;
             const height_pts = @as(f32, @floatFromInt(glyph.height)) / scale;
 
-            const x1 = cursor_x + bearing_x_pts;
-            const y1 = base_y - (bearing_y_pts + height_pts); // Top of glyph
+            // First char starts exactly at x, subsequent chars use bearing
+            const x1 = if (is_first_char) cursor_x else cursor_x + bearing_x_pts;
+            const y1 = baseline_y - (bearing_y_pts + height_pts); // Top of glyph
             const x2 = x1 + width_pts;
             const y2 = y1 + height_pts; // Bottom of glyph
+
+            // Debug: draw glyph bounds
+            try self.addRect(x1, y1, width_pts, height_pts, packColor(0.6, 0.6, 0.6, 0.6));
 
             // Calculate atlas UVs (no flip needed - CTFontDrawGlyphs renders correctly)
             const atlas_size_f: f32 = @floatFromInt(self.atlas.size);
@@ -591,6 +597,7 @@ pub const ImGuiContext = struct {
 
             // Advance cursor (glyph.advance_x is in pixels, convert to points)
             cursor_x += glyph.advance_x / scale;
+            is_first_char = false;
         }
     }
 };
