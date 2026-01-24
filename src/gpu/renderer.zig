@@ -261,10 +261,11 @@ pub fn deinitRenderContext(allocator: std.mem.Allocator, result: *InitResult) vo
 /// Main render thread entry point. Runs until terminated.
 pub fn renderThread(ctx: *RenderContext) void {
     var slider_value: f32 = 0.5;
+
     var playback_speed: f32 = 1.0; // 1.0 = normal speed, 0.5 = half speed, 2.0 = double speed
-    var is_playing: bool = false;
+    // var is_playing: bool = false;
+    var is_playing: f32 = 0.0;
     var playback_time_ns: u64 = 0;
-    // var last_wall_time_ns: u64 = 0;
     var timer = std.time.Timer.start() catch return;
 
     // Initialize I/O in render thread (CRITICAL: I/O must be initialized on the thread that uses it)
@@ -345,12 +346,18 @@ pub fn renderThread(ctx: *RenderContext) void {
         ctx.imgui_ctx.addRect(1450, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
         ctx.imgui_ctx.slider(2, 600, 800, 400, 10, &playback_speed, 0, 2) catch {};
 
-        const button_text: []const u8 = if (is_playing) "pause" else "play";
+        const button_text: []const u8 = if (is_playing != 0.0) "pause" else "play";
 
-        const clicked = ctx.imgui_ctx.button(3, 600, 450, 200, 50, button_text) catch false;
+        const fwd_clicked = ctx.imgui_ctx.button(3, 400, 450, 150, 50, button_text) catch false;
+        const rev_clicked = ctx.imgui_ctx.button(4, 800, 450, 150, 50, button_text) catch false;
 
-        if (clicked) {
-            is_playing = !is_playing;
+        if (fwd_clicked) {
+            if (is_playing == 0.0) is_playing = 1.0 else is_playing = 0.0;
+            std.debug.print("is_playing: {}\n", .{is_playing});
+        }
+
+        if (rev_clicked) {
+            if (is_playing == 0.0) is_playing = -1.0 else is_playing = 0.0;
             std.debug.print("is_playing: {}\n", .{is_playing});
         }
 
@@ -359,6 +366,8 @@ pub fn renderThread(ctx: *RenderContext) void {
         // ctx.imgui_ctx.addText("Medium-48pt", 50, 300, 48.0, .{ 200, 200, 255, 255 }) catch {};
         // ctx.imgui_ctx.addText("Small-24pt", 50, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
 
+        // ============= Video Player
+        // ============= Video Player
         // ============= Video Player
 
         const ui_frame_delta_ns = timer.lap();
@@ -372,7 +381,7 @@ pub fn renderThread(ctx: *RenderContext) void {
         //  means 40ms is every 4.8 vsyncs..
         // std.debug.print("frame delta: {}ns\n", .{delta_ns});
 
-        if (is_playing) {
+        if (is_playing != 0.0) {
             // Accumulate frame_delta_ns
             playback_time_ns += @as(u64, @intFromFloat(@as(f64, @floatFromInt(ui_frame_delta_ns)) * playback_speed));
         }
@@ -391,8 +400,8 @@ pub fn renderThread(ctx: *RenderContext) void {
             // - Frame index changed (first frame, seek, or playback advanced)
             // - OR we're playing and enough time has passed
             const frame_changed = last_decoded_frame_index == null or last_decoded_frame_index.? != current_frame_index;
-            const time_to_advance = is_playing and frame_duration_ns > 0 and time_since_last_frame >= frame_duration_ns;
-            const should_decode = frame_changed or time_to_advance;
+            const advance = is_playing != 0.0 and frame_duration_ns > 0 and time_since_last_frame >= frame_duration_ns;
+            const should_decode = frame_changed or advance;
 
             if (should_decode) {
 
@@ -431,8 +440,17 @@ pub fn renderThread(ctx: *RenderContext) void {
                 }
 
                 // Advance to next frame only if playing and time elapsed
-                if (time_to_advance) {
-                    current_frame_index = (current_frame_index + 1) % @as(usize, @intCast(sm.duration_in_frames));
+                if (advance) {
+                    if (is_playing > 0.0) {
+                        // Advance Forward
+                        current_frame_index = (current_frame_index + 1) % @as(usize, @intCast(sm.duration_in_frames));
+                    } else if (is_playing < 0.0) {
+                        // Advance Backward (wrap at 0)
+                        current_frame_index = if (current_frame_index == 0)
+                            @as(usize, @intCast(sm.duration_in_frames - 1))
+                        else
+                            current_frame_index - 1;
+                    }
                     last_frame_time = playback_time_ns;
                 }
             }
