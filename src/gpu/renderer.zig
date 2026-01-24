@@ -207,8 +207,8 @@ pub fn initRenderContext(
     const start_time = try std.time.Instant.now();
 
     // Video path to load (will be loaded in render thread for proper I/O threading)
-    const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
-    // const video_path = "/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov";
+    // const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
+    const video_path = "/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalfAlpha.mov";
@@ -264,7 +264,8 @@ pub fn renderThread(ctx: *RenderContext) void {
     var playback_speed: f32 = 1.0; // 1.0 = normal speed, 0.5 = half speed, 2.0 = double speed
     var is_playing: bool = false;
     var playback_time_ns: u64 = 0;
-    var last_wall_time_ns: u64 = 0;
+    // var last_wall_time_ns: u64 = 0;
+    var timer = std.time.Timer.start() catch return;
 
     // Initialize I/O in render thread (CRITICAL: I/O must be initialized on the thread that uses it)
     var threaded = std.Io.Threaded.init(ctx.allocator, .{});
@@ -359,15 +360,21 @@ pub fn renderThread(ctx: *RenderContext) void {
         // ctx.imgui_ctx.addText("Small-24pt", 50, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
 
         // ============= Video Player
-        //
-        // time
-        const current_time = std.time.Instant.now() catch continue;
-        const current_wall_ns = current_time.since(ctx.start_time);
-        const delta_ns = current_wall_ns - last_wall_time_ns;
-        last_wall_time_ns = current_wall_ns;
+
+        const ui_frame_delta_ns = timer.lap();
+        // on macbook pro with 120 hz this is
+        // - ~3ms
+        // - ~8.5ms
+        // - ~8.5ms
+        // - ~10ms
+        // - ~11-12ms
+        //  About 40ms for 25fps playback but with triple buffered ui vsync of 8.3ms
+        //  means 40ms is every 4.8 vsyncs..
+        // std.debug.print("frame delta: {}ns\n", .{delta_ns});
 
         if (is_playing) {
-            playback_time_ns += @as(u64, @intFromFloat(@as(f64, @floatFromInt(delta_ns)) * playback_speed));
+            // Accumulate frame_delta_ns
+            playback_time_ns += @as(u64, @intFromFloat(@as(f64, @floatFromInt(ui_frame_delta_ns)) * playback_speed));
         }
 
         // Video frame timing - decode and create Metal textures from YCbCr
@@ -388,6 +395,7 @@ pub fn renderThread(ctx: *RenderContext) void {
             const should_decode = frame_changed or time_to_advance;
 
             if (should_decode) {
+
                 // Decode frame from ProRes
                 const decoded_frame = sm.decodeSourceFrame(current_frame_index, @ptrCast(ctx.device_ptr)) catch |err| {
                     std.debug.print("❌ Failed to decode frame: {}\n", .{err});
