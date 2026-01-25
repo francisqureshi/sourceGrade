@@ -43,6 +43,7 @@ pub const RenderContext = struct {
     device_ptr: *anyopaque,
     config: RenderConfig,
     allocator: std.mem.Allocator,
+    io: std.Io,
     video_path: ?[]const u8,
 };
 
@@ -60,6 +61,7 @@ pub const InitResult = struct {
 /// Caller is responsible for cleanup via deinitRenderContext.
 pub fn initRenderContext(
     allocator: std.mem.Allocator,
+    io: std.Io,
     config: RenderConfig,
 ) !InitResult {
     // Check if Metal is available
@@ -229,6 +231,7 @@ pub fn initRenderContext(
         .device_ptr = device_ptr.?,
         .config = config,
         .allocator = allocator,
+        .io = io,
         .video_path = video_path,
     };
 
@@ -268,18 +271,19 @@ pub fn renderThread(ctx: *RenderContext) void {
     var playback_time_ns: u64 = 0;
     var timer = std.time.Timer.start() catch return;
 
-    // Initialize I/O in render thread (CRITICAL: I/O must be initialized on the thread that uses it)
-    var threaded = std.Io.Threaded.init(ctx.allocator, .{});
-    defer threaded.deinit();
-    const io = threaded.io();
+    // // Initialize I/O in render thread (CRITICAL: I/O must be initialized on the thread that uses it)
+    // var threaded = std.Io.Threaded.init(ctx.allocator, .{});
+    // defer threaded.deinit();
+    // const io = threaded.io();
 
     // Load video in render thread
     var video_fps: f64 = 0;
     var source_media: ?*media.SourceMedia = null;
 
-    // FIXME : Messy is this 'RenderThread' really a qausi-player ? We need a dedicated place for the import and allocatoion on SourceMedias
+    // FIXME : Messy is this 'RenderThread' really a qausi-player ?
+    // We need a dedicated place for the import and allocatoion on SourceMedias
     if (ctx.video_path) |video_path| {
-        if (media.SourceMedia.init(video_path, io, ctx.allocator)) |sm| {
+        if (media.SourceMedia.init(video_path, ctx.io, ctx.allocator)) |sm| {
             source_media = ctx.allocator.create(media.SourceMedia) catch null;
             if (source_media) |ptr| {
                 ptr.* = sm;
@@ -306,13 +310,14 @@ pub fn renderThread(ctx: *RenderContext) void {
     var current_frame_index: usize = 0;
     var last_decoded_frame_index: ?usize = null;
 
-    // CRITICAL: Video texture holders must persist across frames!
+    // CRITICAL: Video texture holders must persist across frames
     // These keep the CVPixelBuffer and Metal textures alive between decode and present
     // For y416 packed format, we use a single RGBA16 texture
     var packed_metal_texture: ?metal.MetalTexture = null;
     var decoded_frame_holder: ?vtb.DecodedFrame = null;
     var texture_set_holder: ?vtb.MetalTextureSet = null;
 
+    // main UI loop inc video controls and monitor
     while (true) : (ui_frame += 1) {
 
         // Wait for vsync signal from CVDisplayLink
@@ -334,6 +339,9 @@ pub fn renderThread(ctx: *RenderContext) void {
         ctx.imgui_ctx.slider(1, 1400, 300, 100, 50, &slider_value, 0, 1) catch {};
         ctx.imgui_ctx.addRect(1400, 50, 100, 100, imgui.ImGuiContext.packColor(slider_value, 1, 0, 1.0)) catch {};
         ctx.imgui_ctx.addRect(1450, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
+
+        // ============ Video Controls
+
         ctx.imgui_ctx.slider(2, 600, 800, 400, 10, &playback_speed, 0, 4) catch {};
 
         const fwd_button_text: []const u8 = if (is_playing != 0.0) "pause" else "play >";
@@ -361,9 +369,9 @@ pub fn renderThread(ctx: *RenderContext) void {
         ctx.imgui_ctx.addText(disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};
 
         // // Add text using new unified system
-        ctx.imgui_ctx.addText("Large-196pt", 0, 0, 196.0, .{ 255, 255, 255, 255 }) catch {};
-        ctx.imgui_ctx.addText("Medium-48pt", 0, 300, 48.0, .{ 200, 200, 255, 255 }) catch {};
-        ctx.imgui_ctx.addText("Small-24pt", 0, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
+        // ctx.imgui_ctx.addText("Large-196pt", 0, 0, 196.0, .{ 255, 255, 255, 255 }) catch {};
+        // ctx.imgui_ctx.addText("Medium-48pt", 0, 300, 48.0, .{ 200, 200, 255, 255 }) catch {};
+        // ctx.imgui_ctx.addText("Small-24pt", 0, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
 
         // ============= Video Player
         // ============= Video Player
@@ -463,6 +471,7 @@ pub fn renderThread(ctx: *RenderContext) void {
                 last_decoded_frame_index = current_frame_index;
             }
         }
+        // End of Video monitor?
 
         // Get drawable
         const drawable_ptr = c.metal_layer_get_next_drawable(ctx.layer);
@@ -501,7 +510,7 @@ pub fn renderThread(ctx: *RenderContext) void {
         var render_encoder = command_buffer.createRenderEncoder(&render_pass) catch continue;
         defer render_encoder.deinit();
 
-        // Layer 1: Video (packed AYUV y416 format)
+        // Layer 1: Video Monitor Rendering (Upload to GPU)
         if (packed_metal_texture) |*texture| {
             // Render video frame with YCbCr→RGB conversion in shader
             // Create VideoUniforms for letterboxing (matches Shaders.metal)

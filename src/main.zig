@@ -17,6 +17,19 @@ const Allocator = std.mem.Allocator;
 const Io = std.Io;
 pub const log = std.log.scoped(.pgSQL);
 
+// const AppContext = struct {
+//     allocator: Allocator,
+//     io: Io,
+//
+//     pub fn init() AppContext {
+//
+//         // Initialize I/O in render thread (CRITICAL: I/O must be initialized on the thread that uses it)
+//         var threaded = std.Io.Threaded.init(allocator, .{});
+//         defer threaded.deinit();
+//         const io = threaded.io();
+//     }
+// };
+
 fn testSourceIO() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -92,13 +105,17 @@ fn app() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    var threaded = std.Io.Threaded.init(allocator, .{});
+    defer threaded.deinit();
+    const io = threaded.io();
+
     // Initialize GPU/rendering subsystem
     const config = renderer.RenderConfig{
         .use_display_p3 = true,
         .use_10bit = true,
     };
 
-    var render_result = try renderer.initRenderContext(allocator, config);
+    var render_result = try renderer.initRenderContext(allocator, io, config);
     defer renderer.deinitRenderContext(allocator, &render_result);
 
     // Spawn render thread

@@ -568,8 +568,8 @@ pub const ImGuiContext = struct {
             const x2 = x1 + width_pts;
             const y2 = y1 + height_pts; // Bottom of glyph
 
-            // Debug: draw glyph bounds
-            try self.addRect(x1, y1, width_pts, height_pts, packColor(0.6, 0.6, 0.6, 0.6));
+            // // Debug: draw glyph bounds
+            // try self.addRect(x1, y1, width_pts, height_pts, packColor(0.6, 0.6, 0.6, 0.6));
 
             // Calculate atlas UVs (no flip needed - CTFontDrawGlyphs renders correctly)
             const atlas_size_f: f32 = @floatFromInt(self.atlas.size);
