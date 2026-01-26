@@ -81,13 +81,15 @@ pub const VideoToolboxDecoder = struct {
         const frame_size = try self.source_media.getFrameSize(frame_index);
         // std.debug.print("\nFirst frame size: {d} bytes\n", .{frame_size});
 
-        const buffer = try self.source_media.mctx.allocator.alloc(u8, frame_size);
-        defer self.source_media.mctx.allocator.free(buffer);
+        const encoded_frame_buffer = try self.source_media.mctx.allocator.alloc(u8, frame_size);
+        defer self.source_media.mctx.allocator.free(encoded_frame_buffer);
 
-        _ = try self.source_media.readFrame(frame_index, buffer);
+        // FIXME: is readFrame.... redundant...? As we pass this data to the BlockBuffer below???
+        // Should we use a Io.Reader also ??
+        _ = try self.source_media.readFrame(frame_index, encoded_frame_buffer);
         // std.debug.print("Read {d} bytes from frame 0\n", .{bytes_read});
 
-        const block_buffer = try createBlockBuffer(buffer);
+        const block_buffer = try createBlockBuffer(encoded_frame_buffer);
         // std.debug.print("block_buffer: {*}\n", .{block_buffer});
 
         const timing_info = createSampleTimingInfo(frame_index, self.source_media);
@@ -201,6 +203,7 @@ const VideoToolboxError = error{
     DecoderWaitFailed,
     TextureCreationFailed,
 };
+/// CoreVideo pixel buffer - decoded pixel data (GPU-backed, ref-counted)
 const FrameContext = struct {
     pixel_buffer: ?vtb.CVPixelBufferRef,
 };

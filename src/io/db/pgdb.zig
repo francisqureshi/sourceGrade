@@ -190,7 +190,7 @@ pub fn createSource(pool: *pg.Pool, source_media: *media.SourceMedia) ![16]u8 {
     return error.NoSourceCreated;
 }
 
-pub fn hydrateSourceMediaPool(db_pool: *pg.Pool, io: Io, allocator: Allocator) !void {
+pub fn hydrateSourceMediaPool(db_pool: *pg.Pool, io: Io, source_pool_allocator: Allocator) !void {
     var conn = try db_pool.acquire();
     defer conn.release();
 
@@ -211,22 +211,18 @@ pub fn hydrateSourceMediaPool(db_pool: *pg.Pool, io: Io, allocator: Allocator) !
     while (try mapper.next()) |db_source| {
         const uuid: [16]u8 = db_source.id[0..16].*;
 
-        // Heap allocate hydrated SM..
-        const source_media = try allocator.create(media.SourceMedia);
+        // Heap allocate hydrated to SourcePoolAllocator
+        const source_media = try source_pool_allocator.create(media.SourceMedia);
 
-        // var source_media = try media.SourceMedia.initFromDb(uuid, db_source.path, io, allocator);
-
-        source_media.* = try media.SourceMedia.initFromDb(uuid, db_source.path, io, allocator);
-        try sources.source_pool.put(allocator, uuid, source_media);
-
-        // try sources.source_pool.put(allocator, uuid, &source_media);
-        const hex_id = try pg.uuidToHex(db_source.id);
+        source_media.* = try media.SourceMedia.initFromDb(uuid, db_source.path, io, source_pool_allocator);
+        try sources.source_pool.put(source_pool_allocator, uuid, source_media);
 
         std.debug.print("source_media size: {d} bytes \n", .{source_media.totalSize()});
 
+        const printble_hex_id = try pg.uuidToHex(db_source.id);
         std.debug.print(
             "ID: {s} | {s} | {d}x{d} | {d} frames @ {d:.2}fps | {s}\n",
-            .{ &hex_id, source_media.file_name, source_media.resolution.width, source_media.resolution.height, source_media.duration_in_frames, source_media.frame_rate_float, source_media.codec },
+            .{ &printble_hex_id, source_media.file_name, source_media.resolution.width, source_media.resolution.height, source_media.duration_in_frames, source_media.frame_rate_float, source_media.codec },
         );
     }
 }

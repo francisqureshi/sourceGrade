@@ -41,13 +41,13 @@ fn testSourceIO() !void {
     const io = threaded.io();
 
     // Open video file
-    const file_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
-    const path_two = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
+    // const file_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
+    // const path_two = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
 
     // const file_path = "/Users/fq/Desktop/AGMM/ProRes444_with_Alpha.mov";
 
-    // const file_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
-    // const path_two = "/Users/mac10/Desktop/A_0006C002_251202_172939_a1CLB_S002.mov";
+    const file_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
+    const path_two = "/Users/mac10/Desktop/A_0006C002_251202_172939_a1CLB_S002.mov";
 
     var source_media = try media.SourceMedia.init(file_path, io, allocator);
     defer source_media.deinit();
@@ -72,26 +72,27 @@ fn testSourceIO() !void {
 fn testHydrate() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    const source_pool_allocator = gpa.allocator();
 
     // Initialize Io
     var threaded: Io.Threaded = .init_single_threaded;
     defer threaded.deinit();
     const io = threaded.io();
 
-    const db_pool = try db_test.startDb(allocator, io);
+    const db_pool = try db_test.startDb(source_pool_allocator, io);
     defer db_pool.deinit();
 
     try pgdb.listSources(db_pool);
-    try pgdb.hydrateSourceMediaPool(db_pool, io, allocator);
+    try pgdb.hydrateSourceMediaPool(db_pool, io, source_pool_allocator);
 
     //Inspect source_pool
-    try inspectSourcePool(allocator);
+    try inspectSourcePool(source_pool_allocator);
 }
 
 fn inspectSourcePool(allocator: Allocator) !void {
+    std.debug.print("\n=== Inspecting source_pool_allocator:\n", .{});
     for (sources.source_pool.values()) |source| {
-        std.debug.print("source: {any}\n", .{source});
+        std.debug.print("source: {any}\n\n", .{source});
         defer source.deinit();
         allocator.destroy(source);
     }
