@@ -119,6 +119,7 @@ fn app() !void {
     defer renderer.deinitRenderContext(allocator, &render_result);
 
     // Spawn render thread
+    // FIXME: This maybe should use Io.Threaded.
     const thread = try std.Thread.spawn(.{}, renderer.renderThread, .{&render_result.context});
     thread.detach();
 

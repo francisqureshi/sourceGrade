@@ -269,10 +269,6 @@ pub const SourceMedia = struct {
     }
 };
 
-// const mediaPool struct {
-//
-// };
-
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();

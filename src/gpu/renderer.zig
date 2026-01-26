@@ -5,6 +5,8 @@ const imgui = @import("../gui/imgui.zig");
 const media = @import("../io/media.zig");
 const vtb = @import("../io/decode/vtb_decode.zig");
 
+const vm = @import("video_monitor.zig");
+
 // C bridge for Swift window
 const c = @cImport({
     @cInclude("metal_window.h");
@@ -262,60 +264,44 @@ pub fn deinitRenderContext(allocator: std.mem.Allocator, result: *InitResult) vo
 // ============================================================================
 
 /// Main render thread entry point. Runs until terminated.
-pub fn renderThread(ctx: *RenderContext) void {
-    var slider_value: f32 = 0.5;
+pub fn renderThread(ctx: *RenderContext) !void {
+    var test_slider_value: f32 = 0.5;
 
-    var playback_speed: f32 = 1.0; // 1.0 = normal speed, 0.5 = half speed, 2.0 = double speed
-    // var is_playing: bool = false;
-    var is_playing: f32 = 0.0;
-    var playback_time_ns: u64 = 0;
-    var timer = std.time.Timer.start() catch return;
-
-    // // Initialize I/O in render thread (CRITICAL: I/O must be initialized on the thread that uses it)
-    // var threaded = std.Io.Threaded.init(ctx.allocator, .{});
-    // defer threaded.deinit();
-    // const io = threaded.io();
-
-    // Load video in render thread
-    var video_fps: f64 = 0;
-    var source_media: ?*media.SourceMedia = null;
-
-    // FIXME : Messy is this 'RenderThread' really a qausi-player ?
-    // We need a dedicated place for the import and allocatoion on SourceMedias
-    if (ctx.video_path) |video_path| {
-        if (media.SourceMedia.init(video_path, ctx.io, ctx.allocator)) |sm| {
-            source_media = ctx.allocator.create(media.SourceMedia) catch null;
-            if (source_media) |ptr| {
-                ptr.* = sm;
-                video_fps = @as(f64, @floatFromInt(sm.frame_rate.get().num)) / @as(f64, @floatFromInt(sm.frame_rate.get().den));
-                std.debug.print("✓ Loaded video: {d}x{d} @ {d:.2}fps, {d} frames\n\n", .{
-                    sm.resolution.width,
-                    sm.resolution.height,
-                    video_fps,
-                    sm.duration_in_frames,
-                });
-            }
-        } else |err| {
-            std.debug.print("Warning: Failed to load video file ({})\n", .{err});
-        }
-    }
-    defer if (source_media) |sm| {
-        sm.deinit();
-        ctx.allocator.destroy(sm);
+    // Load video (required - return early if fails)
+    const video_path = ctx.video_path orelse {
+        std.debug.print("Error: No video path specified\n", .{});
+        return;
     };
 
-    var ui_frame: u64 = 0;
-    const base_frame_duration_ns = if (video_fps > 0) @as(u64, @intFromFloat(std.time.ns_per_s / video_fps)) else 0;
-    var last_frame_time: u64 = 0;
-    var current_frame_index: usize = 0;
-    var last_decoded_frame_index: ?usize = null;
+    const sm = media.SourceMedia.init(video_path, ctx.io, ctx.allocator) catch |err| {
+        std.debug.print("Error: Failed to load video file ({})\n", .{err});
+        return;
+    };
 
-    // CRITICAL: Video texture holders must persist across frames
-    // These keep the CVPixelBuffer and Metal textures alive between decode and present
-    // For y416 packed format, we use a single RGBA16 texture
-    var packed_metal_texture: ?metal.MetalTexture = null;
-    var decoded_frame_holder: ?vtb.DecodedFrame = null;
-    var texture_set_holder: ?vtb.MetalTextureSet = null;
+    var source_media = ctx.allocator.create(media.SourceMedia) catch {
+        std.debug.print("Error: Failed to allocate source media\n", .{});
+        return;
+    };
+    source_media.* = sm;
+    defer {
+        source_media.deinit();
+        ctx.allocator.destroy(source_media);
+    }
+
+    var video_monitor = vm.VideoMonitor.init(ctx, source_media) catch |err| {
+        std.debug.print("Error: Failed to create video monitor ({})\n", .{err});
+        return;
+    };
+    defer video_monitor.deinit();
+
+    std.debug.print("✓ Loaded video: {d}x{d} @ {d:.2}fps, {d} frames\n\n", .{
+        source_media.resolution.width,
+        source_media.resolution.height,
+        source_media.frame_rate_float,
+        source_media.duration_in_frames,
+    });
+
+    var ui_frame: u64 = 0;
 
     // main UI loop inc video controls and monitor
     while (true) : (ui_frame += 1) {
@@ -336,35 +322,35 @@ pub fn renderThread(ctx: *RenderContext) void {
         ctx.imgui_ctx.mouse_y = mouse_y;
         ctx.imgui_ctx.mouse_down = mouse_down;
 
-        ctx.imgui_ctx.slider(1, 1400, 300, 100, 50, &slider_value, 0, 1) catch {};
-        ctx.imgui_ctx.addRect(1400, 50, 100, 100, imgui.ImGuiContext.packColor(slider_value, 1, 0, 1.0)) catch {};
+        ctx.imgui_ctx.slider(1, 1400, 300, 100, 50, &test_slider_value, 0, 1) catch {};
+        ctx.imgui_ctx.addRect(1400, 50, 100, 100, imgui.ImGuiContext.packColor(test_slider_value, 1, 0, 1.0)) catch {};
         ctx.imgui_ctx.addRect(1450, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
 
         // ============ Video Controls
 
-        ctx.imgui_ctx.slider(2, 600, 800, 400, 10, &playback_speed, 0, 4) catch {};
+        ctx.imgui_ctx.slider(2, 600, 800, 400, 10, &video_monitor.ctrl_playback_speed, 0, 32) catch {};
 
-        const fwd_button_text: []const u8 = if (is_playing != 0.0) "pause" else "play >";
-        const rev_button_text: []const u8 = if (is_playing != 0.0) "pause" else "< play";
+        const fwd_button_text: []const u8 = if (video_monitor.ctrl_playback != 0.0) "pause" else "play >";
+        const rev_button_text: []const u8 = if (video_monitor.ctrl_playback != 0.0) "pause" else "< play";
 
         const rev_clicked = ctx.imgui_ctx.button(3, 445, 450, 150, 50, rev_button_text) catch false;
         const fwd_clicked = ctx.imgui_ctx.button(4, 605, 450, 150, 50, fwd_button_text) catch false;
 
         if (fwd_clicked) {
-            if (is_playing == 0.0) is_playing = 1.0 else is_playing = 0.0;
-            std.debug.print("is_playing: {}\n", .{is_playing});
+            if (video_monitor.ctrl_playback == 0.0) video_monitor.ctrl_playback = 1.0 else video_monitor.ctrl_playback = 0.0;
+            std.debug.print("is_playing: {}\n", .{video_monitor.ctrl_playback});
         }
 
         if (rev_clicked) {
-            if (is_playing == 0.0) is_playing = -1.0 else is_playing = 0.0;
-            std.debug.print("is_playing: {}\n", .{is_playing});
+            if (video_monitor.ctrl_playback == 0.0) video_monitor.ctrl_playback = -1.0 else video_monitor.ctrl_playback = 0.0;
+            std.debug.print("is_playing: {}\n", .{video_monitor.ctrl_playback});
         }
 
         var disp_frame_buf: [1024]u8 = undefined;
         const disp_frame_num = std.fmt.bufPrint(
             &disp_frame_buf,
             "Frame: {d} Playback Speed: {d:.2}",
-            .{ current_frame_index, playback_speed },
+            .{ video_monitor.current_frame_index, video_monitor.ctrl_playback_speed },
         ) catch "CantGetFrame";
         ctx.imgui_ctx.addText(disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};
 
@@ -372,106 +358,6 @@ pub fn renderThread(ctx: *RenderContext) void {
         // ctx.imgui_ctx.addText("Large-196pt", 0, 0, 196.0, .{ 255, 255, 255, 255 }) catch {};
         // ctx.imgui_ctx.addText("Medium-48pt", 0, 300, 48.0, .{ 200, 200, 255, 255 }) catch {};
         // ctx.imgui_ctx.addText("Small-24pt", 0, 400, 24.0, .{ 255, 200, 200, 255 }) catch {};
-
-        // ============= Video Player
-        // ============= Video Player
-        // ============= Video Player
-
-        const ui_frame_delta_ns = timer.lap();
-        // on macbook pro with 120 hz this is
-        // - ~3ms
-        // - ~8.5ms
-        // - ~8.5ms
-        // - ~10ms
-        // - ~11-12ms
-        //  About 40ms for 25fps playback but with triple buffered ui vsync of 8.3ms
-        //  means 40ms is every 4.8 vsyncs..
-        // std.debug.print("frame delta: {}ns\n", .{delta_ns});
-
-        if (is_playing != 0.0) {
-            // Accumulate frame_delta_ns
-            playback_time_ns += @as(u64, @intFromFloat(@as(f64, @floatFromInt(ui_frame_delta_ns)) * playback_speed));
-        }
-
-        // Video frame timing - decode and create Metal textures from YCbCr
-        if (source_media) |sm| {
-            const time_since_last_frame = playback_time_ns - last_frame_time;
-
-            // Adjust frame duration by playback speed
-            const frame_duration_ns = if (playback_speed > 0.0)
-                @as(u64, @intFromFloat(@as(f64, @floatFromInt(base_frame_duration_ns)) / playback_speed))
-            else
-                base_frame_duration_ns;
-
-            // Should we decode? Yes if:
-            // - Frame index changed (first frame, seek, or playback advanced)
-            // - OR we're playing and enough time has passed
-            const frame_changed = last_decoded_frame_index == null or last_decoded_frame_index.? != current_frame_index;
-            const advance = is_playing != 0.0 and frame_duration_ns > 0 and time_since_last_frame >= frame_duration_ns;
-            const should_decode = frame_changed or advance;
-
-            if (should_decode) {
-                // Clean up previous frame resources before next decode
-                if (decoded_frame_holder) |*df| {
-                    df.deinit();
-                    decoded_frame_holder = null;
-                }
-                if (texture_set_holder) |*ts| {
-                    ts.deinit();
-                    texture_set_holder = null;
-                }
-
-                std.debug.print("Decoding frame {} (last={?}, advance={})\n", .{ current_frame_index, last_decoded_frame_index, advance });
-                const decoded_frame = sm.decodeSourceFrame(current_frame_index, @ptrCast(ctx.device_ptr)) catch |err| {
-                    std.debug.print("❌ Failed to decode frame: {}\n", .{err});
-                    continue;
-                };
-                decoded_frame_holder = decoded_frame; // Keep alive until end of loop
-
-                // Create Metal texture from packed AYUV buffer (y416 format)
-                var texture_set = sm.decoder.?.createMetalTextures(decoded_frame.pixel_buffer) catch |err| {
-                    std.debug.print("❌ Failed to create Metal textures: {}\n", .{err});
-                    continue;
-                };
-                texture_set_holder = texture_set; // Keep alive until end of loop
-
-                // Extract MTLTexture handle (single packed texture for y416)
-                const mtl_tex = texture_set.getMetalTexture();
-                packed_metal_texture = metal.MetalTexture.initFromPtr(mtl_tex);
-
-                // Debug: Print actual Metal texture dimensions vs expected
-                const State = struct {
-                    var printed_texture_debug: bool = false;
-                };
-                if (!State.printed_texture_debug) {
-                    State.printed_texture_debug = true;
-                    const tex_width = packed_metal_texture.?.getWidth();
-                    const tex_height = packed_metal_texture.?.getHeight();
-                    std.debug.print("\nMETAL TEXTURE DEBUG:\n", .{});
-                    std.debug.print("   Expected (from source_media): {}x{}\n", .{ sm.resolution.width, sm.resolution.height });
-                    std.debug.print("   MTLTexture: {}x{}\n", .{ tex_width, tex_height });
-                }
-
-                // Advance to next frame only if playing and time elapsed
-                if (advance) {
-                    if (is_playing > 0.0) {
-                        // Advance Forward
-                        current_frame_index = (current_frame_index + 1) % @as(usize, @intCast(sm.duration_in_frames));
-                    } else if (is_playing < 0.0) {
-                        // Advance Backward (wrap at 0)
-                        current_frame_index = if (current_frame_index == 0)
-                            @as(usize, @intCast(sm.duration_in_frames - 1))
-                        else
-                            current_frame_index - 1;
-                    }
-                    last_frame_time = playback_time_ns;
-                }
-
-                // Mark this frame as decoded
-                last_decoded_frame_index = current_frame_index;
-            }
-        }
-        // End of Video monitor?
 
         // Get drawable
         const drawable_ptr = c.metal_layer_get_next_drawable(ctx.layer);
@@ -510,8 +396,11 @@ pub fn renderThread(ctx: *RenderContext) void {
         var render_encoder = command_buffer.createRenderEncoder(&render_pass) catch continue;
         defer render_encoder.deinit();
 
+        // Video monitor - decode and manage playback
+        _ = video_monitor.monitor();
+
         // Layer 1: Video Monitor Rendering (Upload to GPU)
-        if (packed_metal_texture) |*texture| {
+        if (video_monitor.packed_metal_texture) |*texture| {
             // Render video frame with YCbCr→RGB conversion in shader
             // Create VideoUniforms for letterboxing (matches Shaders.metal)
             const VideoUniforms = extern struct {
@@ -521,8 +410,8 @@ pub fn renderThread(ctx: *RenderContext) void {
 
             const video_uniforms = VideoUniforms{
                 .video_size = .{
-                    @floatFromInt(source_media.?.resolution.width),
-                    @floatFromInt(source_media.?.resolution.height),
+                    @floatFromInt(source_media.resolution.width),
+                    @floatFromInt(source_media.resolution.height),
                 },
                 .viewport_size = .{ display_width_pts, display_height_pts },
             };
