@@ -397,7 +397,10 @@ pub fn renderThread(ctx: *RenderContext) !void {
         defer render_encoder.deinit();
 
         // Video monitor - decode and manage playback
-        _ = video_monitor.monitor();
+        const monitor_status = video_monitor.monitor();
+        if (monitor_status == .decode_failed) {
+            std.debug.print("video monitor status: {any}\n", .{monitor_status});
+        }
 
         // Layer 1: Video Monitor Rendering (Upload to GPU)
         if (video_monitor.packed_metal_texture) |*texture| {
