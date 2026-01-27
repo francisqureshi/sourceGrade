@@ -75,14 +75,19 @@ pub const VideoToolboxDecoder = struct {
         };
     }
 
-    pub fn decodeFrame(self: *VideoToolboxDecoder, frame_index: usize) !DecodedFrame {
+    pub fn decodeFrame(
+        self: *VideoToolboxDecoder,
+        frame_index: usize,
+        scratch_allocator: Allocator,
+    ) !DecodedFrame {
         self.frame_ctx.pixel_buffer = null;
 
         const frame_size = try self.source_media.getFrameSize(frame_index);
         // std.debug.print("\nFirst frame size: {d} bytes\n", .{frame_size});
 
-        const encoded_frame_buffer = try self.source_media.mctx.allocator.alloc(u8, frame_size);
-        defer self.source_media.mctx.allocator.free(encoded_frame_buffer);
+        // Use scratch instead of self.source_media.mctx.allocator
+        const encoded_frame_buffer = try scratch_allocator.alloc(u8, frame_size);
+        // defer self.source_media.mctx.allocator.free(encoded_frame_buffer);
 
         // FIXME: is readFrame.... redundant...? As we pass this data to the BlockBuffer below???
         // Should we use a Io.Reader also ??

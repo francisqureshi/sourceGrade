@@ -288,7 +288,7 @@ pub fn renderThread(ctx: *RenderContext) !void {
         ctx.allocator.destroy(source_media);
     }
 
-    var video_monitor = vm.VideoMonitor.init(ctx, source_media) catch |err| {
+    var video_monitor = vm.VideoMonitor.init(ctx, source_media, ctx.allocator) catch |err| {
         std.debug.print("Error: Failed to create video monitor ({})\n", .{err});
         return;
     };
@@ -398,10 +398,7 @@ pub fn renderThread(ctx: *RenderContext) !void {
 
         // INFO:
         // Video monitor - decode and manage playback
-        const monitor_status = video_monitor.monitor();
-        if (monitor_status != .ok) {
-            std.debug.print("video monitor status: {any}\n", .{monitor_status});
-        }
+        _ = video_monitor.monitor();
 
         // Layer 1: Video Monitor Rendering (Upload to GPU)
         if (video_monitor.packed_metal_texture) |*texture| {

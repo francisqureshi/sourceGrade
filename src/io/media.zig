@@ -216,12 +216,13 @@ pub const SourceMedia = struct {
         self: *SourceMedia,
         frame_idx: usize,
         metal_device: vtb.MTLDeviceRef, // Pass per-decode, not at init
+        scratch_allocator: Allocator,
     ) !vtb.DecodedFrame {
         // Lazy init with metal device
         if (self.decoder == null) {
             self.decoder = try vtb.VideoToolboxDecoder.init(self, metal_device);
         }
-        return try self.decoder.?.decodeFrame(frame_idx);
+        return try self.decoder.?.decodeFrame(frame_idx, scratch_allocator);
     }
 
     /// Read a compressed frame into the provided buffer
