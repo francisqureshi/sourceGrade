@@ -17,6 +17,7 @@ pub const MonitorResult = enum {
 pub const VideoMonitor = struct {
     ctx: *rndr.RenderContext,
     source_media: *media.SourceMedia,
+    decode_arena: std.mem.Allocator,
 
     ctrl_playback: f32,
     ctrl_playback_speed: f32, // 1.0 = normal speed, 0.5 = half speed, 2.0 = double speed
@@ -34,13 +35,14 @@ pub const VideoMonitor = struct {
     decoded_frame_holder: ?vtb.DecodedFrame,
     texture_set_holder: ?vtb.MetalTextureSet,
 
-    pub fn init(ctx: *rndr.RenderContext, source_media: *media.SourceMedia) !VideoMonitor {
+    pub fn init(ctx: *rndr.RenderContext, source_media: *media.SourceMedia, scratch_allocator: std.mem.Allocator) !VideoMonitor {
         const timer = try std.time.Timer.start();
         const base_frame_duration_ns: u64 = @intFromFloat(std.time.ns_per_s / source_media.frame_rate_float);
 
         return .{
             .ctx = ctx,
             .source_media = source_media,
+            .decode_arena = std.heap.ArenaAllocator.init(scratch_allocator),
 
             .ctrl_playback = 0.0,
             .ctrl_playback_speed = 1.0,
