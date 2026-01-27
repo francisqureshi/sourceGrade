@@ -399,7 +399,7 @@ pub fn renderThread(ctx: *RenderContext) !void {
         // INFO:
         // Video monitor - decode and manage playback
         const monitor_status = video_monitor.monitor();
-        if (monitor_status == .decode_failed) {
+        if (monitor_status != .ok) {
             std.debug.print("video monitor status: {any}\n", .{monitor_status});
         }
 
