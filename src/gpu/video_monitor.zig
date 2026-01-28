@@ -39,11 +39,11 @@ pub const VideoMonitor = struct {
         const timer = try std.time.Timer.start();
         const base_frame_duration_ns: u64 = @intFromFloat(std.time.ns_per_s / source_media.frame_rate_float);
 
-        _ = allocator; // Debugging Arena and using page_allocator..
+        // _ = allocator; // Debugging Arena and using page_allocator..
         return .{
             .ctx = ctx,
             .source_media = source_media,
-            .decode_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
+            .decode_arena = std.heap.ArenaAllocator.init(allocator), // could use heap.page_allocator
 
             .ctrl_playback = 0.0,
             .ctrl_playback_speed = 1.0,
