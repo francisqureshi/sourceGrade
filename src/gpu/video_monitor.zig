@@ -99,7 +99,7 @@ pub const VideoMonitor = struct {
         if (should_decode) {
 
             // Reset scratch arena before decode
-            _ = self.decode_arena.reset(.retain_capacity);
+            _ = self.decode_arena.reset(.free_all);
 
             // Clean up previous frame resources before next decode
             if (self.decoded_frame_holder) |*df| {
