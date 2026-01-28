@@ -3,7 +3,7 @@ const metal = @import("metal");
 const imgui = @import("../gui/imgui.zig");
 
 const media = @import("../io/media.zig");
-const vtb = @import("../io/decode/vtb_decode.zig");
+const videotoolbox = @import("../io/decode/videotoolbox.zig");
 
 const rndr = @import("renderer.zig");
 
@@ -32,17 +32,18 @@ pub const VideoMonitor = struct {
     // Video texture holders must persist across frames
     // These keep the CVPixelBuffer and Metal textures alive between decode and present
     packed_metal_texture: ?metal.MetalTexture,
-    decoded_frame_holder: ?vtb.DecodedFrame,
-    texture_set_holder: ?vtb.MetalTextureSet,
+    decoded_frame_holder: ?videotoolbox.DecodedFrame,
+    texture_set_holder: ?videotoolbox.MetalTextureSet,
 
     pub fn init(ctx: *rndr.RenderContext, source_media: *media.SourceMedia, allocator: std.mem.Allocator) !VideoMonitor {
         const timer = try std.time.Timer.start();
         const base_frame_duration_ns: u64 = @intFromFloat(std.time.ns_per_s / source_media.frame_rate_float);
 
+        _ = allocator; // Debugging Arena and using page_allocator..
         return .{
             .ctx = ctx,
             .source_media = source_media,
-            .decode_arena = std.heap.ArenaAllocator.init(allocator),
+            .decode_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator),
 
             .ctrl_playback = 0.0,
             .ctrl_playback_speed = 1.0,
@@ -96,13 +97,9 @@ pub const VideoMonitor = struct {
         const should_decode = frame_changed or advance;
 
         if (should_decode) {
-            // Debug Arena size
-            const arena_size = self.decode_arena.queryCapacity();
-            std.debug.print("arena_size: {d}\n", .{arena_size});
 
             // Reset scratch arena before decode
             _ = self.decode_arena.reset(.retain_capacity);
-            // _ = self.decode_arena.reset(.free_all);
 
             // Clean up previous frame resources before next decode
             if (self.decoded_frame_holder) |*df| {
@@ -124,6 +121,8 @@ pub const VideoMonitor = struct {
                 return .decode_failed;
             };
             self.decoded_frame_holder = decoded_frame; // Keep alive until end of loop
+
+            std.debug.print("\nFrame info: \nCompressed Size:{d} \nDecompressed Size: {d}\n", .{ decoded_frame.compressed_frame_size, decoded_frame.decoded_frame_size });
 
             // Create Metal texture from packed AYUV buffer (y416 format)
             var texture_set = sm.decoder.?.createMetalTextures(decoded_frame.pixel_buffer) catch |err| {

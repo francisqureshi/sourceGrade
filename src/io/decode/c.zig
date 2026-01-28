@@ -631,6 +631,12 @@ pub extern "c" fn CVPixelBufferGetBytesPerRow(
     pixelBuffer: CVPixelBufferRef,
 ) usize;
 
+/// Gets the total data size of the pixel buffer in bytes
+/// Includes all planes for planar formats
+pub extern "c" fn CVPixelBufferGetDataSize(
+    pixelBuffer: CVPixelBufferRef,
+) usize;
+
 /// Gets the number of separate planes in a planar pixel buffer
 /// For tri-planar YCbCr formats, returns 3 (or 4 with alpha)
 /// Returns: Number of planes (0 if not planar or error)

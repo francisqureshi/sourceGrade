@@ -3,7 +3,7 @@ const metal = @import("metal");
 const imgui = @import("../gui/imgui.zig");
 
 const media = @import("../io/media.zig");
-const vtb = @import("../io/decode/vtb_decode.zig");
+const videotoolbox = @import("../io/decode/videotoolbox.zig");
 
 const vm = @import("video_monitor.zig");
 

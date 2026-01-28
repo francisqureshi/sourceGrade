@@ -1,10 +1,9 @@
 const std = @import("std");
 const smpte = @import("smpte");
 const mov = @import("mov.zig");
+const videotoolbox = @import("decode/videotoolbox.zig");
 
 const assert = std.debug.assert;
-
-const vtb = @import("decode/vtb_decode.zig");
 
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
@@ -68,7 +67,7 @@ pub const SourceMedia = struct {
     codec: []const u8,
     stsd_data: []const u8,
     frames: []mov.FrameInfo,
-    decoder: ?vtb.VideoToolboxDecoder,
+    decoder: ?videotoolbox.Decoder,
 
     pub fn init(fp: []const u8, io: Io, allocator: Allocator) !SourceMedia {
         // Open video file
@@ -215,12 +214,13 @@ pub const SourceMedia = struct {
     pub fn decodeSourceFrame(
         self: *SourceMedia,
         frame_idx: usize,
-        metal_device: vtb.MTLDeviceRef, // Pass per-decode, not at init
+        metal_device: videotoolbox.MTLDeviceRef, // Pass per-decode, not at init
         scratch_allocator: Allocator,
-    ) !vtb.DecodedFrame {
-        // Lazy init with metal device
+    ) !videotoolbox.DecodedFrame {
+        // Lazilyy initialize  VideoToolBox decoder with metal device
+
         if (self.decoder == null) {
-            self.decoder = try vtb.VideoToolboxDecoder.init(self, metal_device);
+            self.decoder = try videotoolbox.Decoder.init(self, metal_device);
         }
         return try self.decoder.?.decodeFrame(frame_idx, scratch_allocator);
     }

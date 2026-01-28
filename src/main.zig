@@ -7,9 +7,6 @@ const pgdb = @import("io/db/pgdb.zig");
 const db_test = @import("io/db/init_db.zig");
 
 const renderer = @import("gpu/renderer.zig");
-const vtbFW = @import("io/decode/videotoolbox_c.zig");
-
-const vtb = @import("io/decode/vtb_decode.zig");
 
 const sources = @import("io/sources.zig");
 
