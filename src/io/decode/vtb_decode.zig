@@ -1,8 +1,8 @@
 const std = @import("std");
 const media = @import("../media.zig");
-const vtb = @import("videotoolbox_c.zig");
+const vtw = @import("videotoolbox_c.zig");
 
-pub const MTLDeviceRef = vtb.MTLDeviceRef;
+pub const MTLDeviceRef = vtw.MTLDeviceRef;
 
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
@@ -11,33 +11,33 @@ pub const log = std.log.scoped(.videoToolBox);
 /// For packed y416 format (kCVPixelFormatType_4444AYpCbCr16), we use a single RGBA16Unorm texture.
 /// The 64-bit AYUV data maps to Metal's RGBA16 as: R=A, G=Y, B=Cb, A=Cr
 pub const MetalTextureSet = struct {
-    texture: vtb.CVMetalTextureRef, // Single packed AYUV texture
+    texture: vtw.CVMetalTextureRef, // Single packed AYUV texture
 
-    pub fn getMetalTexture(self: *const MetalTextureSet) vtb.MTLTextureRef {
-        return vtb.CVMetalTextureGetTexture(self.texture);
+    pub fn getMetalTexture(self: *const MetalTextureSet) vtw.MTLTextureRef {
+        return vtw.CVMetalTextureGetTexture(self.texture);
     }
 
     pub fn deinit(self: *MetalTextureSet) void {
-        vtb.CFRelease(self.texture);
+        vtw.CFRelease(self.texture);
     }
 };
 
 pub const VideoToolboxDecoder = struct {
-    session: vtb.VTDecompressionSessionRef,
-    format_desc: vtb.CMVideoFormatDescriptionRef,
+    session: vtw.VTDecompressionSessionRef,
+    format_desc: vtw.CMVideoFormatDescriptionRef,
     frame_ctx: *FrameContext,
     source_media: *const media.SourceMedia, // Reference to clip
-    texture_cache: vtb.CVMetalTextureCacheRef, // Metal texture cache for zero-copy textures
-    metal_device: vtb.MTLDeviceRef, // Metal device
+    texture_cache: vtw.CVMetalTextureCacheRef, // Metal texture cache for zero-copy textures
+    metal_device: vtw.MTLDeviceRef, // Metal device
 
     pub fn init(
         source_media: *const media.SourceMedia,
-        metal_device: vtb.MTLDeviceRef,
+        metal_device: vtw.MTLDeviceRef,
     ) !VideoToolboxDecoder {
         // Register professional video workflow decoders (ProRes, etc.)
         // This ensures we get native ProRes output formats without conversion
-        const register_status = vtb.VTRegisterProfessionalVideoWorkflowVideoDecoders();
-        if (register_status == vtb.noErr) {
+        const register_status = vtw.VTRegisterProfessionalVideoWorkflowVideoDecoders();
+        if (register_status == vtw.noErr) {
             std.debug.print("✓ Registered professional video decoders\n", .{});
         } else {
             std.debug.print("⚠ Failed to register professional decoders: {}\n", .{register_status});
@@ -53,15 +53,15 @@ pub const VideoToolboxDecoder = struct {
         const session = try createDecompressionSession(format_desc, frame_ctx_ptr);
 
         // Create Metal texture cache for zero-copy rendering
-        var texture_cache: vtb.CVMetalTextureCacheRef = undefined;
-        const cache_status = vtb.CVMetalTextureCacheCreate(
-            vtb.kCFAllocatorDefault,
+        var texture_cache: vtw.CVMetalTextureCacheRef = undefined;
+        const cache_status = vtw.CVMetalTextureCacheCreate(
+            vtw.kCFAllocatorDefault,
             null, // cache attributes
             metal_device,
             null, // texture attributes
             &texture_cache,
         );
-        if (cache_status != vtb.noErr) {
+        if (cache_status != vtw.noErr) {
             return error.TextureCacheCreationFailed;
         }
 
@@ -99,7 +99,7 @@ pub const VideoToolboxDecoder = struct {
 
         const timing_info = createSampleTimingInfo(frame_index, self.source_media);
         const sample_buffer = try createSampleBuffer(block_buffer, timing_info, self.format_desc);
-        defer vtb.CFRelease(sample_buffer);
+        defer vtw.CFRelease(sample_buffer);
 
         // Phase 4.5: Decode the frame
         try decompress(self.session, sample_buffer);
@@ -120,11 +120,11 @@ pub const VideoToolboxDecoder = struct {
     /// Now supports BGRA format (VideoToolbox converts YCbCr to RGB for us)
     pub fn createMetalTextures(
         self: *const VideoToolboxDecoder,
-        pixel_buffer: vtb.CVPixelBufferRef,
+        pixel_buffer: vtw.CVPixelBufferRef,
     ) !MetalTextureSet {
-        const width = vtb.CVPixelBufferGetWidth(pixel_buffer);
-        const height = vtb.CVPixelBufferGetHeight(pixel_buffer);
-        const pixel_format = vtb.CVPixelBufferGetPixelFormatType(pixel_buffer);
+        const width = vtw.CVPixelBufferGetWidth(pixel_buffer);
+        const height = vtw.CVPixelBufferGetHeight(pixel_buffer);
+        const pixel_format = vtw.CVPixelBufferGetPixelFormatType(pixel_buffer);
 
         // Debug: Print info once
         const State = struct {
@@ -132,18 +132,18 @@ pub const VideoToolboxDecoder = struct {
         };
         if (!State.printed) {
             State.printed = true;
-            const bytes_per_row = vtb.CVPixelBufferGetBytesPerRow(pixel_buffer);
+            const bytes_per_row = vtw.CVPixelBufferGetBytesPerRow(pixel_buffer);
             const format_bytes: [4]u8 = @bitCast(pixel_format);
             const bits_per_pixel = (bytes_per_row * 8) / width;
             std.debug.print("\n🎬 Video texture: {d}x{d}, {s} ({d}-bit/pixel)\n", .{ width, height, &format_bytes, bits_per_pixel });
         }
 
         // Choose Metal pixel format based on CVPixelBuffer format
-        const metal_format: vtb.MTLPixelFormat = switch (pixel_format) {
-            vtb.kCVPixelFormatType_32BGRA => vtb.MTLPixelFormatBGRA8Unorm,
-            vtb.kCVPixelFormatType_64RGBAHalf => vtb.MTLPixelFormatRGBA16Float, // Half-float
-            vtb.kCVPixelFormatType_64ARGB => vtb.MTLPixelFormatRGBA16Unorm,
-            vtb.kCVPixelFormatType_4444AYpCbCr16 => vtb.MTLPixelFormatRGBA16Unorm,
+        const metal_format: vtw.MTLPixelFormat = switch (pixel_format) {
+            vtw.kCVPixelFormatType_32BGRA => vtw.MTLPixelFormatBGRA8Unorm,
+            vtw.kCVPixelFormatType_64RGBAHalf => vtw.MTLPixelFormatRGBA16Float, // Half-float
+            vtw.kCVPixelFormatType_64ARGB => vtw.MTLPixelFormatRGBA16Unorm,
+            vtw.kCVPixelFormatType_4444AYpCbCr16 => vtw.MTLPixelFormatRGBA16Unorm,
             else => {
                 const format_bytes: [4]u8 = @bitCast(pixel_format);
                 std.debug.print("Unknown pixel format: 0x{X:0>8} ('{s}')\n", .{ pixel_format, &format_bytes });
@@ -151,9 +151,9 @@ pub const VideoToolboxDecoder = struct {
             },
         };
 
-        var texture: vtb.CVMetalTextureRef = undefined;
-        const status = vtb.CVMetalTextureCacheCreateTextureFromImage(
-            vtb.kCFAllocatorDefault,
+        var texture: vtw.CVMetalTextureRef = undefined;
+        const status = vtw.CVMetalTextureCacheCreateTextureFromImage(
+            vtw.kCFAllocatorDefault,
             self.texture_cache,
             pixel_buffer,
             null,
@@ -164,7 +164,7 @@ pub const VideoToolboxDecoder = struct {
             &texture,
         );
 
-        if (status != vtb.noErr) {
+        if (status != vtw.noErr) {
             std.debug.print("❌ Failed to create texture: {}\n", .{status});
             return error.TextureCreationFailed;
         }
@@ -173,17 +173,17 @@ pub const VideoToolboxDecoder = struct {
     }
 
     /// Debug: inspect pixel buffer data (prints once per session)
-    pub fn cpuInspectPixelBufferData(pixel_buffer: vtb.CVPixelBufferRef) !void {
+    pub fn cpuInspectPixelBufferData(pixel_buffer: vtw.CVPixelBufferRef) !void {
         const State = struct {
             var printed: bool = false;
         };
         if (State.printed) return;
         State.printed = true;
 
-        const width = vtb.CVPixelBufferGetWidth(pixel_buffer);
-        const height = vtb.CVPixelBufferGetHeight(pixel_buffer);
-        const bytes_per_row = vtb.CVPixelBufferGetBytesPerRow(pixel_buffer);
-        const pixel_format = vtb.CVPixelBufferGetPixelFormatType(pixel_buffer);
+        const width = vtw.CVPixelBufferGetWidth(pixel_buffer);
+        const height = vtw.CVPixelBufferGetHeight(pixel_buffer);
+        const bytes_per_row = vtw.CVPixelBufferGetBytesPerRow(pixel_buffer);
+        const pixel_format = vtw.CVPixelBufferGetPixelFormatType(pixel_buffer);
         const format_bytes: [4]u8 = @bitCast(pixel_format);
         const bits_per_pixel = (bytes_per_row * 8) / width;
 
@@ -191,10 +191,10 @@ pub const VideoToolboxDecoder = struct {
     }
 
     pub fn deinit(self: *VideoToolboxDecoder) void {
-        vtb.CFRelease(self.format_desc);
-        vtb.VTDecompressionSessionInvalidate(self.session);
-        vtb.CFRelease(self.session);
-        vtb.CFRelease(self.texture_cache);
+        vtw.CFRelease(self.format_desc);
+        vtw.VTDecompressionSessionInvalidate(self.session);
+        vtw.CFRelease(self.session);
+        vtw.CFRelease(self.texture_cache);
         self.source_media.mctx.allocator.destroy(self.frame_ctx);
     }
 };
@@ -210,14 +210,14 @@ const VideoToolboxError = error{
 };
 /// CoreVideo pixel buffer - decoded pixel data (GPU-backed, ref-counted)
 const FrameContext = struct {
-    pixel_buffer: ?vtb.CVPixelBufferRef,
+    pixel_buffer: ?vtw.CVPixelBufferRef,
 };
 
 pub const DecodedFrame = struct {
-    pixel_buffer: vtb.CVPixelBufferRef,
+    pixel_buffer: vtw.CVPixelBufferRef,
 
     pub fn deinit(self: *const DecodedFrame) void {
-        vtb.CFRelease(self.pixel_buffer);
+        vtw.CFRelease(self.pixel_buffer);
     }
 };
 
@@ -225,13 +225,13 @@ pub const DecodedFrame = struct {
 export fn decompressionOutputCallback(
     decompressionOutputRefCon: ?*anyopaque,
     sourceFrameRefCon: ?*anyopaque,
-    status: vtb.OSStatus,
+    status: vtw.OSStatus,
     infoFlags: u32,
-    imageBuffer: vtb.CVPixelBufferRef,
-    presentationTimeStamp: vtb.CMTime,
-    presentationDuration: vtb.CMTime,
+    imageBuffer: vtw.CVPixelBufferRef,
+    presentationTimeStamp: vtw.CMTime,
+    presentationDuration: vtw.CMTime,
 ) callconv(.c) void {
-    if (status != vtb.noErr) {
+    if (status != vtw.noErr) {
         std.debug.print("❌ Decode callback error: {d}\n", .{status});
         return;
     }
@@ -239,7 +239,7 @@ export fn decompressionOutputCallback(
     if (decompressionOutputRefCon) |ctx_ptr| {
         const ctx: *FrameContext = @ptrCast(@alignCast(ctx_ptr));
         ctx.pixel_buffer = imageBuffer;
-        _ = vtb.CFRetain(imageBuffer); // Keep it alive beyond callback
+        _ = vtw.CFRetain(imageBuffer); // Keep it alive beyond callback
     }
     _ = sourceFrameRefCon;
     _ = infoFlags;
@@ -262,8 +262,8 @@ export fn decompressionOutputCallback(
     // std.debug.print("   Total Size: {d} bytes\n", .{bytes_per_row * height});
 }
 
-fn createFormatDescription(source_media: *const media.SourceMedia) !vtb.CMVideoFormatDescriptionRef {
-    var format_desc: vtb.CMVideoFormatDescriptionRef = null;
+fn createFormatDescription(source_media: *const media.SourceMedia) !vtw.CMVideoFormatDescriptionRef {
+    var format_desc: vtw.CMVideoFormatDescriptionRef = null;
 
     // stsd atom structure:
     // 0-3: version/flags (4 bytes)
@@ -279,16 +279,16 @@ fn createFormatDescription(source_media: *const media.SourceMedia) !vtb.CMVideoF
     const image_desc_data = source_media.stsd_data[image_desc_offset..];
 
     // Use the QuickTime-specific function that takes raw ImageDescription data
-    const status = vtb.CMVideoFormatDescriptionCreateFromBigEndianImageDescriptionData(
+    const status = vtw.CMVideoFormatDescriptionCreateFromBigEndianImageDescriptionData(
         null,
         image_desc_data.ptr,
         image_desc_data.len,
-        vtb.CFStringGetSystemEncoding(),
+        vtw.CFStringGetSystemEncoding(),
         null, // NULL = QuickTimeMovie flavor (default)
         &format_desc,
     );
 
-    if (status != vtb.noErr) {
+    if (status != vtw.noErr) {
         std.debug.print("CMVideoFormatDescriptionCreateFromBigEndianImageDescriptionData failed: {d}\n", .{status});
         return error.CreateFormatDescriptionFailed;
     }
@@ -296,29 +296,29 @@ fn createFormatDescription(source_media: *const media.SourceMedia) !vtb.CMVideoF
 }
 
 fn createDecompressionSession(
-    format_desc: vtb.CMVideoFormatDescriptionRef,
+    format_desc: vtw.CMVideoFormatDescriptionRef,
     frame_ctx: *FrameContext,
-) !vtb.VTDecompressionSessionRef {
+) !vtw.VTDecompressionSessionRef {
 
     // Request 64-bit RGBA half-float output (16-bit float per channel)
-    var pixel_format_value: i32 = @bitCast(@as(u32, vtb.kCVPixelFormatType_64RGBAHalf));
-    const pixel_format_num = vtb.CFNumberCreate(
+    var pixel_format_value: i32 = @bitCast(@as(u32, vtw.kCVPixelFormatType_64RGBAHalf));
+    const pixel_format_num = vtw.CFNumberCreate(
         null,
-        vtb.kCFNumberSInt32Type,
+        vtw.kCFNumberSInt32Type,
         &pixel_format_value,
     );
-    defer if (pixel_format_num) |pf| vtb.CFRelease(pf);
+    defer if (pixel_format_num) |pf| vtw.CFRelease(pf);
 
     const keys = [_]?*const anyopaque{
-        @ptrCast(vtb.kCVPixelBufferMetalCompatibilityKey),
-        @ptrCast(vtb.kCVPixelBufferPixelFormatTypeKey),
+        @ptrCast(vtw.kCVPixelBufferMetalCompatibilityKey),
+        @ptrCast(vtw.kCVPixelBufferPixelFormatTypeKey),
     };
     const values = [_]?*const anyopaque{
-        @ptrCast(vtb.kCFBooleanTrue),
+        @ptrCast(vtw.kCFBooleanTrue),
         @ptrCast(pixel_format_num),
     };
 
-    const pixel_attrs = vtb.CFDictionaryCreate(
+    const pixel_attrs = vtw.CFDictionaryCreate(
         null,
         &keys[0],
         &values[0],
@@ -326,17 +326,17 @@ fn createDecompressionSession(
         null,
         null,
     );
-    defer vtb.CFRelease(pixel_attrs);
+    defer vtw.CFRelease(pixel_attrs);
 
     // Create callback record
-    const callback_record = vtb.VTDecompressionOutputCallbackRecord{
+    const callback_record = vtw.VTDecompressionOutputCallbackRecord{
         .decompressionOutputCallback = decompressionOutputCallback,
         .decompressionOutputRefCon = frame_ctx,
     };
 
     // Create decompression session
-    var decompression_session: vtb.VTDecompressionSessionRef = null;
-    const status = vtb.VTDecompressionSessionCreate(
+    var decompression_session: vtw.VTDecompressionSessionRef = null;
+    const status = vtw.VTDecompressionSessionCreate(
         null, // allocator
         format_desc,
         null, // Let VideoToolbox choose decoder automatically
@@ -345,7 +345,7 @@ fn createDecompressionSession(
         &decompression_session,
     );
 
-    if (status != vtb.noErr) {
+    if (status != vtw.noErr) {
         std.debug.print("VTDecompressionSessionCreate failed: {d}\n", .{status});
         return error.CreateDecompressionSessionFailed;
     }
@@ -356,37 +356,37 @@ fn createDecompressionSession(
 }
 
 /// DEBUG: Print supported pixel formats
-fn getSupportedPixelFormats(session: vtb.VTDecompressionSessionRef) !void {
+fn getSupportedPixelFormats(session: vtw.VTDecompressionSessionRef) !void {
     var props: ?*anyopaque = null;
-    const prop_status = vtb.VTSessionCopyProperty(
+    const prop_status = vtw.VTSessionCopyProperty(
         session,
-        vtb.kVTDecompressionPropertyKey_SupportedPixelFormatsOrderedByQuality,
+        vtw.kVTDecompressionPropertyKey_SupportedPixelFormatsOrderedByQuality,
         null,
         &props,
     );
-    if (prop_status == vtb.noErr and props != null) {
+    if (prop_status == vtw.noErr and props != null) {
         std.debug.print("\n📋 Supported Pixel Formats (ordered by quality):\n", .{});
-        const count = vtb.CFArrayGetCount(@ptrCast(props));
+        const count = vtw.CFArrayGetCount(@ptrCast(props));
         std.debug.print("   Count: {}\n", .{count});
         for (0..@intCast(count)) |i| {
-            const num = vtb.CFArrayGetValueAtIndex(@ptrCast(props), @intCast(i));
+            const num = vtw.CFArrayGetValueAtIndex(@ptrCast(props), @intCast(i));
             var format: u32 = 0;
-            _ = vtb.CFNumberGetValue(@ptrCast(@alignCast(@constCast(num))), vtb.kCFNumberSInt32Type, &format);
+            _ = vtw.CFNumberGetValue(@ptrCast(@alignCast(@constCast(num))), vtw.kCFNumberSInt32Type, &format);
             const bytes = @as([4]u8, @bitCast(format));
             std.debug.print("   [{}] 0x{X:0>8} ('{c}{c}{c}{c}')\n", .{ i, format, bytes[3], bytes[2], bytes[1], bytes[0] });
         }
-        vtb.CFRelease(props.?);
+        vtw.CFRelease(props.?);
     }
 }
 
-fn createBlockBuffer(frame_data: []u8) !vtb.CMBlockBufferRef {
-    var block_buffer: vtb.CMBlockBufferRef = null;
+fn createBlockBuffer(frame_data: []u8) !vtw.CMBlockBufferRef {
+    var block_buffer: vtw.CMBlockBufferRef = null;
 
-    const status = vtb.CMBlockBufferCreateWithMemoryBlock(
-        vtb.kCFAllocatorDefault,
+    const status = vtw.CMBlockBufferCreateWithMemoryBlock(
+        vtw.kCFAllocatorDefault,
         frame_data.ptr,
         frame_data.len,
-        vtb.kCFAllocatorNull,
+        vtw.kCFAllocatorNull,
         null,
         0,
         frame_data.len,
@@ -394,7 +394,7 @@ fn createBlockBuffer(frame_data: []u8) !vtb.CMBlockBufferRef {
         &block_buffer,
     );
 
-    if (status != vtb.noErr) {
+    if (status != vtw.noErr) {
         return error.CreateBlockBufferFailed;
     }
 
@@ -404,14 +404,14 @@ fn createBlockBuffer(frame_data: []u8) !vtb.CMBlockBufferRef {
 fn createSampleTimingInfo(
     frame_index: usize,
     source_media: *const media.SourceMedia,
-) vtb.CMSampleTimingInfo {
+) vtw.CMSampleTimingInfo {
     // PTS = frame_index × frame_duration / timescale
     // For frame 0: PTS = 0
     const pts_value: i64 = @as(i64, @intCast(frame_index)) * @as(i64, @intCast(source_media.frame_rate.original.den));
-    const pts = vtb.CMTimeMake(pts_value, @as(i32, @intCast(source_media.frame_rate.original.num)));
+    const pts = vtw.CMTimeMake(pts_value, @as(i32, @intCast(source_media.frame_rate.original.num)));
 
     // Duration = frame_duration / timescale
-    const duration = vtb.CMTimeMake(
+    const duration = vtw.CMTimeMake(
         @as(i64, @intCast(source_media.frame_rate.original.den)),
         @as(i32, @intCast(source_media.frame_rate.original.num)),
     );
@@ -427,25 +427,25 @@ fn createSampleTimingInfo(
 }
 
 fn createSampleBuffer(
-    block_buffer: vtb.CMBlockBufferRef,
-    timing_info: vtb.CMSampleTimingInfo,
-    format_desc: vtb.CMVideoFormatDescriptionRef,
-) !vtb.CMSampleBufferRef {
-    var sample_buffer: vtb.CMSampleBufferRef = null;
+    block_buffer: vtw.CMBlockBufferRef,
+    timing_info: vtw.CMSampleTimingInfo,
+    format_desc: vtw.CMVideoFormatDescriptionRef,
+) !vtw.CMSampleBufferRef {
+    var sample_buffer: vtw.CMSampleBufferRef = null;
 
-    const status = vtb.CMSampleBufferCreateReady(
-        vtb.kCFAllocatorDefault, // allocator
+    const status = vtw.CMSampleBufferCreateReady(
+        vtw.kCFAllocatorDefault, // allocator
         block_buffer, // dataBuffer (our block buffer)
         format_desc, // formatDescription
         1, // numSamples (1 frame)
         1, // numSampleTimingEntries
-        &[_]vtb.CMSampleTimingInfo{timing_info}, // sampleTimingArray
+        &[_]vtw.CMSampleTimingInfo{timing_info}, // sampleTimingArray
         0, // numSampleSizeEntries
         null, // sampleSizeArray
         &sample_buffer, // sampleBufferOut
     );
 
-    if (status != vtb.noErr) {
+    if (status != vtw.noErr) {
         return error.CreateSampleBufferFailed;
     }
 
@@ -453,10 +453,10 @@ fn createSampleBuffer(
 }
 
 fn decompress(
-    session: vtb.VTDecompressionSessionRef,
-    sample_buffer: vtb.CMSampleBufferRef,
+    session: vtw.VTDecompressionSessionRef,
+    sample_buffer: vtw.CMSampleBufferRef,
 ) !void {
-    const status = vtb.VTDecompressionSessionDecodeFrame(
+    const status = vtw.VTDecompressionSessionDecodeFrame(
         session,
         sample_buffer,
         0, // decodeFlags: no special options
@@ -464,14 +464,14 @@ fn decompress(
         null, // infoFlagsOut: output flags
     );
 
-    if (status != vtb.noErr) {
+    if (status != vtw.noErr) {
         std.debug.print("VTDecompressionSessionDecodeFrame failed: {d}\n", .{status});
         return error.DecodeFrameFailed;
     }
 
     // Wait for decoder to finish (blocks until callback completes)
-    const wait_status = vtb.VTDecompressionSessionWaitForAsynchronousFrames(session);
-    if (wait_status != vtb.noErr) {
+    const wait_status = vtw.VTDecompressionSessionWaitForAsynchronousFrames(session);
+    if (wait_status != vtw.noErr) {
         std.debug.print("VTDecompressionSessionWaitForAsynchronousFrames failed: {d}\n", .{wait_status});
         return error.DecoderWaitFailed;
     }
@@ -481,22 +481,22 @@ pub fn decode(source_media: *const media.SourceMedia) !void {
     std.debug.print("\n=== VideoToolbox Tests ===\n", .{});
 
     const format_desc = try createFormatDescription(source_media);
-    defer vtb.CFRelease(format_desc);
+    defer vtw.CFRelease(format_desc);
 
     // Check Fmt Description
     try verifyFmtDes(format_desc);
 
     // Check if hardware decode is supported for this codec
-    const codec_type = vtb.CMFormatDescriptionGetMediaSubType(format_desc);
-    const hw_supported = vtb.VTIsHardwareDecodeSupported(codec_type);
+    const codec_type = vtw.CMFormatDescriptionGetMediaSubType(format_desc);
+    const hw_supported = vtw.VTIsHardwareDecodeSupported(codec_type);
     std.debug.print("Hardware decode supported: {}\n", .{hw_supported != 0});
 
     var frame_ctx = FrameContext{ .pixel_buffer = null };
 
     const session = try createDecompressionSession(format_desc, &frame_ctx);
     defer {
-        vtb.VTDecompressionSessionInvalidate(session);
-        vtb.CFRelease(session);
+        vtw.VTDecompressionSessionInvalidate(session);
+        vtw.CFRelease(session);
     }
 
     std.debug.print("VTDecompressionSession created successfully!\n", .{});
@@ -524,10 +524,10 @@ pub fn decode(source_media: *const media.SourceMedia) !void {
     if (frame_ctx.pixel_buffer) |pb| {
         std.debug.print("Got pixel buffer: {*}\n", .{pb});
         // ... do stuff with it ...
-        vtb.CFRelease(pb); // Release when done
+        vtw.CFRelease(pb); // Release when done
     }
 
-    defer vtb.CFRelease(sample_buffer);
+    defer vtw.CFRelease(sample_buffer);
 
     defer source_media.mctx.allocator.free(buffer);
 
@@ -541,11 +541,11 @@ pub fn decode(source_media: *const media.SourceMedia) !void {
 //
 //
 /// Debug test checks
-fn verifyFmtDes(format_desc: vtb.CMVideoFormatDescriptionRef) !void {
+fn verifyFmtDes(format_desc: vtw.CMVideoFormatDescriptionRef) !void {
     std.debug.print("Format description created: {*}\n", .{format_desc});
 
     // Verify the codec type
-    const codec_type = vtb.CMFormatDescriptionGetMediaSubType(format_desc);
+    const codec_type = vtw.CMFormatDescriptionGetMediaSubType(format_desc);
     const codec_bytes: [4]u8 = @bitCast(codec_type);
     std.debug.print("   Codec FourCC: 0x{X:0>8} ('{s}')\n", .{
         codec_type,
@@ -553,6 +553,6 @@ fn verifyFmtDes(format_desc: vtb.CMVideoFormatDescriptionRef) !void {
     });
 
     // Verify dimensions
-    const dims = vtb.CMVideoFormatDescriptionGetDimensions(format_desc);
+    const dims = vtw.CMVideoFormatDescriptionGetDimensions(format_desc);
     std.debug.print("   Dimensions: {d}x{d}\n", .{ dims.width, dims.height });
 }
