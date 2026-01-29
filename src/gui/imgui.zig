@@ -384,7 +384,8 @@ pub const ImGuiContext = struct {
 
         try self.addRect(x, y, w, h, color);
 
-        addText(self, label, ((w / 2) + x), (y + (h / 2)), 16, .{ 255, 255, 255, 255 }) catch {};
+        const font_size = 16;
+        _ = TextWidget.addText(self, label, ((w / 2) + x), (y + (h / 2) - (font_size / 2)), font_size, .{ 255, 255, 255, 255 }) catch {};
 
         return clicked;
     }
@@ -523,81 +524,104 @@ pub const ImGuiContext = struct {
         return glyph;
     }
 
-    /// Add text to the rendering batch (generates quads, integrated with shapes)
-    /// Text will be drawn in the order it's added relative to shapes
-    pub fn addText(
-        self: *ImGuiContext,
-        text: []const u8,
-        x: f32,
-        y: f32,
-        font_size: f32,
-        color: [4]u8,
-    ) !void {
-        if (text.len == 0) return;
+    pub const TextWidget = struct {
+        width: f32,
+        height: f32,
+        x_offset: f32,
 
-        // Scale font size by backing scale factor for HiDPI rendering
-        const scaled_font_size = font_size * self.backing_scale_factor;
+        /// Add text to the rendering batch (generates quads, integrated with shapes)
+        /// Text will be drawn in the order it's added relative to shapes
+        pub fn addText(
+            ui: *ImGuiContext,
+            text: []const u8,
+            x: f32,
+            y: f32,
+            font_size: f32,
+            color: [4]u8,
+        ) !TextWidget {
+            // if (text.len == 0) return;
 
-        // Get or create font entry for this scaled size
-        const entry = try self.getOrCreateFontEntry(scaled_font_size);
+            // Scale font size by backing scale factor for HiDPI rendering
+            const scaled_font_size = font_size * ui.backing_scale_factor;
 
-        // Coordinates in points (NOT scaled - shader will handle conversion)
-        var cursor_x = x;
-        const baseline_y = y + (entry.font.ascent / self.backing_scale_factor); // + to offset to y-top
-        const packed_color = packColorBytes(color);
+            // Get or create font entry for this scaled size
+            const entry = try ui.getOrCreateFontEntry(scaled_font_size);
 
-        var is_first_char = true;
-        for (text) |char| {
-            const codepoint: u21 = char;
+            // Coordinates in points (NOT scaled - shader will handle conversion)
+            var cursor_x = x;
+            // std.debug.print("init cursor_x: {d}\n", .{cursor_x});
 
-            // Get or create glyph
-            const glyph_id = try entry.font.getGlyphID(codepoint);
-            const glyph = try self.getOrRenderGlyph(entry, glyph_id);
+            var x_width: f32 = 0;
 
-            // Calculate screen quad in points
-            // Glyph metrics are in pixels (rendered at scaled_font_size), convert to points
-            const scale = self.backing_scale_factor;
-            const bearing_x_pts = @as(f32, @floatFromInt(glyph.bearing_x)) / scale;
-            const bearing_y_pts = @as(f32, @floatFromInt(glyph.bearing_y)) / scale;
-            const width_pts = @as(f32, @floatFromInt(glyph.width)) / scale;
-            const height_pts = @as(f32, @floatFromInt(glyph.height)) / scale;
+            const baseline_y = y + (entry.font.ascent / ui.backing_scale_factor); // + to offset to y-top
+            const packed_color = packColorBytes(color);
 
-            // First char starts exactly at x, subsequent chars use bearing
-            const x1 = if (is_first_char) cursor_x else cursor_x + bearing_x_pts;
-            const y1 = baseline_y - (bearing_y_pts + height_pts); // Top of glyph
-            const x2 = x1 + width_pts;
-            const y2 = y1 + height_pts; // Bottom of glyph
+            var is_first_char = true;
 
-            // // Debug: draw glyph bounds
-            // try self.addRect(x1, y1, width_pts, height_pts, packColor(0.6, 0.6, 0.6, 0.6));
+            for (text) |char| {
+                const codepoint: u21 = char;
 
-            // Calculate atlas UVs (no flip needed - CTFontDrawGlyphs renders correctly)
-            const atlas_size_f: f32 = @floatFromInt(self.atlas.size);
-            const uv0_x = @as(f32, @floatFromInt(glyph.atlas_x)) / atlas_size_f;
-            const uv0_y = @as(f32, @floatFromInt(glyph.atlas_y)) / atlas_size_f;
-            const uv1_x = @as(f32, @floatFromInt(glyph.atlas_x + glyph.width)) / atlas_size_f;
-            const uv1_y = @as(f32, @floatFromInt(glyph.atlas_y + glyph.height)) / atlas_size_f;
+                // Get or create glyph
+                const glyph_id = try entry.font.getGlyphID(codepoint);
+                const glyph = try ui.getOrRenderGlyph(entry, glyph_id);
 
-            // Add quad (4 vertices + 6 indices)
-            const base_idx: u16 = @intCast(self.vertices.items.len);
+                // Calculate screen quad in points
+                // Glyph metrics are in pixels (rendered at scaled_font_size), convert to points
+                const scale = ui.backing_scale_factor;
+                const bearing_x_pts = @as(f32, @floatFromInt(glyph.bearing_x)) / scale;
+                const bearing_y_pts = @as(f32, @floatFromInt(glyph.bearing_y)) / scale;
+                const width_pts = @as(f32, @floatFromInt(glyph.width)) / scale;
+                const height_pts = @as(f32, @floatFromInt(glyph.height)) / scale;
 
-            // Add 4 vertices (TL, TR, BR, BL) with correct UVs
-            try self.vertices.append(self.allocator, ImVertex.init(x1, y1, uv0_x, uv0_y, packed_color)); // TL
-            try self.vertices.append(self.allocator, ImVertex.init(x2, y1, uv1_x, uv0_y, packed_color)); // TR
-            try self.vertices.append(self.allocator, ImVertex.init(x2, y2, uv1_x, uv1_y, packed_color)); // BR
-            try self.vertices.append(self.allocator, ImVertex.init(x1, y2, uv0_x, uv1_y, packed_color)); // BL
+                // First char starts exactly at x, subsequent chars use bearing spacing
+                const x1 = if (is_first_char) cursor_x else cursor_x + bearing_x_pts;
+                const y1 = baseline_y - (bearing_y_pts + height_pts); // Top of glyph
+                const x2 = x1 + width_pts;
+                const y2 = y1 + height_pts; // Bottom of glyph
 
-            // Add 6 indices (0,1,2, 0,2,3)
-            try self.indices.append(self.allocator, base_idx + 0);
-            try self.indices.append(self.allocator, base_idx + 1);
-            try self.indices.append(self.allocator, base_idx + 2);
-            try self.indices.append(self.allocator, base_idx + 0);
-            try self.indices.append(self.allocator, base_idx + 2);
-            try self.indices.append(self.allocator, base_idx + 3);
+                // Debug: draw glyph bounds
+                try ui.addRect(x1, y1, width_pts, height_pts, packColor(0.6, 0.6, 0.6, 0.6));
 
-            // Advance cursor (glyph.advance_x is in pixels, convert to points)
-            cursor_x += glyph.advance_x / scale;
-            is_first_char = false;
+                // Calculate atlas UVs (no flip needed - CTFontDrawGlyphs renders correctly)
+                const atlas_size_f: f32 = @floatFromInt(ui.atlas.size);
+                const uv0_x = @as(f32, @floatFromInt(glyph.atlas_x)) / atlas_size_f;
+                const uv0_y = @as(f32, @floatFromInt(glyph.atlas_y)) / atlas_size_f;
+                const uv1_x = @as(f32, @floatFromInt(glyph.atlas_x + glyph.width)) / atlas_size_f;
+                const uv1_y = @as(f32, @floatFromInt(glyph.atlas_y + glyph.height)) / atlas_size_f;
+
+                // Add quad (4 vertices + 6 indices)
+                const base_idx: u16 = @intCast(ui.vertices.items.len);
+
+                // Add 4 vertices (TL, TR, BR, BL) with correct UVs
+                try ui.vertices.append(ui.allocator, ImVertex.init(x1, y1, uv0_x, uv0_y, packed_color)); // TL
+                try ui.vertices.append(ui.allocator, ImVertex.init(x2, y1, uv1_x, uv0_y, packed_color)); // TR
+                try ui.vertices.append(ui.allocator, ImVertex.init(x2, y2, uv1_x, uv1_y, packed_color)); // BR
+                try ui.vertices.append(ui.allocator, ImVertex.init(x1, y2, uv0_x, uv1_y, packed_color)); // BL
+
+                // Add 6 indices (0,1,2, 0,2,3)
+                try ui.indices.append(ui.allocator, base_idx + 0);
+                try ui.indices.append(ui.allocator, base_idx + 1);
+                try ui.indices.append(ui.allocator, base_idx + 2);
+                try ui.indices.append(ui.allocator, base_idx + 0);
+                try ui.indices.append(ui.allocator, base_idx + 2);
+                try ui.indices.append(ui.allocator, base_idx + 3);
+
+                // Advance cursor (glyph.advance_x is in pixels, convert to points)
+                cursor_x += glyph.advance_x / scale;
+
+                // Text Width
+                x_width = cursor_x - x;
+
+                is_first_char = false;
+            }
+
+            try ui.addRect(x, y, x_width, font_size, packColor(0.0, 1, 0.3, 0.7));
+
+            return .{
+                .width = x_width,
+                .height = font_size,
+                .x_offset = (x_width / 2),
+            };
         }
-    }
+    };
 };

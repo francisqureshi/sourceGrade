@@ -27,8 +27,8 @@ pub fn startDb(allocator: Allocator, io: std.Io) !*pg.Pool {
             .host = "127.0.0.1",
         },
         .auth = .{
-            // .username = "fq",
-            .username = "mac10",
+            .username = "fq",
+            // .username = "mac10",
             .database = "sourcegrade",
             .timeout = 10_000,
         },

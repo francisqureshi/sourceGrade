@@ -211,8 +211,8 @@ pub fn initRenderContext(
     const start_time = try std.time.Instant.now();
 
     // Video path to load (will be loaded in render thread for proper I/O threading)
-    const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
-    // const video_path = "/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov";
+    // const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
+    const video_path = "/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalfAlpha.mov";
@@ -346,13 +346,13 @@ pub fn renderThread(ctx: *RenderContext) !void {
             std.debug.print("is_playing: {}\n", .{video_monitor.ctrl_playback});
         }
 
-        var disp_frame_buf: [1024]u8 = undefined;
-        const disp_frame_num = std.fmt.bufPrint(
-            &disp_frame_buf,
-            "Frame: {d} Playback Speed: {d:.2}",
-            .{ video_monitor.current_frame_index, video_monitor.ctrl_playback_speed },
-        ) catch "CantGetFrame";
-        ctx.imgui_ctx.addText(disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};
+        // var disp_frame_buf: [1024]u8 = undefined;
+        // const disp_frame_num = std.fmt.bufPrint(
+        //     &disp_frame_buf,
+        //     "Frame: {d} Playback Speed: {d:.2}",
+        //     .{ video_monitor.current_frame_index, video_monitor.ctrl_playback_speed },
+        // ) catch "CantGetFrame";
+        // ctx.imgui_ctx.addText(disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};
 
         // // Add text using new unified system
         // ctx.imgui_ctx.addText("Large-196pt", 0, 0, 196.0, .{ 255, 255, 255, 255 }) catch {};
