@@ -211,8 +211,8 @@ pub fn initRenderContext(
     const start_time = try std.time.Instant.now();
 
     // Video path to load (will be loaded in render thread for proper I/O threading)
-    const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
-    // const video_path = "/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov";
+    // const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
+    const video_path = "/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalf.mov";
     // const video_path = "/Users/fq/Desktop/AGMM/GreyRedHalfAlpha.mov";
@@ -355,6 +355,8 @@ pub fn renderThread(ctx: *RenderContext) !void {
         // ctx.imgui_ctx.addText(disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};
         // ctx.imgui_ctx.addText(disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};
         _ = imgui.ImGuiContext.TextWidget.addText(ctx.imgui_ctx, disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};
+
+        // _ = try imgui.ImGuiContext.TextLabelWidget.addTextLabel(ctx.imgui_ctx, "beep", 50, 50, 300, 40, 16);
 
         // // Add text using new unified system
         // ctx.imgui_ctx.addText("Large-196pt", 0, 0, 196.0, .{ 255, 255, 255, 255 }) catch {};

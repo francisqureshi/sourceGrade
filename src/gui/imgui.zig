@@ -136,8 +136,6 @@ pub const ImGuiContext = struct {
             .mouse_two_down = false,
             .display_width = 1600,
             .display_height = 900,
-            // .display_width = 1400,
-            // .display_height = 1000,
             .backing_scale_factor = 1.0,
             .device = device,
             .font_name = font_name,
@@ -524,31 +522,40 @@ pub const ImGuiContext = struct {
         return glyph;
     }
 
-    pub const TextLabelWidget = struct {
-        parent: null,
-        width: f32,
-        height: f32,
-        center_x: f32,
-
-        pub fn addTextLabel(
-            ui: *ImGuiContext,
-            // parent: null,
-            text: []const u8,
-            x: f32,
-            y: f32,
-            width: f32,
-            height: f32,
-            font_size: f32,
-            color: [4]u8,
-            bg_color: [4]u8,
-        ) !TextLabelWidget {
-            addRect(ui, x, y, width, height, bg_color);
-            const text_widget = TextWidget.addText(ui, text, x, y, font_size, color);
-        }
-    };
+    // pub const TextLabelWidget = struct {
+    //     parent: ?f32,
+    //     width: f32,
+    //     height: f32,
+    //     center_x: f32,
+    //
+    //     pub fn addTextLabel(
+    //         ui: *ImGuiContext,
+    //         // parent: null,
+    //         text: []const u8,
+    //         x: f32,
+    //         y: f32,
+    //         width: f32,
+    //         height: f32,
+    //         font_size: f32,
+    //         // color: [4]u8,
+    //         // bg_color: [4]u8,
+    //     ) !void {
+    //         // _ = bg_color;
+    //         // _ = text;
+    //         // _ = font_size;
+    //
+    //         // rectangle?
+    //         addRect(ui, x, y, width, height, packColor(0.6, 0.6, 0.6, 1)) catch {};
+    //
+    //         // text_widget.width should be used to position addtext...
+    //         const text_widget = try TextWidget.addText(ui, text, x, y, font_size, .{ 0, 0, 255, 255 });
+    //         _ = text_widget;
+    //         // std.debug.print("text_widget width: {d} px\n", .{text_widget.width});
+    //     }
+    // };
 
     pub const TextWidget = struct {
-        parent: null,
+        parent: ?f32,
         width: f32,
         height: f32,
         center_x: f32,
@@ -603,8 +610,8 @@ pub const ImGuiContext = struct {
                 const x2 = x1 + width_pts;
                 const y2 = y1 + height_pts; // Bottom of glyph
 
-                // Debug: draw glyph bounds
-                try ui.addRect(x1, y1, width_pts, height_pts, packColor(0.6, 0.6, 0.6, 0.6));
+                // // Debug: draw glyph bounds
+                // try ui.addRect(x1, y1, width_pts, height_pts, packColor(0.6, 0.6, 0.6, 0.6));
 
                 // Calculate atlas UVs (no flip needed - CTFontDrawGlyphs renders correctly)
                 const atlas_size_f: f32 = @floatFromInt(ui.atlas.size);
@@ -639,7 +646,7 @@ pub const ImGuiContext = struct {
                 is_first_char = false;
             }
 
-            try ui.addRect(x, y, x_width, font_size, packColor(0.0, 1, 0.3, 0.1));
+            try ui.addRect(x, y, x_width, font_size, packColor(0.0, 1, 0.3, 0.4));
 
             return .{
                 .parent = null, // parent is .... @fieldParentPtr() ??
