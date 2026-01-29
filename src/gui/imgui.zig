@@ -524,10 +524,34 @@ pub const ImGuiContext = struct {
         return glyph;
     }
 
-    pub const TextWidget = struct {
+    pub const TextLabelWidget = struct {
+        parent: null,
         width: f32,
         height: f32,
-        x_offset: f32,
+        center_x: f32,
+
+        pub fn addTextLabel(
+            ui: *ImGuiContext,
+            // parent: null,
+            text: []const u8,
+            x: f32,
+            y: f32,
+            width: f32,
+            height: f32,
+            font_size: f32,
+            color: [4]u8,
+            bg_color: [4]u8,
+        ) !TextLabelWidget {
+            addRect(ui, x, y, width, height, bg_color);
+            const text_widget = TextWidget.addText(ui, text, x, y, font_size, color);
+        }
+    };
+
+    pub const TextWidget = struct {
+        parent: null,
+        width: f32,
+        height: f32,
+        center_x: f32,
 
         /// Add text to the rendering batch (generates quads, integrated with shapes)
         /// Text will be drawn in the order it's added relative to shapes
@@ -615,12 +639,13 @@ pub const ImGuiContext = struct {
                 is_first_char = false;
             }
 
-            try ui.addRect(x, y, x_width, font_size, packColor(0.0, 1, 0.3, 0.7));
+            try ui.addRect(x, y, x_width, font_size, packColor(0.0, 1, 0.3, 0.1));
 
             return .{
+                .parent = null, // parent is .... @fieldParentPtr() ??
                 .width = x_width,
                 .height = font_size,
-                .x_offset = (x_width / 2),
+                .center_x = cursor_x - (x_width / 2),
             };
         }
     };
