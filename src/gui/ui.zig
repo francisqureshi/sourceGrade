@@ -1,9 +1,12 @@
 const std = @import("std");
 const metal = @import("metal");
+
 const Font = @import("text/font/Font.zig");
 const Atlas = @import("text/font/Atlas.zig");
 const Glyph = @import("text/font/Glyph.zig");
 const GlyphCache = @import("text/font/GlyphCache.zig");
+
+pub const layout = @import("layout.zig");
 
 /// Vertex format for immediate-mode GUI rendering
 /// Optimized for batched drawing with indexed triangles
@@ -223,50 +226,6 @@ pub const ImGuiContext = struct {
         // Advance to next frame buffer
         self.current_frame = (self.current_frame + 1) % FRAMES_IN_FLIGHT;
     }
-
-    /// LayoutRect
-    pub const Rect = struct {
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
-    };
-
-    /// Initial Layout Attempt: H-Stack
-    pub const HStack = struct {
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
-
-        x_cursor: f32,
-
-        pub fn init(x: f32, y: f32, width: f32, height: f32) !HStack {
-            return .{
-                .x = x,
-                .y = y,
-                .w = width,
-                .h = height,
-                .x_cursor = 0,
-            };
-        }
-
-        pub fn next(self: *HStack, req_width: f32, req_height: f32) Rect {
-            const x = self.x_cursor;
-            const y = self.y;
-
-            // Advance the cursor and max the height according requested contents
-            self.x_cursor += req_width;
-            self.h = @max(self.h, req_height);
-
-            return .{
-                .x = x,
-                .y = y,
-                .w = req_width,
-                .h = req_height,
-            };
-        }
-    };
 
     /// Add a filled triangle to the current frame's geometry, xy is first point, other points followed are relative.
     pub fn addTriangle(self: *ImGuiContext, x: f32, y: f32, xb: f32, yb: f32, xc: f32, yc: f32, color: u32) !void {

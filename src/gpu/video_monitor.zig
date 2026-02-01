@@ -1,6 +1,6 @@
 const std = @import("std");
 const metal = @import("metal");
-const imgui = @import("../gui/imgui.zig");
+const ui = @import("../gui/ui.zig");
 
 const media = @import("../io/media.zig");
 const videotoolbox = @import("../io/decode/videotoolbox.zig");

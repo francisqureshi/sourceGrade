@@ -8,17 +8,22 @@ pub const Rect = struct {
     h: f32,
 };
 
-const SizePolicy = union(enum) {
-    fixed: f32, // exact pixel size
-    fill: f32, // weight for remaining space (1.0 = equal share)
-    percent: f32, // percentage of parent (0.0 - 1.0)
-    text_content, // sized to fit text (future)
-    children_sum, // sized to fit children (future)
+pub const SizePolicy = union(enum) {
+    /// Exact pixel size
+    fixed: f32,
+    /// Weight for remaining space (1.0 = equal share)
+    fill: f32,
+    /// Percentage of parent (0.0 - 1.0)
+    percent: f32,
+    /// Sized to fit text (future)
+    text_content,
+    /// Sized to fit children (future)
+    children_sum,
 };
 
 const ChildEntry = struct {
     width_policy: SizePolicy,
-    height: f32, // keep height simple/fixed for now
+    height_policy: SizePolicy,
     resolved_rect: Rect, // filled in during solve()
 };
 
@@ -50,10 +55,10 @@ pub const HStack = struct {
     }
 
     /// Add Child to Array at child_count idx
-    pub fn add(self: *HStack, width: SizePolicy, height: f32) void {
+    pub fn add(self: *HStack, width: SizePolicy, height: SizePolicy) void {
         const ce = ChildEntry{
             .width_policy = width,
-            .height = height,
+            .height_policy = height,
             .resolved_rect = undefined,
         };
         self.children[self.child_count] = ce;
@@ -108,43 +113,25 @@ pub const HStack = struct {
 
             child.resolved_rect.x = self.x_cursor;
             child.resolved_rect.y = self.y;
-            child.resolved_rect.h = child.height;
+
+            // child.height_policy;
+            child.resolved_rect.h = switch (child.height_policy) {
+                .fixed => |val| val,
+                .fill => self.h,
+                .percent => |pct| pct * self.h,
+                else => 0,
+            };
 
             // Advance the cursor
             self.x_cursor += child.resolved_rect.w;
 
             // Max the Stacks height per what the caller asks for
-            self.h = @max(self.h, child.height);
+            self.h = @max(self.h, child.resolved_rect.h);
         }
     }
 
     pub fn get(self: *HStack, index: usize) Rect {
         return self.children[index].resolved_rect;
-    }
-
-    /// Deprecated in favour of Add
-    pub fn next(self: *HStack, req_width: SizePolicy, req_height: f32) Rect {
-
-        // Add Spacing if not first elem
-        if (self.x != self.x_cursor) {
-            self.x_cursor += self.gutter;
-        }
-
-        const x = self.x_cursor;
-        const y = self.y;
-
-        // Advance the cursor
-        self.x_cursor += req_width;
-
-        // Max the Stacks height per what the caller asks for
-        self.h = @max(self.h, req_height);
-
-        return .{
-            .x = x,
-            .y = y,
-            .w = req_width,
-            .h = req_height,
-        };
     }
 };
 

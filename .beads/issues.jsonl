@@ -1,3 +1,0 @@
-{"id":"sourceGrade-1bj","title":"Add Vulkan backend module (gpu/vulkan/)","status":"open","priority":4,"issue_type":"feature","created_at":"2026-01-03T18:56:21.398455Z","created_by":"fq","updated_at":"2026-01-03T18:56:21.398455Z"}
-{"id":"sourceGrade-jws","title":"Add CUDA backend module (gpu/cuda/)","status":"open","priority":3,"issue_type":"feature","created_at":"2026-01-03T18:56:21.306351Z","created_by":"fq","updated_at":"2026-01-03T18:56:21.306351Z"}
-{"id":"sourceGrade-yu0","title":"Move test functions to inline test blocks","status":"open","priority":3,"issue_type":"task","created_at":"2026-01-03T18:56:21.200855Z","created_by":"fq","updated_at":"2026-01-03T18:56:21.200855Z"}

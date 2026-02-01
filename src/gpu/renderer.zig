@@ -1,7 +1,6 @@
 const std = @import("std");
 const metal = @import("metal");
-const imgui = @import("../gui/imgui.zig");
-const layout = @import("../gui/layout.zig");
+const ui = @import("../gui/ui.zig");
 
 const media = @import("../io/media.zig");
 const videotoolbox = @import("../io/decode/videotoolbox.zig");
@@ -39,7 +38,7 @@ pub const RenderContext = struct {
     pipeline: metal.MetalRenderPipelineState,
     imgui_pipeline: metal.MetalRenderPipelineState,
     video_pipeline: metal.MetalRenderPipelineState,
-    imgui_ctx: *imgui.ImGuiContext,
+    imgui_ctx: *ui.ImGuiContext,
     displaylink: ?*anyopaque,
     start_time: std.time.Instant,
 
@@ -57,7 +56,7 @@ pub const RenderContext = struct {
 pub const InitResult = struct {
     context: RenderContext,
     device: metal.MetalDevice,
-    imgui_ctx_owned: *imgui.ImGuiContext,
+    imgui_ctx_owned: *ui.ImGuiContext,
 };
 
 /// Initialize all GPU resources. Returns context, device, and heap-allocated imgui context.
@@ -182,8 +181,8 @@ pub fn initRenderContext(
     std.debug.print("✓ Created video render pipeline\n\n", .{});
 
     // Initialize IMGUI context on heap so pointer stays valid
-    const imgui_ctx_owned = try allocator.create(imgui.ImGuiContext);
-    imgui_ctx_owned.* = try imgui.ImGuiContext.init(allocator, &device, pixel_format);
+    const imgui_ctx_owned = try allocator.create(ui.ImGuiContext);
+    imgui_ctx_owned.* = try ui.ImGuiContext.init(allocator, &device, pixel_format);
     imgui_ctx_owned.display_width = 1600;
     imgui_ctx_owned.display_height = 900;
     std.debug.print("✓ Created IMGUI context (triple-buffered)\n\n", .{});
@@ -324,8 +323,8 @@ pub fn renderThread(ctx: *RenderContext) !void {
         ctx.imgui_ctx.mouse_down = mouse_down;
 
         ctx.imgui_ctx.slider(1, 1400, 300, 100, 50, &test_slider_value, 0, 1) catch {};
-        ctx.imgui_ctx.addRect(1400, 50, 100, 100, imgui.ImGuiContext.packColor(test_slider_value, 1, 0, 1.0)) catch {};
-        ctx.imgui_ctx.addRect(1450, 100, 100, 100, imgui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
+        ctx.imgui_ctx.addRect(1400, 50, 100, 100, ui.ImGuiContext.packColor(test_slider_value, 1, 0, 1.0)) catch {};
+        ctx.imgui_ctx.addRect(1450, 100, 100, 100, ui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
 
         // ============ Video Controls
 
@@ -356,7 +355,7 @@ pub fn renderThread(ctx: *RenderContext) !void {
 
         // ctx.imgui_ctx.addText(disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};
         // ctx.imgui_ctx.addText(disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};
-        _ = imgui.ImGuiContext.TextWidget.addText(ctx.imgui_ctx, disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};
+        _ = ui.ImGuiContext.TextWidget.addText(ctx.imgui_ctx, disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};
 
         // LAYOUT LAYOUT LAYOUT
         // LAYOUT LAYOUT
@@ -364,26 +363,30 @@ pub fn renderThread(ctx: *RenderContext) !void {
 
         // Init Stacks
 
-        var row = layout.HStack.init(100, 200, 1000, 50, 50);
-        row.add(.{ .fixed = 150 }, 50); // play button
-        row.add(.{ .fill = 1.0 }, 50); // scrubber fills remaining
-        row.add(.{ .fixed = 300 }, 50); // timecode display
+        var row = ui.layout.HStack.init(100, 200, 1000, 50, 50);
+        const toolbar_height: ui.layout.SizePolicy = .{ .percent = 0.75 };
+        row.add(.{ .fixed = 150 }, toolbar_height); // play button
+        row.add(.{ .fill = 1.0 }, toolbar_height); // scrubber fills remaining
+        row.add(.{ .percent = 0.33 }, toolbar_height); // timecode display
+        row.add(.{ .fill = 0.10 }, toolbar_height); // second fill
         row.solve();
 
         const btn1_rect = row.get(0);
         const scrub_rect = row.get(1);
         const tc_rect = row.get(2);
+        const second_fill_rect = row.get(3);
 
         // Draw HStack
 
         // After the Layout .next's we can draw the debug Stack bounding
         // Red
-        try ctx.imgui_ctx.addRect(row.x, row.y, row.w, row.h, imgui.ImGuiContext.packColor(1, 0, 0, 0.2));
+        try ctx.imgui_ctx.addRect(row.x, row.y, row.w, row.h, ui.ImGuiContext.packColor(1, 0, 0, 0.2));
 
         // Draw using computed positions
         _ = ctx.imgui_ctx.button(5, btn1_rect.x, btn1_rect.y, btn1_rect.w, btn1_rect.h, "|>") catch false;
         _ = ctx.imgui_ctx.button(6, scrub_rect.x, scrub_rect.y, scrub_rect.w, scrub_rect.h, "------------|-------") catch false;
         _ = ctx.imgui_ctx.button(7, tc_rect.x, tc_rect.y, tc_rect.w, tc_rect.h, "TC 00:00:00:00") catch false;
+        _ = ctx.imgui_ctx.button(8, second_fill_rect.x, second_fill_rect.y, second_fill_rect.w, second_fill_rect.h, "Second fill") catch false;
 
         // LAYOUT
         // LAYOUT LAYOUT
