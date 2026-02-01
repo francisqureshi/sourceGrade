@@ -1,6 +1,7 @@
 const std = @import("std");
 const metal = @import("metal");
 const imgui = @import("../gui/imgui.zig");
+const layout = @import("../gui/layout.zig");
 
 const media = @import("../io/media.zig");
 const videotoolbox = @import("../io/decode/videotoolbox.zig");
@@ -352,9 +353,41 @@ pub fn renderThread(ctx: *RenderContext) !void {
             "Frame: {d} Playback Speed: {d:.2}",
             .{ video_monitor.current_frame_index, video_monitor.ctrl_playback_speed },
         ) catch "CantGetFrame";
+
         // ctx.imgui_ctx.addText(disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};
         // ctx.imgui_ctx.addText(disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};
         _ = imgui.ImGuiContext.TextWidget.addText(ctx.imgui_ctx, disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};
+
+        // LAYOUT LAYOUT LAYOUT
+        // LAYOUT LAYOUT
+        // LAYOUT
+
+        // Init Stacks
+
+        var row = layout.HStack.init(100, 200, 1000, 50, 50);
+        row.add(.{ .fixed = 150 }, 50); // play button
+        row.add(.{ .fill = 1.0 }, 50); // scrubber fills remaining
+        row.add(.{ .fixed = 300 }, 50); // timecode display
+        row.solve();
+
+        const btn1_rect = row.get(0);
+        const scrub_rect = row.get(1);
+        const tc_rect = row.get(2);
+
+        // Draw HStack
+
+        // After the Layout .next's we can draw the debug Stack bounding
+        // Red
+        try ctx.imgui_ctx.addRect(row.x, row.y, row.w, row.h, imgui.ImGuiContext.packColor(1, 0, 0, 0.2));
+
+        // Draw using computed positions
+        _ = ctx.imgui_ctx.button(5, btn1_rect.x, btn1_rect.y, btn1_rect.w, btn1_rect.h, "|>") catch false;
+        _ = ctx.imgui_ctx.button(6, scrub_rect.x, scrub_rect.y, scrub_rect.w, scrub_rect.h, "------------|-------") catch false;
+        _ = ctx.imgui_ctx.button(7, tc_rect.x, tc_rect.y, tc_rect.w, tc_rect.h, "TC 00:00:00:00") catch false;
+
+        // LAYOUT
+        // LAYOUT LAYOUT
+        // LAYOUT LAYOUT LAYOUT
 
         // _ = try imgui.ImGuiContext.TextLabelWidget.addTextLabel(ctx.imgui_ctx, "beep", 50, 50, 300, 40, 16);
 

@@ -224,6 +224,50 @@ pub const ImGuiContext = struct {
         self.current_frame = (self.current_frame + 1) % FRAMES_IN_FLIGHT;
     }
 
+    /// LayoutRect
+    pub const Rect = struct {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    };
+
+    /// Initial Layout Attempt: H-Stack
+    pub const HStack = struct {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+
+        x_cursor: f32,
+
+        pub fn init(x: f32, y: f32, width: f32, height: f32) !HStack {
+            return .{
+                .x = x,
+                .y = y,
+                .w = width,
+                .h = height,
+                .x_cursor = 0,
+            };
+        }
+
+        pub fn next(self: *HStack, req_width: f32, req_height: f32) Rect {
+            const x = self.x_cursor;
+            const y = self.y;
+
+            // Advance the cursor and max the height according requested contents
+            self.x_cursor += req_width;
+            self.h = @max(self.h, req_height);
+
+            return .{
+                .x = x,
+                .y = y,
+                .w = req_width,
+                .h = req_height,
+            };
+        }
+    };
+
     /// Add a filled triangle to the current frame's geometry, xy is first point, other points followed are relative.
     pub fn addTriangle(self: *ImGuiContext, x: f32, y: f32, xb: f32, yb: f32, xc: f32, yc: f32, color: u32) !void {
         const base = @as(u16, @intCast(self.vertices.items.len));
@@ -580,7 +624,6 @@ pub const ImGuiContext = struct {
 
             // Coordinates in points (NOT scaled - shader will handle conversion)
             var cursor_x = x;
-            // std.debug.print("init cursor_x: {d}\n", .{cursor_x});
 
             var x_width: f32 = 0;
 
