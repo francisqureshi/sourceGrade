@@ -361,8 +361,7 @@ pub fn renderThread(ctx: *RenderContext) !void {
         // LAYOUT LAYOUT
         // LAYOUT
 
-        // Init Stacks
-
+        // Init HStack
         var row = ui.layout.HStack.init(100, 200, 1000, 50, 50);
         const toolbar_height: ui.layout.SizePolicy = .{ .percent = 0.75 };
         row.add(.{ .fixed = 150 }, toolbar_height); // play button
@@ -387,6 +386,38 @@ pub fn renderThread(ctx: *RenderContext) !void {
         _ = ctx.imgui_ctx.button(6, scrub_rect.x, scrub_rect.y, scrub_rect.w, scrub_rect.h, "------------|-------") catch false;
         _ = ctx.imgui_ctx.button(7, tc_rect.x, tc_rect.y, tc_rect.w, tc_rect.h, "TC 00:00:00:00") catch false;
         _ = ctx.imgui_ctx.button(8, second_fill_rect.x, second_fill_rect.y, second_fill_rect.w, second_fill_rect.h, "Second fill") catch false;
+
+        // Init VStack
+        var col = ui.layout.VStack.init(300, 50, 50, 500, 3);
+        const vert_bar_width: ui.layout.SizePolicy = .{ .percent = 0.66 };
+        col.add(vert_bar_width, .{ .fill = 0.10 });
+        col.add(vert_bar_width, .{ .fill = 0.10 });
+        col.add(vert_bar_width, .{ .fill = 0.10 });
+        col.add(vert_bar_width, .{ .fill = 0.10 });
+        col.add(vert_bar_width, .{ .fill = 0.10 });
+        col.add(vert_bar_width, .{ .fill = 0.10 });
+        col.add(vert_bar_width, .{ .fill = 0.10 });
+        col.add(vert_bar_width, .{ .fill = 0.10 });
+        col.add(vert_bar_width, .{ .fill = 0.10 });
+        col.add(vert_bar_width, .{ .fill = 0.10 });
+        col.solve();
+
+        var ver_bar_elems: [10]ui.layout.Rect = undefined;
+        for (0..10) |i| {
+            ver_bar_elems[i] = col.get(i);
+        }
+
+        // Draw VStack
+
+        // After the Layout .next's we can draw the debug Stack bounding
+        // Red
+        try ctx.imgui_ctx.addRect(col.x, col.y, col.w, col.h, ui.ImGuiContext.packColor(1, 0, 0, 1.0));
+
+        // Draw using computed positions
+
+        for (ver_bar_elems) |elem| {
+            try ctx.imgui_ctx.addRect(elem.x, elem.y, elem.w, elem.h, ui.ImGuiContext.packColor(0, 1, 0, 1.0));
+        }
 
         // LAYOUT
         // LAYOUT LAYOUT
