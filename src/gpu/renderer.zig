@@ -362,12 +362,12 @@ pub fn renderThread(ctx: *RenderContext) !void {
         // LAYOUT
 
         // Init HStack
-        var row = ui.layout.HStack.init(100, 200, 1000, 50, 50);
+        var row = ui.layout.HStack.init(100, 200, 700, 50, 50);
         const toolbar_height: ui.layout.SizePolicy = .{ .percent = 0.75 };
-        row.add(.{ .pixels = 150 }, toolbar_height); // play button
-        row.add(.{ .fill = 1.0 }, toolbar_height); // scrubber fills remaining
-        row.add(.{ .percent = 0.33 }, toolbar_height); // timecode display
-        row.add(.{ .fill = 0.10 }, toolbar_height); // second fill
+        row.add(.{ .pixels = 200 }, toolbar_height, 0.1); // play button
+        row.add(.{ .pixels = 200 }, toolbar_height, 0.25); // scrubber fills remaining
+        row.add(.{ .pixels = 200 }, toolbar_height, 0.5); // timecode display
+        row.add(.{ .pixels = 200 }, toolbar_height, 1.0); // second fill
         row.solve();
 
         const btn1_rect = row.get(0);
@@ -379,7 +379,7 @@ pub fn renderThread(ctx: *RenderContext) !void {
 
         // After the Layout .next's we can draw the debug Stack bounding
         // Red
-        try ctx.imgui_ctx.addRect(row.x, row.y, row.w, row.h, ui.ImGuiContext.packColor(1, 0, 0, 0.2));
+        try ctx.imgui_ctx.addRect(row.x, row.y, row.w, row.h, ui.ImGuiContext.packColor(1, 0, 0, 1));
 
         // Draw using computed positions
         _ = ctx.imgui_ctx.button(5, btn1_rect.x, btn1_rect.y, btn1_rect.w, btn1_rect.h, "|>") catch false;
@@ -391,8 +391,9 @@ pub fn renderThread(ctx: *RenderContext) !void {
         var col = ui.layout.VStack.init(300, 50, 50, 500, 3);
         const vert_bar_width: ui.layout.SizePolicy = .{ .percent = 0.66 };
 
-        for (0..32) |_| {
-            col.add(vert_bar_width, .{ .fill = 0.10 });
+        col.add(vert_bar_width, .{ .percent = 0.33 }, 1.0);
+        for (0..30) |_| {
+            col.add(vert_bar_width, .{ .fill = 0.10 }, 0.0);
         }
 
         col.solve();

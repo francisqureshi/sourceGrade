@@ -57,11 +57,12 @@ pub const HStack = struct {
     }
 
     /// Add Child to Array at child_count idx
-    pub fn add(self: *HStack, width: SizePolicy, height: SizePolicy) void {
+    pub fn add(self: *HStack, width: SizePolicy, height: SizePolicy, strictness: f32) void {
         const ce = ChildEntry{
             .width_policy = width,
             .height_policy = height,
             .resolved_rect = undefined,
+            .strictness = strictness,
         };
         self.children[self.child_count] = ce;
 
@@ -73,6 +74,7 @@ pub const HStack = struct {
         var total_pixels: f32 = 0;
         var total_percent: f32 = 0;
         var total_fill_weight: f32 = 0;
+        var total_gutter: f32 = 0;
 
         for (self.children[0..self.child_count]) |*child| {
             switch (child.width_policy) {
@@ -93,7 +95,7 @@ pub const HStack = struct {
             }
         }
 
-        const total_gutter = @as(f32, @floatFromInt(self.child_count - 1)) * self.gutter;
+        total_gutter = @as(f32, @floatFromInt(self.child_count - 1)) * self.gutter;
         const remaining = self.w - total_pixels - total_percent - total_gutter;
 
         // Step 2: distribute remaining to fill children
@@ -107,31 +109,33 @@ pub const HStack = struct {
         }
 
         // Step 2.5 - Strictness
-        // FIXME: WIP WIP WIP
-        var resolved_total = 0;
+        var resolved_total: f32 = 0;
 
         for (self.children[0..self.child_count]) |*child| {
             resolved_total += child.resolved_rect.w;
         }
 
-        const amount: isize = resolved_total - self.w;
+        const amount: f32 = resolved_total - (self.w - total_gutter);
+
         if (amount > 0) {
             // Violation: We need to reduce the total by capture via strictness.
-            var split_count = 0;
-            var actionable_strictness = 0;
+            var total_willingness: f32 = 0;
 
             for (self.children[0..self.child_count]) |*child| {
                 if (child.strictness != 1.0) {
-                    actionable_strictness += child.strictness;
-                    split_count += 1;
+                    const willingness = 1.0 - child.strictness;
+                    total_willingness += willingness;
                 }
             }
 
-            for (self.children[0..self.child_count]) |*child| {
-                if (child.strictness != 1.0) {
-                    const working_strictness = child.strictness * actionable_strictness;
-                    const new_width = child.resolved_rect.w / working_strictness;
-                    // ??
+            if (total_willingness > 0) {
+                for (self.children[0..self.child_count]) |*child| {
+                    if (child.strictness != 1.0) {
+                        const willingness = 1.0 - child.strictness;
+                        const share = willingness / total_willingness;
+                        const shrink = amount * share;
+                        child.resolved_rect.w -= shrink;
+                    }
                 }
             }
         }
@@ -196,11 +200,12 @@ pub const VStack = struct {
     }
 
     /// Add Child to Array at child_count idx
-    pub fn add(self: *VStack, width: SizePolicy, height: SizePolicy) void {
+    pub fn add(self: *VStack, width: SizePolicy, height: SizePolicy, strictness: f32) void {
         const ce = ChildEntry{
             .width_policy = width,
             .height_policy = height,
             .resolved_rect = undefined,
+            .strictness = strictness,
         };
         self.children[self.child_count] = ce;
 
@@ -212,6 +217,7 @@ pub const VStack = struct {
         var total_pixels: f32 = 0;
         var total_percent: f32 = 0;
         var total_fill_weight: f32 = 0;
+        var total_gutter: f32 = 0;
 
         for (self.children[0..self.child_count]) |*child| {
             switch (child.height_policy) {
@@ -232,7 +238,7 @@ pub const VStack = struct {
             }
         }
 
-        const total_gutter = @as(f32, @floatFromInt(self.child_count - 1)) * self.gutter;
+        total_gutter = @as(f32, @floatFromInt(self.child_count - 1)) * self.gutter;
         const remaining = self.h - total_pixels - total_percent - total_gutter;
 
         // Step 2: distribute remaining to fill children
@@ -242,6 +248,38 @@ pub const VStack = struct {
                     child.resolved_rect.h = (remaining * (weight / total_fill_weight));
                 },
                 else => {},
+            }
+        }
+
+        // Step 2.5 - Strictness
+        var resolved_total: f32 = 0;
+
+        for (self.children[0..self.child_count]) |*child| {
+            resolved_total += child.resolved_rect.h;
+        }
+
+        const amount: f32 = resolved_total - (self.h - total_gutter);
+
+        if (amount > 0) {
+            // Violation: We need to reduce the total by capture via strictness.
+            var total_willingness: f32 = 0;
+
+            for (self.children[0..self.child_count]) |*child| {
+                if (child.strictness != 1.0) {
+                    const willingness = 1.0 - child.strictness;
+                    total_willingness += willingness;
+                }
+            }
+
+            if (total_willingness > 0) {
+                for (self.children[0..self.child_count]) |*child| {
+                    if (child.strictness != 1.0) {
+                        const willingness = 1.0 - child.strictness;
+                        const share = willingness / total_willingness;
+                        const shrink = amount * share;
+                        child.resolved_rect.h -= shrink;
+                    }
+                }
             }
         }
 
@@ -258,7 +296,7 @@ pub const VStack = struct {
             // child.weight_policy;
             child.resolved_rect.w = switch (child.width_policy) {
                 .pixels => |val| val,
-                .fill => self.h,
+                .fill => self.w,
                 .percent => |pct| pct * self.w,
                 else => 0,
             };
