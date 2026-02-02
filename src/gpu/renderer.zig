@@ -364,7 +364,7 @@ pub fn renderThread(ctx: *RenderContext) !void {
         // Init HStack
         var row = ui.layout.HStack.init(100, 200, 1000, 50, 50);
         const toolbar_height: ui.layout.SizePolicy = .{ .percent = 0.75 };
-        row.add(.{ .fixed = 150 }, toolbar_height); // play button
+        row.add(.{ .pixels = 150 }, toolbar_height); // play button
         row.add(.{ .fill = 1.0 }, toolbar_height); // scrubber fills remaining
         row.add(.{ .percent = 0.33 }, toolbar_height); // timecode display
         row.add(.{ .fill = 0.10 }, toolbar_height); // second fill
@@ -390,33 +390,33 @@ pub fn renderThread(ctx: *RenderContext) !void {
         // Init VStack
         var col = ui.layout.VStack.init(300, 50, 50, 500, 3);
         const vert_bar_width: ui.layout.SizePolicy = .{ .percent = 0.66 };
-        col.add(vert_bar_width, .{ .fill = 0.10 });
-        col.add(vert_bar_width, .{ .fill = 0.10 });
-        col.add(vert_bar_width, .{ .fill = 0.10 });
-        col.add(vert_bar_width, .{ .fill = 0.10 });
-        col.add(vert_bar_width, .{ .fill = 0.10 });
-        col.add(vert_bar_width, .{ .fill = 0.10 });
-        col.add(vert_bar_width, .{ .fill = 0.10 });
-        col.add(vert_bar_width, .{ .fill = 0.10 });
-        col.add(vert_bar_width, .{ .fill = 0.10 });
-        col.add(vert_bar_width, .{ .fill = 0.10 });
+
+        for (0..32) |_| {
+            col.add(vert_bar_width, .{ .fill = 0.10 });
+        }
+
         col.solve();
 
-        var ver_bar_elems: [10]ui.layout.Rect = undefined;
-        for (0..10) |i| {
-            ver_bar_elems[i] = col.get(i);
-        }
+        // var ver_bar_elems: [10]ui.layout.Rect = undefined;
+        // for (0..10) |i| {
+        // }
 
         // Draw VStack
 
         // After the Layout .next's we can draw the debug Stack bounding
-        // Red
-        try ctx.imgui_ctx.addRect(col.x, col.y, col.w, col.h, ui.ImGuiContext.packColor(1, 0, 0, 1.0));
+        try ctx.imgui_ctx.addRect(col.x, col.y, col.w, col.h, ui.ImGuiContext.packColor(0, 0, 0, 1.0));
 
         // Draw using computed positions
 
-        for (ver_bar_elems) |elem| {
-            try ctx.imgui_ctx.addRect(elem.x, elem.y, elem.w, elem.h, ui.ImGuiContext.packColor(0, 1, 0, 1.0));
+        for (0..col.child_count) |i| {
+            const elem = col.get(i);
+            try ctx.imgui_ctx.addRect(
+                elem.x,
+                elem.y,
+                elem.w,
+                elem.h,
+                ui.ImGuiContext.packColor(1, 1, 1, (1 / @as(f32, @floatFromInt(i)))),
+            );
         }
 
         // LAYOUT

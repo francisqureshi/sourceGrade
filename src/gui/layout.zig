@@ -10,7 +10,7 @@ pub const Rect = struct {
 
 pub const SizePolicy = union(enum) {
     /// Exact pixel size
-    fixed: f32,
+    pixels: f32,
     /// Weight for remaining space (1.0 = equal share)
     fill: f32,
     /// Percentage of parent (0.0 - 1.0)
@@ -25,6 +25,7 @@ const ChildEntry = struct {
     width_policy: SizePolicy,
     height_policy: SizePolicy,
     resolved_rect: Rect, // filled in during solve()
+    strictness: f32,
 };
 
 pub const HStack = struct {
@@ -68,15 +69,15 @@ pub const HStack = struct {
     }
 
     pub fn solve(self: *HStack) void {
-        // Step 1: resolve fixed + percent widths, sum them
-        var total_fixed: f32 = 0;
+        // Step 1: resolve pixels + percent widths, sum them
+        var total_pixels: f32 = 0;
         var total_percent: f32 = 0;
         var total_fill_weight: f32 = 0;
 
         for (self.children[0..self.child_count]) |*child| {
             switch (child.width_policy) {
-                .fixed => |val| {
-                    total_fixed += val;
+                .pixels => |val| {
+                    total_pixels += val;
                     child.resolved_rect.w = val;
                 },
                 .percent => |percent| {
@@ -93,7 +94,7 @@ pub const HStack = struct {
         }
 
         const total_gutter = @as(f32, @floatFromInt(self.child_count - 1)) * self.gutter;
-        const remaining = self.w - total_fixed - total_percent - total_gutter;
+        const remaining = self.w - total_pixels - total_percent - total_gutter;
 
         // Step 2: distribute remaining to fill children
         for (self.children[0..self.child_count]) |*child| {
@@ -102,6 +103,22 @@ pub const HStack = struct {
                     child.resolved_rect.w = (remaining * (weight / total_fill_weight));
                 },
                 else => {},
+            }
+        }
+
+        // Step 2.5 - Strictness
+        // FIXME: WIP WIP WIP
+        var resolved_total = 0;
+
+        for (self.children[0..self.child_count]) |*child| {
+            resolved_total += child.resolved_rect.w;
+        }
+
+        const amount: isize = resolved_total - self.w;
+        if (amount > 0) {
+            // Violation: We need to reduce the total by capture via strictness.
+            for (self.children[0..self.child_count]) |*child| {
+                _ = child.strictness;
             }
         }
 
@@ -117,7 +134,7 @@ pub const HStack = struct {
 
             // child.height_policy;
             child.resolved_rect.h = switch (child.height_policy) {
-                .fixed => |val| val,
+                .pixels => |val| val,
                 .fill => self.h,
                 .percent => |pct| pct * self.h,
                 else => 0,
@@ -177,15 +194,15 @@ pub const VStack = struct {
     }
 
     pub fn solve(self: *VStack) void {
-        // Step 1: resolve fixed + percent heights, sum them
-        var total_fixed: f32 = 0;
+        // Step 1: resolve pixels + percent heights, sum them
+        var total_pixels: f32 = 0;
         var total_percent: f32 = 0;
         var total_fill_weight: f32 = 0;
 
         for (self.children[0..self.child_count]) |*child| {
             switch (child.height_policy) {
-                .fixed => |val| {
-                    total_fixed += val;
+                .pixels => |val| {
+                    total_pixels += val;
                     child.resolved_rect.h = val;
                 },
                 .percent => |percent| {
@@ -202,7 +219,7 @@ pub const VStack = struct {
         }
 
         const total_gutter = @as(f32, @floatFromInt(self.child_count - 1)) * self.gutter;
-        const remaining = self.h - total_fixed - total_percent - total_gutter;
+        const remaining = self.h - total_pixels - total_percent - total_gutter;
 
         // Step 2: distribute remaining to fill children
         for (self.children[0..self.child_count]) |*child| {
@@ -226,7 +243,7 @@ pub const VStack = struct {
 
             // child.weight_policy;
             child.resolved_rect.w = switch (child.width_policy) {
-                .fixed => |val| val,
+                .pixels => |val| val,
                 .fill => self.h,
                 .percent => |pct| pct * self.w,
                 else => 0,
