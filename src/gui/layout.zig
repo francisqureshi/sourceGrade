@@ -117,8 +117,22 @@ pub const HStack = struct {
         const amount: isize = resolved_total - self.w;
         if (amount > 0) {
             // Violation: We need to reduce the total by capture via strictness.
+            var split_count = 0;
+            var actionable_strictness = 0;
+
             for (self.children[0..self.child_count]) |*child| {
-                _ = child.strictness;
+                if (child.strictness != 1.0) {
+                    actionable_strictness += child.strictness;
+                    split_count += 1;
+                }
+            }
+
+            for (self.children[0..self.child_count]) |*child| {
+                if (child.strictness != 1.0) {
+                    const working_strictness = child.strictness * actionable_strictness;
+                    const new_width = child.resolved_rect.w / working_strictness;
+                    // ??
+                }
             }
         }
 
