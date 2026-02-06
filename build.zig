@@ -101,8 +101,13 @@ pub fn build(b: *std.Build) void {
     // Detect native framework paths for VideoToolbox linking
     var io_instance: std.Io.Threaded = .init_single_threaded;
     defer io_instance.deinit();
+
+    // Create environ map
+    var environ_map = std.process.Environ.Map.init(b.allocator);
+    defer environ_map.deinit();
+
     const io = io_instance.io();
-    const native_paths = std.zig.system.NativePaths.detect(b.allocator, io, &target.result) catch |err| {
+    const native_paths = std.zig.system.NativePaths.detect(b.allocator, io, &target.result, &environ_map) catch |err| {
         std.debug.print("Warning: Failed to detect native paths: {}\n", .{err});
         @panic("Cannot detect framework paths");
     };
