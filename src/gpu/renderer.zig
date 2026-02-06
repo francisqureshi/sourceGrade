@@ -16,10 +16,11 @@ const c = @cImport({
 // Synchronization
 // ============================================================================
 
-pub var frame_semaphore = std.Thread.Semaphore{};
+pub var frame_semaphore: std.Io.Semaphore = .{ .permits = 0 };
+var render_io: std.Io = undefined;
 
 pub export fn displayLinkCallback(_: ?*anyopaque) callconv(.c) void {
-    frame_semaphore.post();
+    frame_semaphore.post(render_io);
 }
 
 // ============================================================================
@@ -40,7 +41,7 @@ pub const RenderContext = struct {
     video_pipeline: metal.MetalRenderPipelineState,
     imgui_ctx: *ui.ImGuiContext,
     displaylink: ?*anyopaque,
-    start_time: std.time.Instant,
+    start_time: std.Io.Clock.Timestamp,
 
     device_ptr: *anyopaque,
     config: RenderConfig,
@@ -208,7 +209,10 @@ pub fn initRenderContext(
     std.debug.print("🌀 Starting render thread...\n", .{});
     std.debug.print("Close the window or press Cmd+Q to quit.\n\n", .{});
 
-    const start_time = try std.time.Instant.now();
+    // Store io globally for C callback access
+    render_io = io;
+
+    const start_time = std.Io.Clock.Timestamp.now(io, .awake);
 
     // Video path to load (will be loaded in render thread for proper I/O threading)
     const video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov";
@@ -307,7 +311,7 @@ pub fn renderThread(ctx: *RenderContext) !void {
     while (true) : (ui_frame += 1) {
 
         // Wait for vsync signal from CVDisplayLink
-        frame_semaphore.wait();
+        frame_semaphore.waitUncancelable(ctx.io);
 
         // Build IMGUI frame
         ctx.imgui_ctx.newFrame();

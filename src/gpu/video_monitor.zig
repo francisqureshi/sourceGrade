@@ -22,7 +22,7 @@ pub const VideoMonitor = struct {
     ctrl_playback: f32,
     ctrl_playback_speed: f32, // 1.0 = normal speed, 0.5 = half speed, 2.0 = double speed
 
-    timer: std.time.Timer,
+    last_timestamp: std.Io.Clock.Timestamp,
     playback_time_ns: u64,
     base_frame_duration_ns: u64,
     last_frame_time_ns: u64,
@@ -36,7 +36,7 @@ pub const VideoMonitor = struct {
     texture_set_holder: ?videotoolbox.MetalTextureSet,
 
     pub fn init(ctx: *rndr.RenderContext, source_media: *media.SourceMedia, allocator: std.mem.Allocator) !VideoMonitor {
-        const timer = try std.time.Timer.start();
+        const last_timestamp = std.Io.Clock.Timestamp.now(ctx.io, .awake);
         const base_frame_duration_ns: u64 = @intFromFloat(std.time.ns_per_s / source_media.frame_rate_float);
 
         // _ = allocator; // Debugging Arena and using page_allocator..
@@ -47,7 +47,7 @@ pub const VideoMonitor = struct {
 
             .ctrl_playback = 0.0,
             .ctrl_playback_speed = 1.0,
-            .timer = timer,
+            .last_timestamp = last_timestamp,
 
             .base_frame_duration_ns = base_frame_duration_ns,
             .playback_time_ns = 0,
@@ -63,7 +63,10 @@ pub const VideoMonitor = struct {
     }
 
     pub fn monitor(self: *VideoMonitor) MonitorResult {
-        const ui_frame_delta_ns = self.timer.lap();
+        const now = std.Io.Clock.Timestamp.now(self.ctx.io, .awake);
+        const elapsed_duration = self.last_timestamp.durationTo(now);
+        const ui_frame_delta_ns: u64 = @intCast(@max(0, elapsed_duration.raw.nanoseconds));
+        self.last_timestamp = now;
         // on macbook pro with 120 hz this is
         // - ~3ms
         // - ~8.5ms

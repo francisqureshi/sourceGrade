@@ -103,7 +103,9 @@ fn app() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    var threaded = std.Io.Threaded.init(allocator, .{});
+    var threaded = std.Io.Threaded.init(allocator, .{
+        .environ = .{ .block = .{ .slice = std.mem.span(@as([*:null]const ?[*:0]const u8, @ptrCast(std.c.environ))) } },
+    });
     defer threaded.deinit();
     const io = threaded.io();
 
