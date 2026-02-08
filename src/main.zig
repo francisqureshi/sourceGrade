@@ -1,5 +1,6 @@
 const std = @import("std");
 const App = @import("app.zig").App;
+const Platform = @import("os/mod.zig").Platform;
 
 const renderer = @import("gpu/renderer.zig"); // TEMP
 
@@ -9,7 +10,7 @@ const Io = std.Io;
 pub fn main(init: std.process.Init.Minimal) !void {
     std.debug.print("=== sourceGrade ===\n\n", .{});
 
-    // These live for the whole program
+    // Main Allocator and Io
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -18,21 +19,13 @@ pub fn main(init: std.process.Init.Minimal) !void {
     defer threaded.deinit();
     const io = threaded.io();
 
-    // App just takes them, doesn't create them
+    // App
     var app = App.init(allocator, io);
     defer app.deinit();
 
-    var render_result = try renderer.initRenderContext(app.allocator, app.io, app.config);
-    defer renderer.deinitRenderContext(app.allocator, &render_result);
+    // Platform
+    var platform = try Platform.init(&app);
+    defer platform.deinit();
 
-    // Spawn render thread
-    // FIXME: This maybe should use Io.Threaded.
-    const thread = try std.Thread.spawn(.{}, renderer.renderThread, .{&render_result.context});
-    thread.detach();
-
-    // Run NSApplication runloop forever (this never returns)
-    renderer.runEventLoop();
-
-    // Code below never executes (runloop runs forever)
-    unreachable;
+    platform.run();
 }
