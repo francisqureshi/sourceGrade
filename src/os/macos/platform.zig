@@ -50,12 +50,8 @@ pub const Platform = struct {
 
     pub fn run(self: *Platform) void {
         _ = self;
-        // Start CVDisplayLink
 
         // Run NSApplication event loop (blocks forever)
         renderer.runEventLoop();
-
-        // CVDisplayLink callback calls self.app.update(), self.app.buildUI()
-
     }
 };
