@@ -70,6 +70,11 @@ void metal_displaylink_start(void* displaylink);
 void metal_displaylink_stop(void* displaylink);
 void metal_displaylink_release(void* displaylink);
 
+/// Enable dispatch-to-main mode: callback is dispatched to main queue instead of
+/// being called directly on the display link thread. This allows rendering on the
+/// main thread alongside event handling.
+void metal_displaylink_set_dispatch_to_main(void* displaylink, bool enabled);
+
 /// ProRes video reader functions
 /// Create a video reader for the given file path
 void* video_reader_create(const char* filepath, void* metal_device);

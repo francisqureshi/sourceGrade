@@ -234,6 +234,10 @@ pub fn build(b: *std.Build) void {
         "-exported_symbol",
         "-Xlinker",
         "_metal_displaylink_release",
+        "-Xlinker",
+        "-exported_symbol",
+        "-Xlinker",
+        "_metal_displaylink_set_dispatch_to_main",
     });
 
     // Link the Swift dylib

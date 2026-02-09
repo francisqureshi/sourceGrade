@@ -298,10 +298,18 @@ public func metal_window_get_backing_scale(_ windowPtr: UnsafeMutableRawPointer)
 // MARK: - CVDisplayLink
 
 /// Wrapper class to hold CVDisplayLink and callback
-class MetalDisplayLinkWrapper {
+class MetalDisplayLinkWrapper: NSObject {
     var displayLink: CVDisplayLink?
     var callback: (@convention(c) (UnsafeMutableRawPointer?) -> Void)?
     var userdata: UnsafeMutableRawPointer?
+    var dispatchToMain: Bool = false
+
+    // Track if a frame is already pending to avoid queue buildup
+    var framePending: Bool = false
+
+    @objc func performRenderCallback() {
+        callback?(userdata)
+    }
 }
 
 // CVDisplayLink callback function (C function, not a method)
@@ -316,7 +324,23 @@ private func displayLinkCallback(
     guard let context = displayLinkContext else { return kCVReturnSuccess }
 
     let wrapper = Unmanaged<MetalDisplayLinkWrapper>.fromOpaque(context).takeUnretainedValue()
-    wrapper.callback?(wrapper.userdata)
+
+    if wrapper.dispatchToMain {
+        // Skip if previous frame still pending (frame dropping)
+        if wrapper.framePending {
+            return kCVReturnSuccess
+        }
+        wrapper.framePending = true
+
+        // Dispatch to main via GCD
+        DispatchQueue.main.async { [weak wrapper, callback = wrapper.callback, userdata = wrapper.userdata] in
+            callback?(userdata)
+            wrapper?.framePending = false
+        }
+    } else {
+        // Legacy path: call directly on display link thread
+        wrapper.callback?(wrapper.userdata)
+    }
 
     return kCVReturnSuccess
 }
@@ -371,6 +395,12 @@ public func metal_displaylink_stop(_ wrapperPtr: UnsafeMutableRawPointer) {
     if let displayLink = wrapper.displayLink {
         CVDisplayLinkStop(displayLink)
     }
+}
+
+@_cdecl("metal_displaylink_set_dispatch_to_main")
+public func metal_displaylink_set_dispatch_to_main(_ wrapperPtr: UnsafeMutableRawPointer, _ enabled: Bool) {
+    let wrapper = Unmanaged<MetalDisplayLinkWrapper>.fromOpaque(wrapperPtr).takeUnretainedValue()
+    wrapper.dispatchToMain = enabled
 }
 
 @_cdecl("metal_displaylink_release")
