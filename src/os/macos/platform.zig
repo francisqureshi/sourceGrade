@@ -175,6 +175,7 @@ fn renderFrame(platform: *Platform) void {
             return;
         };
 
+        // FIXME: pass a GPU Backend abstraction?
         const video_monitor = vm.VideoMonitor.init(platform.app.io, platform.window.device_ptr, source_media, platform.app.allocator) catch |err| {
             std.debug.print("Error: Failed to create video monitor ({})\n", .{err});
             source_media.deinit();
