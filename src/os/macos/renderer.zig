@@ -1,9 +1,6 @@
 const std = @import("std");
 const metal = @import("metal");
 
-const Window = @import("window.zig").Window;
-const gpu_renderer = @import("../../gpu/renderer.zig");
-
 // ============================================================================
 // Metal Renderer - handles device, queue, shaders, and pipelines
 // ============================================================================
@@ -30,21 +27,7 @@ pub const MetalRenderer = struct {
     /// Initializes the Metal renderer with device, queue, shaders, and all pipelines.
     /// Sets the window's layer pixel format to match the configured format.
     /// Creates three pipelines: main, imgui (with alpha blending), and video.
-    pub fn init(window: *Window, config: gpu_renderer.RenderConfig) !MetalRenderer {
-        // Determine pixel format based on configuration
-        const pixel_format: metal.PixelFormat = if (config.use_10bit)
-            .rgb10a2_unorm // 10-bit RGB + 2-bit alpha
-        else
-            .bgra8_unorm; // Standard 8-bit
-
-        std.debug.print("✓ Using pixel format: {s}, Display P3: {}\n", .{
-            if (config.use_10bit) "rgb10a2_unorm (10-bit)" else "bgra8_unorm (8-bit)",
-            config.use_display_p3,
-        });
-
-        // Set the layer's pixel format to match our pipelines
-        window.setLayerPixelFormat(@intFromEnum(pixel_format));
-
+    pub fn init(pixel_format: metal.PixelFormat) !MetalRenderer {
         // Create Metal device wrapper
         var device = try metal.MetalDevice.init();
 

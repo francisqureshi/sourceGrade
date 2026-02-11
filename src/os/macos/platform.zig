@@ -48,11 +48,20 @@ pub const Platform = struct {
             return error.MetalNotAvailable;
         }
 
+        // Determine pixel format based on configuration
+        const pixel_format: metal.PixelFormat = if (app.config.use_10bit)
+            .rgb10a2_unorm // 10-bit RGB + 2-bit alpha
+        else
+            .bgra8_unorm; // Standard 8-bit
+
         // Create window
         var window = try Window.init(1600, 900, false);
 
+        // Set the layer's pixel format to match our pipelines
+        window.setLayerPixelFormat(@intFromEnum(pixel_format));
+
         // Create Metal renderer (device, queue, pipelines)
-        var renderer = try MetalRenderer.init(&window, app.config);
+        var renderer = try MetalRenderer.init(pixel_format);
 
         // Initialize IMGUI context on heap so pointer stays valid
         const imgui_ctx = try app.allocator.create(ui.ImGuiContext);
@@ -176,7 +185,12 @@ fn renderFrame(platform: *Platform) void {
         };
 
         // FIXME: pass a GPU Backend abstraction?
-        const video_monitor = vm.VideoMonitor.init(platform.app.io, platform.window.device_ptr, source_media, platform.app.allocator) catch |err| {
+        const video_monitor = vm.VideoMonitor.init(
+            source_media,
+            platform.window.device_ptr,
+            platform.app.io,
+            platform.app.allocator,
+        ) catch |err| {
             std.debug.print("Error: Failed to create video monitor ({})\n", .{err});
             source_media.deinit();
             platform.app.allocator.destroy(source_media);

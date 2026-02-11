@@ -15,9 +15,9 @@ pub const MonitorResult = enum {
 /// Specifically only works with Metal atm§
 /// FIXME: Take Platform and GPU Backend?
 pub const VideoMonitor = struct {
-    io: std.Io,
-    device_ptr: *anyopaque,
     source_media: *media.SourceMedia,
+    device_ptr: *anyopaque,
+    io: std.Io,
     decode_arena: std.heap.ArenaAllocator,
 
     ctrl_playback: f32,
@@ -38,14 +38,15 @@ pub const VideoMonitor = struct {
 
     /// Initialize with IO (for timestamps) and device pointer (Metal MTLDevice).
     /// Note: Currently Metal-specific due to texture handling. Future work will abstract this.
-    pub fn init(io: std.Io, device_ptr: *anyopaque, source_media: *media.SourceMedia, allocator: std.mem.Allocator) !VideoMonitor {
+    // FIXME: pass a GPU Backend abstraction?
+    pub fn init(source_media: *media.SourceMedia, device_ptr: *anyopaque, io: std.Io, allocator: std.mem.Allocator) !VideoMonitor {
         const last_timestamp = std.Io.Clock.Timestamp.now(io, .awake);
         const base_frame_duration_ns: u64 = @intFromFloat(std.time.ns_per_s / source_media.frame_rate_float);
 
         return .{
-            .io = io,
-            .device_ptr = device_ptr,
             .source_media = source_media,
+            .device_ptr = device_ptr,
+            .io = io,
             .decode_arena = std.heap.ArenaAllocator.init(allocator),
 
             .ctrl_playback = 0.0,
