@@ -5,8 +5,6 @@ const ui = @import("../gui/ui.zig");
 const media = @import("../io/media.zig");
 const videotoolbox = @import("../io/decode/videotoolbox.zig");
 
-const rndr = @import("renderer.zig");
-
 pub const MonitorResult = enum {
     ok,
     decoded_new_frame,
@@ -14,8 +12,11 @@ pub const MonitorResult = enum {
     texture_failed,
 };
 
+/// Specifically only works with Metal atm§
+/// FIXME: Take Platform and GPU Backend?
 pub const VideoMonitor = struct {
-    ctx: *rndr.RenderContext,
+    io: std.Io,
+    device_ptr: *anyopaque,
     source_media: *media.SourceMedia,
     decode_arena: std.heap.ArenaAllocator,
 
@@ -35,15 +36,17 @@ pub const VideoMonitor = struct {
     decoded_frame_holder: ?videotoolbox.DecodedFrame,
     texture_set_holder: ?videotoolbox.MetalTextureSet,
 
-    pub fn init(ctx: *rndr.RenderContext, source_media: *media.SourceMedia, allocator: std.mem.Allocator) !VideoMonitor {
-        const last_timestamp = std.Io.Clock.Timestamp.now(ctx.io, .awake);
+    /// Initialize with IO (for timestamps) and device pointer (Metal MTLDevice).
+    /// Note: Currently Metal-specific due to texture handling. Future work will abstract this.
+    pub fn init(io: std.Io, device_ptr: *anyopaque, source_media: *media.SourceMedia, allocator: std.mem.Allocator) !VideoMonitor {
+        const last_timestamp = std.Io.Clock.Timestamp.now(io, .awake);
         const base_frame_duration_ns: u64 = @intFromFloat(std.time.ns_per_s / source_media.frame_rate_float);
 
-        // _ = allocator; // Debugging Arena and using page_allocator..
         return .{
-            .ctx = ctx,
+            .io = io,
+            .device_ptr = device_ptr,
             .source_media = source_media,
-            .decode_arena = std.heap.ArenaAllocator.init(allocator), // could use heap.page_allocator
+            .decode_arena = std.heap.ArenaAllocator.init(allocator),
 
             .ctrl_playback = 0.0,
             .ctrl_playback_speed = 1.0,
@@ -63,7 +66,7 @@ pub const VideoMonitor = struct {
     }
 
     pub fn monitor(self: *VideoMonitor) MonitorResult {
-        const now = std.Io.Clock.Timestamp.now(self.ctx.io, .awake);
+        const now = std.Io.Clock.Timestamp.now(self.io, .awake);
         const elapsed_duration = self.last_timestamp.durationTo(now);
         const ui_frame_delta_ns: u64 = @intCast(@max(0, elapsed_duration.raw.nanoseconds));
         self.last_timestamp = now;
@@ -117,7 +120,7 @@ pub const VideoMonitor = struct {
             std.debug.print("Decoding frame {} (last={?}, advance={})\n", .{ self.current_frame_index, self.last_decoded_frame_index, advance });
             const decoded_frame = sm.decodeSourceFrame(
                 self.current_frame_index,
-                @ptrCast(self.ctx.device_ptr),
+                @ptrCast(self.device_ptr),
                 self.decode_arena.allocator(),
             ) catch |err| {
                 std.debug.print("❌ Failed to decode frame: {}\n", .{err});

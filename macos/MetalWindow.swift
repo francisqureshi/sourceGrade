@@ -25,6 +25,7 @@ class MetalView: NSView {
         setupMetalLayer()
     }
 
+    /// Configure the CAMetalLayer with device, pixel format, colorspace, and drawable size.
     private func setupMetalLayer() {
         // Create the Metal layer
         metalLayer = CAMetalLayer()
@@ -54,6 +55,7 @@ class MetalView: NSView {
         )
     }
 
+    /// Update the Metal layer drawable size when the view resizes.
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
 
@@ -66,7 +68,7 @@ class MetalView: NSView {
         )
     }
 
-    // Mouse event handling
+    /// Handle mouse button press - update position and set mouseDown flag.
     override func mouseDown(with event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
         mouseX = Float(location.x)
@@ -74,6 +76,7 @@ class MetalView: NSView {
         mouseDown = true
     }
 
+    /// Handle mouse button release - update position and clear mouseDown flag.
     override func mouseUp(with event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
         mouseX = Float(location.x)
@@ -81,18 +84,21 @@ class MetalView: NSView {
         mouseDown = false
     }
 
+    /// Handle mouse movement - update position.
     override func mouseMoved(with event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
         mouseX = Float(location.x)
         mouseY = Float(bounds.height - location.y)
     }
 
+    /// Handle mouse drag - update position while button is held.
     override func mouseDragged(with event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
         mouseX = Float(location.x)
         mouseY = Float(bounds.height - location.y)
     }
 
+    /// Rebuild tracking areas when view resizes to ensure mouse events are captured.
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
 
@@ -112,10 +118,12 @@ class MetalView: NSView {
     }
 }
 
-/// C-compatible callbacks for Zig
+// MARK: - Window Management
+
+/// Create a new Metal window with the specified dimensions.
+/// Returns an opaque pointer for Zig to hold onto.
 @_cdecl("metal_window_create")
-public
-    func metal_window_create(width: Int32, height: Int32, borderless: Bool)
+public func metal_window_create(width: Int32, height: Int32, borderless: Bool)
     -> UnsafeMutableRawPointer?
 {
     let window = MetalWindow(
@@ -128,6 +136,8 @@ public
     return Unmanaged.passRetained(window).toOpaque()
 }
 
+/// Get the CAMetalLayer from a window for rendering.
+/// Returns nil if the window doesn't have a MetalView.
 @_cdecl("metal_window_get_layer")
 public func metal_window_get_layer(_ windowPtr: UnsafeMutableRawPointer) -> UnsafeMutableRawPointer?
 {
@@ -138,6 +148,8 @@ public func metal_window_get_layer(_ windowPtr: UnsafeMutableRawPointer) -> Unsa
     return Unmanaged.passRetained(metalView.metalLayer).toOpaque()
 }
 
+/// Get the MTLDevice from a window's Metal layer.
+/// Returns nil if device is not available.
 @_cdecl("metal_window_get_device")
 public func metal_window_get_device(_ windowPtr: UnsafeMutableRawPointer)
     -> UnsafeMutableRawPointer?
@@ -150,12 +162,15 @@ public func metal_window_get_device(_ windowPtr: UnsafeMutableRawPointer)
     return Unmanaged.passRetained(device).toOpaque()
 }
 
+/// Make the window visible and bring it to front.
 @_cdecl("metal_window_show")
 public func metal_window_show(_ windowPtr: UnsafeMutableRawPointer) {
     let window = Unmanaged<MetalWindow>.fromOpaque(windowPtr).takeUnretainedValue()
     window.makeKeyAndOrderFront(nil)
 }
 
+/// Initialize NSApplication with menu bar and activation policy.
+/// Call before showing windows or running the event loop.
 @_cdecl("metal_window_init_app")
 public func metal_window_init_app() {
     // Initialize NSApplication without running the main loop
@@ -184,6 +199,8 @@ public func metal_window_init_app() {
     NSApplication.shared.mainMenu = mainMenu
 }
 
+/// Run the NSApplication event loop (blocks forever).
+/// This is the main run loop for macOS apps.
 @_cdecl("metal_window_run_app")
 public func metal_window_run_app() {
     // Initialize NSApplication if needed
@@ -193,51 +210,15 @@ public func metal_window_run_app() {
     NSApplication.shared.run()
 }
 
+/// Check if the window is still visible and the app is running.
 @_cdecl("metal_window_is_running")
 public func metal_window_is_running(_ windowPtr: UnsafeMutableRawPointer) -> Bool {
     let window = Unmanaged<MetalWindow>.fromOpaque(windowPtr).takeUnretainedValue()
     return window.isVisible && NSApplication.shared.isRunning
 }
 
-@_cdecl("metal_layer_get_next_drawable")
-public func metal_layer_get_next_drawable(_ layerPtr: UnsafeMutableRawPointer)
-    -> UnsafeMutableRawPointer?
-{
-    let layer = Unmanaged<CAMetalLayer>.fromOpaque(layerPtr).takeUnretainedValue()
-    guard let drawable = layer.nextDrawable() else { return nil }
-
-    // Return the CAMetalDrawable pointer
-    return Unmanaged.passRetained(drawable).toOpaque()
-}
-
-@_cdecl("metal_drawable_get_texture")
-public func metal_drawable_get_texture(_ drawablePtr: UnsafeMutableRawPointer)
-    -> UnsafeMutableRawPointer?
-{
-    let drawable = Unmanaged<CAMetalDrawable>.fromOpaque(drawablePtr).takeUnretainedValue()
-
-    // Return the MTLTexture pointer
-    return Unmanaged.passRetained(drawable.texture).toOpaque()
-}
-
-@_cdecl("metal_drawable_present")
-public func metal_drawable_present(_ drawablePtr: UnsafeMutableRawPointer) {
-    let drawable = Unmanaged<CAMetalDrawable>.fromOpaque(drawablePtr).takeUnretainedValue()
-    drawable.present()
-}
-
-@_cdecl("metal_drawable_release")
-public func metal_drawable_release(_ drawablePtr: UnsafeMutableRawPointer) {
-    // Balance the passRetained from metal_layer_get_next_drawable
-    let _ = Unmanaged<CAMetalDrawable>.fromOpaque(drawablePtr).takeRetainedValue()
-}
-
-@_cdecl("metal_texture_release")
-public func metal_texture_release(_ texturePtr: UnsafeMutableRawPointer) {
-    // Balance the passRetained from metal_drawable_get_texture
-    let _ = Unmanaged<AnyObject>.fromOpaque(texturePtr).takeRetainedValue()
-}
-
+/// Process all pending events without blocking.
+/// Drains the event queue and dispatches events to handlers.
 @_cdecl("metal_window_process_events")
 public func metal_window_process_events(_ windowPtr: UnsafeMutableRawPointer) {
     // Process ALL pending events (drain the queue)
@@ -257,12 +238,15 @@ public func metal_window_process_events(_ windowPtr: UnsafeMutableRawPointer) {
     }
 }
 
+/// Release a window, balancing the retain from metal_window_create.
 @_cdecl("metal_window_release")
 public func metal_window_release(_ windowPtr: UnsafeMutableRawPointer) {
     let _ = Unmanaged<MetalWindow>.fromOpaque(windowPtr).takeRetainedValue()
     // Window is now released
 }
 
+/// Get current mouse position and button state from a window's MetalView.
+/// Coordinates are in points with top-left origin.
 @_cdecl("metal_window_get_mouse_state")
 public func metal_window_get_mouse_state(
     _ windowPtr: UnsafeMutableRawPointer,
@@ -283,21 +267,74 @@ public func metal_window_get_mouse_state(
     outDown.pointee = metalView.mouseDown
 }
 
-@_cdecl("metal_layer_set_pixel_format")
-public func metal_layer_set_pixel_format(_ layerPtr: UnsafeMutableRawPointer, _ pixelFormat: UInt) {
-    let layer = Unmanaged<CAMetalLayer>.fromOpaque(layerPtr).takeUnretainedValue()
-    layer.pixelFormat = MTLPixelFormat(rawValue: pixelFormat) ?? .bgra8Unorm
-}
-
+/// Get the window's backing scale factor for HiDPI (Retina) support.
+/// Returns 2.0 on Retina displays, 1.0 on standard displays.
 @_cdecl("metal_window_get_backing_scale")
 public func metal_window_get_backing_scale(_ windowPtr: UnsafeMutableRawPointer) -> Double {
     let window = Unmanaged<MetalWindow>.fromOpaque(windowPtr).takeUnretainedValue()
     return window.backingScaleFactor
 }
 
+// MARK: - Metal Layer / Drawable
+
+/// Get the next drawable from a CAMetalLayer for rendering.
+/// Returns nil if no drawable is available (e.g., window minimized).
+@_cdecl("metal_layer_get_next_drawable")
+public func metal_layer_get_next_drawable(_ layerPtr: UnsafeMutableRawPointer)
+    -> UnsafeMutableRawPointer?
+{
+    let layer = Unmanaged<CAMetalLayer>.fromOpaque(layerPtr).takeUnretainedValue()
+    guard let drawable = layer.nextDrawable() else { return nil }
+
+    // Return the CAMetalDrawable pointer
+    return Unmanaged.passRetained(drawable).toOpaque()
+}
+
+/// Set the pixel format on a CAMetalLayer.
+/// Common formats: bgra8Unorm (70), rgb10a2Unorm (90).
+@_cdecl("metal_layer_set_pixel_format")
+public func metal_layer_set_pixel_format(_ layerPtr: UnsafeMutableRawPointer, _ pixelFormat: UInt) {
+    let layer = Unmanaged<CAMetalLayer>.fromOpaque(layerPtr).takeUnretainedValue()
+    layer.pixelFormat = MTLPixelFormat(rawValue: pixelFormat) ?? .bgra8Unorm
+}
+
+/// Get the MTLTexture from a drawable for rendering.
+@_cdecl("metal_drawable_get_texture")
+public func metal_drawable_get_texture(_ drawablePtr: UnsafeMutableRawPointer)
+    -> UnsafeMutableRawPointer?
+{
+    let drawable = Unmanaged<CAMetalDrawable>.fromOpaque(drawablePtr).takeUnretainedValue()
+
+    // Return the MTLTexture pointer
+    return Unmanaged.passRetained(drawable.texture).toOpaque()
+}
+
+/// Present a drawable to the screen.
+/// Call after rendering is complete.
+@_cdecl("metal_drawable_present")
+public func metal_drawable_present(_ drawablePtr: UnsafeMutableRawPointer) {
+    let drawable = Unmanaged<CAMetalDrawable>.fromOpaque(drawablePtr).takeUnretainedValue()
+    drawable.present()
+}
+
+/// Release a drawable, balancing the retain from metal_layer_get_next_drawable.
+@_cdecl("metal_drawable_release")
+public func metal_drawable_release(_ drawablePtr: UnsafeMutableRawPointer) {
+    // Balance the passRetained from metal_layer_get_next_drawable
+    let _ = Unmanaged<CAMetalDrawable>.fromOpaque(drawablePtr).takeRetainedValue()
+}
+
+/// Release a texture, balancing the retain from metal_drawable_get_texture.
+@_cdecl("metal_texture_release")
+public func metal_texture_release(_ texturePtr: UnsafeMutableRawPointer) {
+    // Balance the passRetained from metal_drawable_get_texture
+    let _ = Unmanaged<AnyObject>.fromOpaque(texturePtr).takeRetainedValue()
+}
+
 // MARK: - CVDisplayLink
 
-/// Wrapper class to hold CVDisplayLink and callback
+/// Wrapper class to hold CVDisplayLink and callback state.
+/// Manages vsync timing and frame dispatch.
 class MetalDisplayLinkWrapper: NSObject {
     var displayLink: CVDisplayLink?
     var callback: (@convention(c) (UnsafeMutableRawPointer?) -> Void)?
@@ -312,7 +349,8 @@ class MetalDisplayLinkWrapper: NSObject {
     }
 }
 
-// CVDisplayLink callback function (C function, not a method)
+/// CVDisplayLink callback - fires on vsync from display thread.
+/// Either dispatches to main thread or calls directly based on dispatchToMain flag.
 private func displayLinkCallback(
     _ displayLink: CVDisplayLink,
     _ inNow: UnsafePointer<CVTimeStamp>,
@@ -345,6 +383,8 @@ private func displayLinkCallback(
     return kCVReturnSuccess
 }
 
+/// Create a CVDisplayLink for vsync-synchronized rendering.
+/// Returns an opaque wrapper pointer.
 @_cdecl("metal_displaylink_create")
 public func metal_displaylink_create(_ windowPtr: UnsafeMutableRawPointer)
     -> UnsafeMutableRawPointer?
@@ -363,6 +403,7 @@ public func metal_displaylink_create(_ windowPtr: UnsafeMutableRawPointer)
     return Unmanaged.passRetained(wrapper).toOpaque()
 }
 
+/// Set the callback function and userdata for CVDisplayLink vsync events.
 @_cdecl("metal_displaylink_set_callback")
 public func metal_displaylink_set_callback(
     _ wrapperPtr: UnsafeMutableRawPointer,
@@ -379,6 +420,7 @@ public func metal_displaylink_set_callback(
     }
 }
 
+/// Start the CVDisplayLink - begins firing vsync callbacks.
 @_cdecl("metal_displaylink_start")
 public func metal_displaylink_start(_ wrapperPtr: UnsafeMutableRawPointer) {
     let wrapper = Unmanaged<MetalDisplayLinkWrapper>.fromOpaque(wrapperPtr).takeUnretainedValue()
@@ -388,6 +430,7 @@ public func metal_displaylink_start(_ wrapperPtr: UnsafeMutableRawPointer) {
     }
 }
 
+/// Stop the CVDisplayLink - pauses vsync callbacks.
 @_cdecl("metal_displaylink_stop")
 public func metal_displaylink_stop(_ wrapperPtr: UnsafeMutableRawPointer) {
     let wrapper = Unmanaged<MetalDisplayLinkWrapper>.fromOpaque(wrapperPtr).takeUnretainedValue()
@@ -397,12 +440,16 @@ public func metal_displaylink_stop(_ wrapperPtr: UnsafeMutableRawPointer) {
     }
 }
 
+/// Enable/disable dispatching callbacks to main thread.
+/// When enabled, callbacks run on main thread via GCD with frame dropping.
+/// When disabled, callbacks run directly on CVDisplayLink thread (legacy).
 @_cdecl("metal_displaylink_set_dispatch_to_main")
 public func metal_displaylink_set_dispatch_to_main(_ wrapperPtr: UnsafeMutableRawPointer, _ enabled: Bool) {
     let wrapper = Unmanaged<MetalDisplayLinkWrapper>.fromOpaque(wrapperPtr).takeUnretainedValue()
     wrapper.dispatchToMain = enabled
 }
 
+/// Release a CVDisplayLink wrapper, stopping it first if running.
 @_cdecl("metal_displaylink_release")
 public func metal_displaylink_release(_ wrapperPtr: UnsafeMutableRawPointer) {
     let wrapper = Unmanaged<MetalDisplayLinkWrapper>.fromOpaque(wrapperPtr).takeRetainedValue()
@@ -412,7 +459,10 @@ public func metal_displaylink_release(_ wrapperPtr: UnsafeMutableRawPointer) {
     }
 }
 
-/// Minimal Metal window wrapper
+// MARK: - MetalWindow Class
+
+/// Minimal Metal window wrapper with NSWindow subclass.
+/// Creates window with MetalView as content view.
 class MetalWindow: NSWindow {
     init(width: CGFloat, height: CGFloat, borderless: Bool) {
         let contentRect = NSRect(x: 0, y: 0, width: width, height: height)
