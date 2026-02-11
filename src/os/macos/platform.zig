@@ -35,8 +35,6 @@ pub const Platform = struct {
     config: gpu_renderer.RenderConfig,
     /// Timestamp when the platform was initialized (for elapsed time).
     start_time: std.Io.Clock.Timestamp,
-    /// Path to video file to load (lazy-loaded on first frame).
-    video_path: ?[]const u8,
 
     /// Initializes the complete macOS platform: window, renderer, IMGUI, and display link.
     /// Does NOT start the display link - call `startDisplayLink()` after init when
@@ -83,9 +81,6 @@ pub const Platform = struct {
 
         const start_time = std.Io.Clock.Timestamp.now(app.io, .awake);
 
-        // Video path to load (loaded lazily on first frame)
-        const video_path = "/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov";
-
         return .{
             .app = app,
             .window = window,
@@ -94,7 +89,6 @@ pub const Platform = struct {
             .imgui_ctx = imgui_ctx,
             .config = app.config,
             .start_time = start_time,
-            .video_path = video_path,
         };
     }
 
@@ -161,10 +155,7 @@ const RenderState = struct {
 fn renderFrame(platform: *Platform) void {
     // Lazy init of video on first frame
     if (render_state == null) {
-        const video_path = platform.video_path orelse {
-            std.debug.print("Error: No video path specified\n", .{});
-            return;
-        };
+        const video_path = platform.app.test_args.video_path;
 
         const sm = media.SourceMedia.init(video_path, platform.app.io, platform.app.allocator) catch |err| {
             std.debug.print("Error: Failed to load video file ({})\n", .{err});
