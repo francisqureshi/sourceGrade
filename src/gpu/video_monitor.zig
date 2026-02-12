@@ -1,22 +1,24 @@
 const std = @import("std");
-const metal = @import("metal");
+// const metal = @import("metal");
 const ui = @import("../gui/ui.zig");
 
 const media = @import("../io/media.zig");
 const videotoolbox = @import("../io/decode/videotoolbox.zig");
 
-pub const MonitorResult = enum {
+pub const MonitorResult = union(enum) {
     ok,
-    decoded_new_frame,
-    decode_failed,
-    texture_failed,
+    needs_decode: usize,
+    // FIXME: removing...
+    // decoded_new_frame,
+    // decode_failed,
+    // texture_failed,
 };
 
 /// Specifically only works with Metal atm§
-/// FIXME: Take Platform and GPU Backend?
 pub const VideoMonitor = struct {
     source_media: *media.SourceMedia,
-    device_ptr: *anyopaque,
+    // FIXME: removing...
+    // device_ptr: *anyopaque,
     io: std.Io,
     decode_arena: std.heap.ArenaAllocator,
 
@@ -30,22 +32,27 @@ pub const VideoMonitor = struct {
     current_frame_index: usize,
     last_decoded_frame_index: ?usize,
 
-    // Video texture holders must persist across frames
-    // These keep the CVPixelBuffer and Metal textures alive between decode and present
-    packed_metal_texture: ?metal.MetalTexture,
-    decoded_frame_holder: ?videotoolbox.DecodedFrame,
-    texture_set_holder: ?videotoolbox.MetalTextureSet,
+    // // Video texture holders must persist across frames
+    // // These keep the CVPixelBuffer and Metal textures alive between decode and present
+    // FIXME: removing...
+    // packed_metal_texture: ?metal.MetalTexture,
+    // decoded_frame_holder: ?videotoolbox.DecodedFrame,
+    // texture_set_holder: ?videotoolbox.MetalTextureSet,
 
     /// Initialize with IO (for timestamps) and device pointer (Metal MTLDevice).
     /// Note: Currently Metal-specific due to texture handling. Future work will abstract this.
-    // FIXME: pass a GPU Backend abstraction?
-    pub fn init(source_media: *media.SourceMedia, device_ptr: *anyopaque, io: std.Io, allocator: std.mem.Allocator) !VideoMonitor {
+    pub fn init(
+        source_media: *media.SourceMedia,
+        // FIXME: removing...
+        // device_ptr: *anyopaque,
+        io: std.Io,
+        allocator: std.mem.Allocator,
+    ) !VideoMonitor {
         const last_timestamp = std.Io.Clock.Timestamp.now(io, .awake);
         const base_frame_duration_ns: u64 = @intFromFloat(std.time.ns_per_s / source_media.frame_rate_float);
 
         return .{
             .source_media = source_media,
-            .device_ptr = device_ptr,
             .io = io,
             .decode_arena = std.heap.ArenaAllocator.init(allocator),
 
@@ -59,10 +66,6 @@ pub const VideoMonitor = struct {
 
             .current_frame_index = 0,
             .last_decoded_frame_index = null,
-
-            .packed_metal_texture = null,
-            .decoded_frame_holder = null,
-            .texture_set_holder = null,
         };
     }
 
@@ -86,8 +89,6 @@ pub const VideoMonitor = struct {
             self.playback_time_ns += @as(u64, @intFromFloat(@as(f64, @floatFromInt(ui_frame_delta_ns)) * self.ctrl_playback_speed));
         }
 
-        // Video frame timing - decode and create Metal textures from YCbCr
-        const sm = self.source_media;
         const time_since_last_frame_ns = self.playback_time_ns - self.last_frame_time_ns;
 
         // Adjust frame duration by playback speed
@@ -105,63 +106,27 @@ pub const VideoMonitor = struct {
 
         if (should_decode) {
 
-            // Reset scratch arena before decode
-            _ = self.decode_arena.reset(.free_all);
-
-            // Clean up previous frame resources before next decode
-            if (self.decoded_frame_holder) |*df| {
-                df.deinit();
-                self.decoded_frame_holder = null;
-            }
-            if (self.texture_set_holder) |*ts| {
-                ts.deinit();
-                self.texture_set_holder = null;
-            }
-
-            std.debug.print("Decoding frame {} (last={?}, advance={})\n", .{ self.current_frame_index, self.last_decoded_frame_index, advance });
-            const decoded_frame = sm.decodeSourceFrame(
-                self.current_frame_index,
-                @ptrCast(self.device_ptr),
-                self.decode_arena.allocator(),
-            ) catch |err| {
-                std.debug.print("❌ Failed to decode frame: {}\n", .{err});
-                return .decode_failed;
-            };
-            self.decoded_frame_holder = decoded_frame; // Keep alive until end of loop
-
-            std.debug.print("\nFrame info: \nCompressed Size:{d} \nDecompressed Size: {d}\n", .{ decoded_frame.compressed_frame_size, decoded_frame.decoded_frame_size });
-
-            // Create Metal texture from packed AYUV buffer (y416 format)
-            var texture_set = sm.decoder.?.createMetalTextures(decoded_frame.pixel_buffer) catch |err| {
-                std.debug.print("❌ Failed to create Metal textures: {}\n", .{err});
-                return .texture_failed;
-            };
-            self.texture_set_holder = texture_set; // Keep alive until end of loop
-
-            // Extract MTLTexture handle (single packed texture for y416)
-            const mtl_tex = texture_set.getMetalTexture();
-            self.packed_metal_texture = metal.MetalTexture.initFromPtr(mtl_tex);
-
-            // Advance to next frame only if playing and time elapsed
-            if (advance) {
-                if (self.ctrl_playback > 0.0) {
-                    // Advance Forward
-                    self.current_frame_index = (self.current_frame_index + 1) % @as(usize, @intCast(sm.duration_in_frames));
-                } else if (self.ctrl_playback < 0.0) {
-                    // Advance Backward (wrap at 0)
-                    self.current_frame_index = if (self.current_frame_index == 0)
-                        @as(usize, @intCast(sm.duration_in_frames - 1))
-                    else
-                        self.current_frame_index - 1;
-                }
-                self.last_frame_time_ns = self.playback_time_ns;
-            }
-
             // Mark this frame as decoded
             self.last_decoded_frame_index = self.current_frame_index;
-            return .decoded_new_frame;
+            return .{ .needs_decode = self.current_frame_index };
         }
         return .ok;
+    }
+
+    pub fn advanceFrame(self: *VideoMonitor) !void {
+
+        // Advance to next frame only if playing and time elapsed
+        if (self.ctrl_playback > 0.0) {
+            // Advance Forward
+            self.current_frame_index = (self.current_frame_index + 1) % @as(usize, @intCast(self.source_media.duration_in_frames));
+        } else if (self.ctrl_playback < 0.0) {
+            // Advance Backward (wrap at 0)
+            self.current_frame_index = if (self.current_frame_index == 0)
+                @as(usize, @intCast(self.source_media.duration_in_frames - 1))
+            else
+                self.current_frame_index - 1;
+        }
+        self.last_frame_time_ns = self.playback_time_ns;
     }
 
     pub fn deinit(self: *VideoMonitor) void {

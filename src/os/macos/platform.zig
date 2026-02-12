@@ -3,7 +3,9 @@ const metal = @import("metal");
 
 const App = @import("../../app.zig").App;
 const ui = @import("../../gui/ui.zig");
+
 const media = @import("../../io/media.zig");
+const videotoolbox = @import("../../io/decode/videotoolbox.zig");
 const vm = @import("../../gpu/video_monitor.zig");
 
 const Window = @import("window.zig").Window;
@@ -143,10 +145,13 @@ const RenderState = struct {
     source_media: *media.SourceMedia,
     /// Video playback controller (timing, frame index, decode triggers).
     video_monitor: vm.VideoMonitor,
-    /// Test slider value for UI demo.
-    test_slider_value: f32 = 0.5,
-    /// Frame counter for debugging.
-    ui_frame: u64 = 0,
+
+    ui_frame: usize,
+
+    // Video frame holders — keep CVPixelBuffer and Metal textures alive between frames
+    packed_metal_texture: ?metal.MetalTexture,
+    decoded_frame_holder: ?videotoolbox.DecodedFrame,
+    texture_set_holder: ?videotoolbox.MetalTextureSet,
 };
 
 /// Main render function called every vsync.
@@ -175,10 +180,8 @@ fn renderFrame(platform: *Platform) void {
             return;
         };
 
-        // FIXME: pass a GPU Backend abstraction?
         const video_monitor = vm.VideoMonitor.init(
             source_media,
-            platform.window.device_ptr,
             platform.app.io,
             platform.app.allocator,
         ) catch |err| {
@@ -199,6 +202,10 @@ fn renderFrame(platform: *Platform) void {
         state.* = .{
             .source_media = source_media,
             .video_monitor = video_monitor,
+            .decoded_frame_holder = null,
+            .ui_frame = 0,
+            .packed_metal_texture = null,
+            .texture_set_holder = null,
         };
         render_state = state;
     }
@@ -252,13 +259,13 @@ fn renderFrame(platform: *Platform) void {
     state.video_monitor.ctrl_playback = platform.app.playback_state.playing;
     state.video_monitor.ctrl_playback_speed = platform.app.playback_state.speed;
 
-    // Video monitor - decode and manage playback
-    _ = state.video_monitor.monitor();
+    // Decode the frame with Metal
+    decodeVideoFrame(state, platform) catch {};
 
     platform.app.playback_state.current_frame = state.video_monitor.current_frame_index;
 
     // Layer 1: Video
-    if (state.video_monitor.packed_metal_texture) |*texture| {
+    if (state.packed_metal_texture) |*texture| {
         const VideoUniforms = extern struct {
             video_size: [2]f32,
             viewport_size: [2]f32,
@@ -310,4 +317,60 @@ fn renderFrame(platform: *Platform) void {
 
     window_helpers.releaseDrawable(drawable_ptr);
     window_helpers.releaseTexture(texture_ptr);
+}
+
+fn decodeVideoFrame(state: *RenderState, platform: *Platform) !void {
+
+    // Video monitor - decode and manage playback
+    const result = state.video_monitor.monitor();
+    switch (result) {
+        .needs_decode => |frame_idx| {
+
+            // Reset scratch arena before decode
+            _ = state.video_monitor.decode_arena.reset(.free_all);
+
+            // Clean up previous frame resources before next decode
+            if (state.decoded_frame_holder) |*df| {
+                df.deinit();
+                state.decoded_frame_holder = null;
+            }
+            if (state.texture_set_holder) |*ts| {
+                ts.deinit();
+                state.texture_set_holder = null;
+            }
+
+            std.debug.print("Decoding frame {} (last={?})\n", .{ frame_idx, state.video_monitor.last_decoded_frame_index });
+            const decoded_frame = state.source_media.decodeSourceFrame(
+                frame_idx,
+                @ptrCast(platform.window.device_ptr),
+                state.video_monitor.decode_arena.allocator(),
+            ) catch |err| {
+                std.debug.print("❌ Failed to decode frame: {}\n", .{err});
+                return error.DecodeFrameFailed;
+            };
+            state.decoded_frame_holder = decoded_frame; // Keep alive until end of loop
+
+            std.debug.print("\nFrame info: \nCompressed Size:{d} \nDecompressed Size: {d}\n", .{ decoded_frame.compressed_frame_size, decoded_frame.decoded_frame_size });
+
+            // Create Metal texture from packed AYUV buffer (y416 format)
+            var texture_set = state.source_media.decoder.?.createMetalTextures(decoded_frame.pixel_buffer) catch |err| {
+                std.debug.print("❌ Failed to create Metal textures: {}\n", .{err});
+                return error.TextureCreationFailed;
+            };
+            state.texture_set_holder = texture_set; // Keep alive until end of loop
+
+            // Extract MTLTexture handle (single packed texture for y416)
+            const mtl_tex = texture_set.getMetalTexture();
+            state.packed_metal_texture = metal.MetalTexture.initFromPtr(mtl_tex);
+
+            // Mark this frame as decoded
+            state.video_monitor.last_decoded_frame_index = state.video_monitor.current_frame_index;
+
+            // Advance with new fn
+            // FIXME:             // Advance with new fn
+
+            return error.DecodeFrameFailed;
+        },
+        .ok => {},
+    }
 }
