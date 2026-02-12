@@ -367,7 +367,7 @@ fn decodeVideoFrame(state: *RenderState, platform: *Platform) !void {
             state.video_monitor.last_decoded_frame_index = state.video_monitor.current_frame_index;
 
             // Advance with new fn
-            // FIXME:             // Advance with new fn
+            try state.video_monitor.advanceFrame();
 
             return error.DecodeFrameFailed;
         },
