@@ -10,7 +10,7 @@ const vm = @import("../../gpu/video_monitor.zig");
 
 const Window = @import("window.zig").Window;
 const DisplayLink = @import("window.zig").DisplayLink;
-const window_helpers = @import("window.zig");
+const window_c = @import("window.zig");
 const MetalRenderer = @import("renderer.zig").MetalRenderer;
 
 const gpu_renderer = @import("../../gpu/renderer.zig");
@@ -35,6 +35,10 @@ pub const Platform = struct {
     imgui_ctx: *ui.ImGuiContext,
     /// Render configuration (pixel format, color space settings).
     config: gpu_renderer.RenderConfig,
+    /// Render State
+    /// Lazily initialized on first frame.
+    /// Holds video source, decoder state, and textures.
+    render_state: ?*RenderState,
     /// Timestamp when the platform was initialized (for elapsed time).
     start_time: std.Io.Clock.Timestamp,
 
@@ -90,6 +94,7 @@ pub const Platform = struct {
             .displaylink = displaylink,
             .imgui_ctx = imgui_ctx,
             .config = app.config,
+            .render_state = null,
             .start_time = start_time,
         };
     }
@@ -130,13 +135,8 @@ pub const Platform = struct {
 /// Called every vsync from the main thread (dispatched by CVDisplayLink).
 fn displayLinkCallback(userdata: ?*anyopaque) callconv(.c) void {
     const platform: *Platform = @ptrCast(@alignCast(userdata orelse return));
-    renderFrame(platform);
+    renderUiFrame(platform);
 }
-
-/// Render state that persists across frames (initialized lazily on first frame).
-/// This is a module-level variable because CVDisplayLink callbacks are C functions
-/// that can only receive a single userdata pointer (the Platform).
-var render_state: ?*RenderState = null;
 
 /// State that persists across render frames.
 /// Heap-allocated on first frame and reused for the lifetime of the app.
@@ -157,65 +157,19 @@ const RenderState = struct {
 /// Main render function called every vsync.
 /// Handles lazy video initialization, input polling, UI building, and GPU submission.
 /// Renders two layers: video (background) and IMGUI (foreground overlay).
-fn renderFrame(platform: *Platform) void {
-    // Lazy init of video on first frame
-    if (render_state == null) {
-        const video_path = platform.app.test_args.video_path;
+fn renderUiFrame(platform: *Platform) void {
 
-        const sm = media.SourceMedia.init(video_path, platform.app.io, platform.app.allocator) catch |err| {
-            std.debug.print("Error: Failed to load video file ({})\n", .{err});
-            return;
-        };
-
-        var source_media = platform.app.allocator.create(media.SourceMedia) catch {
-            std.debug.print("Error: Failed to allocate source media\n", .{});
-            return;
-        };
-        source_media.* = sm;
-
-        const state = platform.app.allocator.create(RenderState) catch {
-            std.debug.print("Error: Failed to allocate render state\n", .{});
-            source_media.deinit();
-            platform.app.allocator.destroy(source_media);
-            return;
-        };
-
-        const video_monitor = vm.VideoMonitor.init(
-            source_media,
-            platform.app.io,
-            platform.app.allocator,
-        ) catch |err| {
-            std.debug.print("Error: Failed to create video monitor ({})\n", .{err});
-            source_media.deinit();
-            platform.app.allocator.destroy(source_media);
-            platform.app.allocator.destroy(state);
-            return;
-        };
-
-        std.debug.print("✓ Loaded video: {d}x{d} @ {d:.2}fps, {d} frames\n\n", .{
-            source_media.resolution.width,
-            source_media.resolution.height,
-            source_media.frame_rate_float,
-            source_media.duration_in_frames,
-        });
-
-        state.* = .{
-            .source_media = source_media,
-            .video_monitor = video_monitor,
-            .decoded_frame_holder = null,
-            .ui_frame = 0,
-            .packed_metal_texture = null,
-            .texture_set_holder = null,
-        };
-        render_state = state;
+    // Get or init Render State
+    if (platform.render_state == null) {
+        platform.render_state = initRenderState(platform);
     }
+    const state = platform.render_state orelse return;
 
-    const state = render_state orelse return;
     state.ui_frame += 1;
 
     // ============ Get drawable and render
     const drawable_ptr = platform.window.getNextDrawable() orelse return;
-    const texture_ptr = window_helpers.getDrawableTexture(drawable_ptr) orelse return;
+    const texture_ptr = window_c.getDrawableTexture(drawable_ptr) orelse return;
 
     var drawable_texture = metal.MetalTexture.initFromPtr(texture_ptr);
 
@@ -315,8 +269,60 @@ fn renderFrame(platform: *Platform) void {
     command_buffer.present(drawable_ptr);
     command_buffer.commit();
 
-    window_helpers.releaseDrawable(drawable_ptr);
-    window_helpers.releaseTexture(texture_ptr);
+    window_c.releaseDrawable(drawable_ptr);
+    window_c.releaseTexture(texture_ptr);
+}
+
+fn initRenderState(platform: *Platform) ?*RenderState {
+    // Lazy init of video on first frame
+    const video_path = platform.app.test_args.video_path;
+
+    const sm = media.SourceMedia.init(video_path, platform.app.io, platform.app.allocator) catch |err| {
+        std.debug.print("Error: Failed to load video file ({})\n", .{err});
+        return null;
+    };
+
+    var source_media = platform.app.allocator.create(media.SourceMedia) catch {
+        std.debug.print("Error: Failed to allocate source media\n", .{});
+        return null;
+    };
+    source_media.* = sm;
+
+    const state = platform.app.allocator.create(RenderState) catch {
+        std.debug.print("Error: Failed to allocate render state\n", .{});
+        source_media.deinit();
+        platform.app.allocator.destroy(source_media);
+        return null;
+    };
+
+    const video_monitor = vm.VideoMonitor.init(
+        source_media,
+        platform.app.io,
+        platform.app.allocator,
+    ) catch |err| {
+        std.debug.print("Error: Failed to create video monitor ({})\n", .{err});
+        source_media.deinit();
+        platform.app.allocator.destroy(source_media);
+        platform.app.allocator.destroy(state);
+        return null;
+    };
+
+    std.debug.print("✓ Loaded video: {d}x{d} @ {d:.2}fps, {d} frames\n\n", .{
+        source_media.resolution.width,
+        source_media.resolution.height,
+        source_media.frame_rate_float,
+        source_media.duration_in_frames,
+    });
+
+    state.* = .{
+        .source_media = source_media,
+        .video_monitor = video_monitor,
+        .decoded_frame_holder = null,
+        .ui_frame = 0,
+        .packed_metal_texture = null,
+        .texture_set_holder = null,
+    };
+    return state;
 }
 
 fn decodeVideoFrame(state: *RenderState, platform: *Platform) !void {
@@ -324,7 +330,7 @@ fn decodeVideoFrame(state: *RenderState, platform: *Platform) !void {
     // Video monitor - decode and manage playback
     const result = state.video_monitor.monitor();
     switch (result) {
-        .needs_decode => |frame_idx| {
+        .needs_decode => |frame_info| {
 
             // Reset scratch arena before decode
             _ = state.video_monitor.decode_arena.reset(.free_all);
@@ -339,9 +345,23 @@ fn decodeVideoFrame(state: *RenderState, platform: *Platform) !void {
                 state.texture_set_holder = null;
             }
 
-            std.debug.print("Decoding frame {} (last={?})\n", .{ frame_idx, state.video_monitor.last_decoded_frame_index });
+            std.debug.print("Decoding frame {} (last={?})\nLast Frame Time: {d}\n", .{
+                frame_info.frame_idx,
+                state.video_monitor.last_decoded_frame_index,
+                state.video_monitor.monitor_stats.time_since_last_frame_ns,
+            });
+
+            std.debug.print("Frame Time: #{} | wall: {d:.1}ms | playback delta: {d:.1}ms (expected: {d:.1}ms)\n", .{
+                frame_info.frame_idx,
+                @as(f64, @floatFromInt(state.video_monitor.monitor_stats.wall_clock_delta_ns)) /
+                    std.time.ns_per_ms,
+                @as(f64, @floatFromInt(state.video_monitor.monitor_stats.time_since_last_frame_ns)) /
+                    std.time.ns_per_ms,
+                @as(f64, @floatFromInt(state.video_monitor.monitor_stats.frame_duration_ns)) / std.time.ns_per_ms,
+            });
+
             const decoded_frame = state.source_media.decodeSourceFrame(
-                frame_idx,
+                frame_info.frame_idx,
                 @ptrCast(platform.window.device_ptr),
                 state.video_monitor.decode_arena.allocator(),
             ) catch |err| {
@@ -362,14 +382,6 @@ fn decodeVideoFrame(state: *RenderState, platform: *Platform) !void {
             // Extract MTLTexture handle (single packed texture for y416)
             const mtl_tex = texture_set.getMetalTexture();
             state.packed_metal_texture = metal.MetalTexture.initFromPtr(mtl_tex);
-
-            // Mark this frame as decoded
-            state.video_monitor.last_decoded_frame_index = state.video_monitor.current_frame_index;
-
-            // Advance with new fn
-            try state.video_monitor.advanceFrame();
-
-            return error.DecodeFrameFailed;
         },
         .ok => {},
     }

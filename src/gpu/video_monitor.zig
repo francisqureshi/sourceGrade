@@ -1,24 +1,21 @@
 const std = @import("std");
-// const metal = @import("metal");
-const ui = @import("../gui/ui.zig");
-
 const media = @import("../io/media.zig");
-const videotoolbox = @import("../io/decode/videotoolbox.zig");
 
 pub const MonitorResult = union(enum) {
     ok,
-    needs_decode: usize,
-    // FIXME: removing...
-    // decoded_new_frame,
-    // decode_failed,
-    // texture_failed,
+    needs_decode: struct {
+        frame_idx: usize,
+    },
 };
 
-/// Specifically only works with Metal atm§
+pub const MonitorStats = struct {
+    time_since_last_frame_ns: u64 = 0,
+    wall_clock_delta_ns: u64 = 0,
+    frame_duration_ns: u64 = 0,
+};
+
 pub const VideoMonitor = struct {
     source_media: *media.SourceMedia,
-    // FIXME: removing...
-    // device_ptr: *anyopaque,
     io: std.Io,
     decode_arena: std.heap.ArenaAllocator,
 
@@ -32,19 +29,11 @@ pub const VideoMonitor = struct {
     current_frame_index: usize,
     last_decoded_frame_index: ?usize,
 
-    // // Video texture holders must persist across frames
-    // // These keep the CVPixelBuffer and Metal textures alive between decode and present
-    // FIXME: removing...
-    // packed_metal_texture: ?metal.MetalTexture,
-    // decoded_frame_holder: ?videotoolbox.DecodedFrame,
-    // texture_set_holder: ?videotoolbox.MetalTextureSet,
+    monitor_stats: MonitorStats,
 
-    /// Initialize with IO (for timestamps) and device pointer (Metal MTLDevice).
-    /// Note: Currently Metal-specific due to texture handling. Future work will abstract this.
+    /// Initialize with IO (for timestamps)
     pub fn init(
         source_media: *media.SourceMedia,
-        // FIXME: removing...
-        // device_ptr: *anyopaque,
         io: std.Io,
         allocator: std.mem.Allocator,
     ) !VideoMonitor {
@@ -66,6 +55,7 @@ pub const VideoMonitor = struct {
 
             .current_frame_index = 0,
             .last_decoded_frame_index = null,
+            .monitor_stats = .{},
         };
     }
 
@@ -82,11 +72,14 @@ pub const VideoMonitor = struct {
         // - ~11-12ms
         //  About 40ms for 25fps playback but with triple buffered ui vsync of 8.3ms
         //  means 40ms is every 4.8 vsyncs..
-        // std.debug.print("frame delta: {}ns\n", .{delta_ns});
+        // std.debug.print("frame delta: {}ns\n", .{ui_frame_delta_ns});
 
         if (self.ctrl_playback != 0.0) {
             // Accumulate frame_delta_ns
-            self.playback_time_ns += @as(u64, @intFromFloat(@as(f64, @floatFromInt(ui_frame_delta_ns)) * self.ctrl_playback_speed));
+            self.playback_time_ns += @as(
+                u64,
+                @intFromFloat(@as(f64, @floatFromInt(ui_frame_delta_ns)) * self.ctrl_playback_speed),
+            );
         }
 
         const time_since_last_frame_ns = self.playback_time_ns - self.last_frame_time_ns;
@@ -100,33 +93,43 @@ pub const VideoMonitor = struct {
         // Should we decode? Yes if:
         // - Frame index changed (first frame, seek, or playback advanced)
         // - OR we're playing and enough time has passed
-        const frame_changed = self.last_decoded_frame_index == null or self.last_decoded_frame_index.? != self.current_frame_index;
         const advance = self.ctrl_playback != 0.0 and frame_duration_ns > 0 and time_since_last_frame_ns >= frame_duration_ns;
-        const should_decode = frame_changed or advance;
 
-        if (should_decode) {
+        // Advance to next frame only if playing and time elapsed
+        if (advance) {
+            if (self.ctrl_playback > 0.0) {
+                // Advance Forward
+                self.current_frame_index = (self.current_frame_index + 1) % @as(usize, @intCast(self.source_media.duration_in_frames));
+            } else if (self.ctrl_playback < 0.0) {
+                // Advance Backward (wrap at 0)
+                self.current_frame_index = if (self.current_frame_index == 0)
+                    @as(usize, @intCast(self.source_media.duration_in_frames - 1))
+                else
+                    self.current_frame_index - 1;
+            }
+            self.last_frame_time_ns = self.playback_time_ns;
+        }
+
+        const frame_changed = self.last_decoded_frame_index == null or self.last_decoded_frame_index.? != self.current_frame_index;
+
+        // Write Stats
+        self.monitor_stats.frame_duration_ns = frame_duration_ns;
+        self.monitor_stats.wall_clock_delta_ns = ui_frame_delta_ns;
+        self.monitor_stats.time_since_last_frame_ns = time_since_last_frame_ns;
+
+        if (frame_changed) {
 
             // Mark this frame as decoded
             self.last_decoded_frame_index = self.current_frame_index;
-            return .{ .needs_decode = self.current_frame_index };
+
+            return .{
+                .needs_decode = .{
+                    .frame_idx = self.current_frame_index,
+                },
+            };
         }
+
         return .ok;
-    }
-
-    pub fn advanceFrame(self: *VideoMonitor) !void {
-
-        // Advance to next frame only if playing and time elapsed
-        if (self.ctrl_playback > 0.0) {
-            // Advance Forward
-            self.current_frame_index = (self.current_frame_index + 1) % @as(usize, @intCast(self.source_media.duration_in_frames));
-        } else if (self.ctrl_playback < 0.0) {
-            // Advance Backward (wrap at 0)
-            self.current_frame_index = if (self.current_frame_index == 0)
-                @as(usize, @intCast(self.source_media.duration_in_frames - 1))
-            else
-                self.current_frame_index - 1;
-        }
-        self.last_frame_time_ns = self.playback_time_ns;
     }
 
     pub fn deinit(self: *VideoMonitor) void {
