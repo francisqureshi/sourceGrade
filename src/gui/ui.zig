@@ -1,5 +1,4 @@
 const std = @import("std");
-const metal = @import("metal");
 
 const Font = @import("text/font/Font.zig");
 const Atlas = @import("text/font/Atlas.zig");
@@ -62,11 +61,6 @@ const FontEntry = struct {
 pub const ImGuiContext = struct {
     allocator: std.mem.Allocator,
 
-    // Ring buffers (triple-buffered for smooth CPU/GPU overlap)
-    vertex_buffers: [FRAMES_IN_FLIGHT]metal.MetalBuffer,
-    index_buffers: [FRAMES_IN_FLIGHT]metal.MetalBuffer,
-    current_frame: usize,
-
     // CPU-side buffers (rebuilt each frame)
     vertices: std.ArrayList(ImVertex),
     indices: std.ArrayList(u16),
@@ -86,16 +80,13 @@ pub const ImGuiContext = struct {
     backing_scale_factor: f32, // HiDPI scale (1.0 = normal, 2.0 = Retina)
 
     // Font rendering (integrated)
-    device: *metal.MetalDevice,
     font_name: [:0]const u8,
     font_entries: std.AutoHashMap(u32, FontEntry), // font_size -> FontEntry
     atlas: Atlas,
-    atlas_texture: metal.MetalTexture,
     atlas_modified: usize,
 
     /// Initialize the IMGUI context with triple-buffered GPU resources
-    pub fn init(allocator: std.mem.Allocator, device: *metal.MetalDevice, pixel_format: metal.PixelFormat) !ImGuiContext {
-        _ = pixel_format;
+    pub fn init(allocator: std.mem.Allocator) !ImGuiContext {
 
         // Initialize font system
         const font_name: [:0]const u8 = "IBM Plex Mono";
@@ -119,15 +110,8 @@ pub const ImGuiContext = struct {
         var atlas = try Atlas.init(allocator, atlas_size, .grayscale);
         errdefer atlas.deinit(allocator);
 
-        // Create atlas texture (grayscale R8)
-        var atlas_texture = try device.createTextureWithFormat(atlas_size, atlas_size, .r8_unorm, false);
-        errdefer atlas_texture.deinit();
-
         var ctx = ImGuiContext{
             .allocator = allocator,
-            .vertex_buffers = undefined,
-            .index_buffers = undefined,
-            .current_frame = 0,
             .vertices = std.ArrayList(ImVertex).empty,
             .indices = std.ArrayList(u16).empty,
             .draw_cmds = std.ArrayList(ImDrawCmd).empty,
@@ -140,11 +124,9 @@ pub const ImGuiContext = struct {
             .display_width = 1600,
             .display_height = 900,
             .backing_scale_factor = 1.0,
-            .device = device,
             .font_name = font_name,
             .font_entries = font_entries,
             .atlas = atlas,
-            .atlas_texture = atlas_texture,
             .atlas_modified = 0,
         };
 
@@ -152,15 +134,6 @@ pub const ImGuiContext = struct {
         try ctx.vertices.ensureTotalCapacity(allocator, MAX_VERTICES);
         try ctx.indices.ensureTotalCapacity(allocator, MAX_INDICES);
         try ctx.draw_cmds.ensureTotalCapacity(allocator, 256);
-
-        // Create triple-buffered GPU buffers
-        const vertex_buffer_size = MAX_VERTICES * @sizeOf(ImVertex);
-        const index_buffer_size = MAX_INDICES * @sizeOf(u16);
-
-        for (0..FRAMES_IN_FLIGHT) |i| {
-            ctx.vertex_buffers[i] = try device.createBuffer(@intCast(vertex_buffer_size));
-            ctx.index_buffers[i] = try device.createBuffer(@intCast(index_buffer_size));
-        }
 
         return ctx;
     }
@@ -175,12 +148,7 @@ pub const ImGuiContext = struct {
         }
         self.font_entries.deinit();
         self.atlas.deinit(self.allocator);
-        self.atlas_texture.deinit();
 
-        for (0..FRAMES_IN_FLIGHT) |i| {
-            self.vertex_buffers[i].deinit();
-            self.index_buffers[i].deinit();
-        }
         self.vertices.deinit(self.allocator);
         self.indices.deinit(self.allocator);
         self.draw_cmds.deinit(self.allocator);
@@ -195,37 +163,7 @@ pub const ImGuiContext = struct {
         self.hot_id = 0; // Reset hot tracking (active persists across frames)
     }
 
-    /// Upload CPU-side geometry to GPU buffers
-    /// Call after building UI, before rendering
-    pub fn render(self: *ImGuiContext) void {
-        if (self.vertices.items.len == 0) return;
-
-        // Upload atlas texture if modified
-        const atlas_modified = self.atlas.modified.load(.monotonic);
-        if (atlas_modified != self.atlas_modified) {
-            self.atlas_texture.upload(
-                self.atlas.data,
-                self.atlas.size,
-                self.atlas.size,
-                self.atlas.size, // bytes per row for grayscale
-            );
-            self.atlas_modified = atlas_modified;
-        }
-
-        // Get current frame's buffers from ring
-        var vb = &self.vertex_buffers[self.current_frame];
-        var ib = &self.index_buffers[self.current_frame];
-
-        // Upload CPU data to GPU
-        const vertex_bytes = std.mem.sliceAsBytes(self.vertices.items);
-        const index_bytes = std.mem.sliceAsBytes(self.indices.items);
-
-        vb.upload(vertex_bytes);
-        ib.upload(index_bytes);
-
-        // Advance to next frame buffer
-        self.current_frame = (self.current_frame + 1) % FRAMES_IN_FLIGHT;
-    }
+    // INFO: Removed fn render in favour of ui_renderder.zig
 
     /// Add a filled triangle to the current frame's geometry, xy is first point, other points followed are relative.
     pub fn addTriangle(self: *ImGuiContext, x: f32, y: f32, xb: f32, yb: f32, xc: f32, yc: f32, color: u32) !void {
@@ -433,19 +371,6 @@ pub const ImGuiContext = struct {
         try self.addRect(thumb_x, y, thumb_width, h, thumb_color);
     }
 
-    /// Get the vertex buffer for the previous frame (for rendering)
-    /// Returns the buffer that was just uploaded by render()
-    pub fn getVertexBuffer(self: *ImGuiContext) *metal.MetalBuffer {
-        const prev_frame = (self.current_frame + FRAMES_IN_FLIGHT - 1) % FRAMES_IN_FLIGHT;
-        return &self.vertex_buffers[prev_frame];
-    }
-
-    /// Get the index buffer for the previous frame (for rendering)
-    pub fn getIndexBuffer(self: *ImGuiContext) *metal.MetalBuffer {
-        const prev_frame = (self.current_frame + FRAMES_IN_FLIGHT - 1) % FRAMES_IN_FLIGHT;
-        return &self.index_buffers[prev_frame];
-    }
-
     /// Get the number of indices to render
     pub fn getIndexCount(self: *ImGuiContext) u32 {
         return @intCast(self.indices.items.len);
@@ -501,10 +426,6 @@ pub const ImGuiContext = struct {
                 // Try to grow atlas
                 const new_size = self.atlas.size * 2;
                 try self.atlas.grow(self.allocator, new_size);
-
-                // Recreate texture with new size
-                self.atlas_texture.deinit();
-                self.atlas_texture = try self.device.createTextureWithFormat(new_size, new_size, .r8_unorm, false);
 
                 // Try reserve again
                 return self.getOrRenderGlyph(entry, glyph_id);

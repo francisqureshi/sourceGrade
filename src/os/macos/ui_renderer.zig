@@ -57,8 +57,8 @@ pub const ImGuiRenderer = struct {
         }
 
         // Upload atlas texture if modified
-        const atlas_modified = self.atlas.modified.load(.monotonic);
-        if (atlas_modified != ctx.atlas_modified) {
+        const atlas_modified = ctx.atlas.modified.load(.monotonic);
+        if (atlas_modified != self.atlas_modified) {
             self.atlas_texture.upload(
                 ctx.atlas.data,
                 ctx.atlas.size,
@@ -83,7 +83,24 @@ pub const ImGuiRenderer = struct {
         self.current_frame = (self.current_frame + 1) % FRAMES_IN_FLIGHT;
     }
 
-    pub fn getVertexBuffer(self: *ImGuiRenderer) *metal.MetalBuffer {}
-    pub fn getIndexBuffer(self: *ImGuiRenderer) *metal.MetalBuffer {}
-    pub fn deinit(self: *ImGuiRenderer) void {}
+    /// Get the vertex buffer for the previous frame
+    pub fn getVertexBuffer(self: *ImGuiRenderer) *metal.MetalBuffer {
+        const prev_frame = (self.current_frame + FRAMES_IN_FLIGHT - 1) % FRAMES_IN_FLIGHT;
+        return &self.vertex_buffers[prev_frame];
+    }
+
+    /// Get the index buffer for the previous frame
+    pub fn getIndexBuffer(self: *ImGuiRenderer) *metal.MetalBuffer {
+        const prev_frame = (self.current_frame + FRAMES_IN_FLIGHT - 1) % FRAMES_IN_FLIGHT;
+        return &self.index_buffers[prev_frame];
+    }
+
+    pub fn deinit(self: *ImGuiRenderer) void {
+        self.atlas_texture.deinit();
+
+        for (0..FRAMES_IN_FLIGHT) |i| {
+            self.vertex_buffers[i].deinit();
+            self.index_buffers[i].deinit();
+        }
+    }
 };

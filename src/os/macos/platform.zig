@@ -12,6 +12,7 @@ const Window = @import("window.zig").Window;
 const DisplayLink = @import("window.zig").DisplayLink;
 const window_c = @import("window.zig");
 const MetalRenderer = @import("renderer.zig").MetalRenderer;
+const ImGuiRenderer = @import("ui_renderer.zig").ImGuiRenderer;
 
 const gpu_renderer = @import("../../gpu/renderer.zig");
 
@@ -33,6 +34,8 @@ pub const Platform = struct {
     displaylink: DisplayLink,
     /// IMGUI context for immediate-mode UI rendering (heap-allocated).
     imgui_ctx: *ui.ImGuiContext,
+    /// ui renderer
+    ui_renderer: ImGuiRenderer,
     /// Render configuration (pixel format, color space settings).
     config: gpu_renderer.RenderConfig,
     /// Render State
@@ -67,12 +70,16 @@ pub const Platform = struct {
         // Create Metal renderer (device, queue, pipelines)
         var renderer = try MetalRenderer.init(pixel_format);
 
-        // Initialize IMGUI context on heap so pointer stays valid
+        // Initialize ImGui context on heap so pointer stays valid
         const imgui_ctx = try app.allocator.create(ui.ImGuiContext);
-        imgui_ctx.* = try ui.ImGuiContext.init(app.allocator, &renderer.device, renderer.pixel_format);
+        imgui_ctx.* = try ui.ImGuiContext.init(app.allocator);
+
         imgui_ctx.display_width = 1600;
         imgui_ctx.display_height = 900;
         std.debug.print("✓ Created IMGUI context (triple-buffered)\n\n", .{});
+
+        // Initialize ImGuiRenderer
+        const imgui_renderer = try ImGuiRenderer.init(&renderer.device, imgui_ctx.atlas.size);
 
         // Initialize NSApplication (must happen before showing window)
         Window.initApp();
@@ -93,6 +100,7 @@ pub const Platform = struct {
             .renderer = renderer,
             .displaylink = displaylink,
             .imgui_ctx = imgui_ctx,
+            .ui_renderer = imgui_renderer,
             .config = app.config,
             .render_state = null,
             .start_time = start_time,
@@ -113,6 +121,7 @@ pub const Platform = struct {
     pub fn deinit(self: *Platform) void {
         self.displaylink.deinit();
         self.imgui_ctx.deinit();
+        self.ui_renderer.deinit();
         self.app.allocator.destroy(self.imgui_ctx);
         self.renderer.deinit();
         self.window.deinit();
@@ -157,18 +166,18 @@ const RenderState = struct {
 /// Main render function called every vsync.
 /// Handles lazy video initialization, input polling, UI building, and GPU submission.
 /// Renders two layers: video (background) and IMGUI (foreground overlay).
-fn renderUiFrame(platform: *Platform) void {
+fn renderUiFrame(self: *Platform) void {
 
     // Get or init Render State
-    if (platform.render_state == null) {
-        platform.render_state = initRenderState(platform);
+    if (self.render_state == null) {
+        self.render_state = initRenderState(self);
     }
-    const state = platform.render_state orelse return;
+    const state = self.render_state orelse return;
 
     state.ui_frame += 1;
 
     // ============ Get drawable and render
-    const drawable_ptr = platform.window.getNextDrawable() orelse return;
+    const drawable_ptr = self.window.getNextDrawable() orelse return;
     const texture_ptr = window_c.getDrawableTexture(drawable_ptr) orelse return;
 
     var drawable_texture = metal.MetalTexture.initFromPtr(texture_ptr);
@@ -176,47 +185,47 @@ fn renderUiFrame(platform: *Platform) void {
     const drawable_width = drawable_texture.getWidth();
     const drawable_height = drawable_texture.getHeight();
 
-    const backing_scale = platform.window.getBackingScale();
-    platform.imgui_ctx.backing_scale_factor = @floatCast(backing_scale);
+    const backing_scale = self.window.getBackingScale();
+    self.imgui_ctx.backing_scale_factor = @floatCast(backing_scale);
 
     const display_width_pts = @as(f32, @floatFromInt(drawable_width)) / @as(f32, @floatCast(backing_scale));
     const display_height_pts = @as(f32, @floatFromInt(drawable_height)) / @as(f32, @floatCast(backing_scale));
-    platform.imgui_ctx.display_width = display_width_pts;
-    platform.imgui_ctx.display_height = display_height_pts;
+    self.imgui_ctx.display_width = display_width_pts;
+    self.imgui_ctx.display_height = display_height_pts;
 
     var render_pass = metal.MetalRenderPassDescriptor.init();
     defer render_pass.deinit();
     render_pass.setColorTexture(&drawable_texture, 0);
     render_pass.setClearColor(0.0, 0.0, 0.0, 1.0, 0);
 
-    var command_buffer = platform.renderer.queue.createCommandBuffer() catch return;
+    var command_buffer = self.renderer.queue.createCommandBuffer() catch return;
     defer command_buffer.deinit();
 
     var render_encoder = command_buffer.createRenderEncoder(&render_pass) catch return;
     defer render_encoder.deinit();
 
     // ============ Build IMGUI frame
-    platform.imgui_ctx.newFrame();
+    self.imgui_ctx.newFrame();
 
     // Get mouse input
     var mouse_x: f32 = 0;
     var mouse_y: f32 = 0;
     var mouse_down: bool = false;
-    platform.window.getMouseState(&mouse_x, &mouse_y, &mouse_down);
+    self.window.getMouseState(&mouse_x, &mouse_y, &mouse_down);
 
-    platform.imgui_ctx.mouse_x = mouse_x;
-    platform.imgui_ctx.mouse_y = mouse_y;
-    platform.imgui_ctx.mouse_down = mouse_down;
+    self.imgui_ctx.mouse_x = mouse_x;
+    self.imgui_ctx.mouse_y = mouse_y;
+    self.imgui_ctx.mouse_down = mouse_down;
 
-    platform.app.buildUI(platform.imgui_ctx);
+    self.app.buildUI(self.imgui_ctx);
 
-    state.video_monitor.ctrl_playback = platform.app.playback_state.playing;
-    state.video_monitor.ctrl_playback_speed = platform.app.playback_state.speed;
+    state.video_monitor.ctrl_playback = self.app.playback_state.playing;
+    state.video_monitor.ctrl_playback_speed = self.app.playback_state.speed;
 
     // Decode the frame with Metal
-    decodeVideoFrame(state, platform) catch {};
+    decodeVideoFrame(state, self) catch {};
 
-    platform.app.playback_state.current_frame = state.video_monitor.current_frame_index;
+    self.app.playback_state.current_frame = state.video_monitor.current_frame_index;
 
     // Layer 1: Video
     if (state.packed_metal_texture) |*texture| {
@@ -233,21 +242,21 @@ fn renderUiFrame(platform: *Platform) void {
             .viewport_size = .{ display_width_pts, display_height_pts },
         };
 
-        render_encoder.setPipeline(&platform.renderer.video_pipeline);
+        render_encoder.setPipeline(&self.renderer.video_pipeline);
         render_encoder.setVertexBytes(@ptrCast(&video_uniforms), @sizeOf(VideoUniforms), 0);
         render_encoder.setFragmentTexture(texture, 0);
         render_encoder.drawPrimitives(.triangle_strip, 0, 4);
     }
 
     // Layer 2: IMGUI
-    platform.imgui_ctx.render();
+    self.ui_renderer.upload(self.imgui_ctx);
 
-    const imgui_index_count = platform.imgui_ctx.getIndexCount();
+    const imgui_index_count = self.imgui_ctx.getIndexCount();
     if (imgui_index_count > 0) {
-        render_encoder.setPipeline(&platform.renderer.imgui_pipeline);
+        render_encoder.setPipeline(&self.renderer.imgui_pipeline);
 
-        const imgui_vb = platform.imgui_ctx.getVertexBuffer();
-        const imgui_ib = platform.imgui_ctx.getIndexBuffer();
+        const imgui_vb = self.ui_renderer.getVertexBuffer();
+        const imgui_ib = self.ui_renderer.getIndexBuffer();
         render_encoder.setVertexBuffer(imgui_vb, 0, 0);
 
         const ImGuiUniforms = extern struct {
@@ -255,12 +264,12 @@ fn renderUiFrame(platform: *Platform) void {
             use_display_p3: bool,
         };
         const imgui_uniforms = ImGuiUniforms{
-            .screen_size = .{ platform.imgui_ctx.display_width, platform.imgui_ctx.display_height },
-            .use_display_p3 = platform.config.use_display_p3,
+            .screen_size = .{ self.imgui_ctx.display_width, self.imgui_ctx.display_height },
+            .use_display_p3 = self.config.use_display_p3,
         };
         render_encoder.setVertexBytes(@ptrCast(&imgui_uniforms), @sizeOf(ImGuiUniforms), 1);
 
-        render_encoder.setFragmentTexture(&platform.imgui_ctx.atlas_texture, 0);
+        render_encoder.setFragmentTexture(&self.ui_renderer.atlas_texture, 0);
         render_encoder.drawIndexedPrimitives(.triangle, imgui_index_count, imgui_ib, 0);
     }
 

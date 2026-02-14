@@ -68,7 +68,6 @@ pub const App = struct {
     }
 
     pub fn buildUI(self: *App, imgui: *ui.ImGuiContext) void {
-        // TODO: will contain imgui widget calls
 
         // Test slider and rects
         imgui.slider(1, 1400, 300, 100, 50, &self.test_slider_value, 0, 1) catch {};
