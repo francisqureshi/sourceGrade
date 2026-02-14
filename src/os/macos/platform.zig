@@ -374,7 +374,7 @@ fn decodeVideoFrame(state: *RenderState, platform: *Platform) !void {
                 @ptrCast(platform.window.device_ptr),
                 state.video_monitor.decode_arena.allocator(),
             ) catch |err| {
-                std.debug.print("❌ Failed to decode frame: {}\n", .{err});
+                std.debug.print("Failed to decode frame: {}\n", .{err});
                 return error.DecodeFrameFailed;
             };
             state.decoded_frame_holder = decoded_frame; // Keep alive until end of loop
@@ -383,7 +383,7 @@ fn decodeVideoFrame(state: *RenderState, platform: *Platform) !void {
 
             // Create Metal texture from packed AYUV buffer (y416 format)
             var texture_set = state.source_media.decoder.?.createMetalTextures(decoded_frame.pixel_buffer) catch |err| {
-                std.debug.print("❌ Failed to create Metal textures: {}\n", .{err});
+                std.debug.print("Failed to create Metal textures: {}\n", .{err});
                 return error.TextureCreationFailed;
             };
             state.texture_set_holder = texture_set; // Keep alive until end of loop
