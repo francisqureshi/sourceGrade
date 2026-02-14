@@ -36,8 +36,8 @@ pub const App = struct {
 
         // Test setup args
         const test_args = TestingConfig{
-            // .video_path = "/Users/fq/Desktop/AGMM/COS_AW25_4K_4444_LR001_LOG_S06.mov",
-            .video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov",
+            .video_path = "/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov",
+            // .video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov",
         };
 
         const playback_state: PlaybackState = .{
