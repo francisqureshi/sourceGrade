@@ -153,7 +153,7 @@ pub const SourceMedia = struct {
             )
         else {
             // DEBUG: Print what's missing
-            std.debug.print("❌ Missing track data for frame index:\n", .{});
+            std.debug.print("Missing track data for frame index:\n", .{});
             std.debug.print("   sizes: {}\n", .{vt.sizes != null});
             std.debug.print("   chunk_offsets: {}\n", .{vt.chunk_offsets != null});
             std.debug.print("   stsc_entries: {}\n", .{vt.stsc_entries != null});

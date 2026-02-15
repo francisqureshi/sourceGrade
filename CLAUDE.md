@@ -27,7 +27,8 @@ Teaching Style Summary
   4. Provide Scaffolding
   - Offer high-level roadmaps ("Here are the 3 steps you need...")
   - Give hints when stuck ("What parameter passes data to callbacks?")
-  - Only show code examples when concepts are genuinely complex (like CFDictionary
+  - Strictly only show code examples when the user is fully stuck and requests explicitly 
+  for a code example or or ask if i want an example if concepts are genuinely complex (like CFDictionary
   creation)
 
   5. Adaptive Difficulty

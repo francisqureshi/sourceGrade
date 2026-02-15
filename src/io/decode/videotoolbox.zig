@@ -166,7 +166,7 @@ pub const Decoder = struct {
         );
 
         if (status != c.noErr) {
-            std.debug.print("❌ Failed to create texture: {}\n", .{status});
+            std.debug.print(" Failed to create texture: {}\n", .{status});
             return error.TextureCreationFailed;
         }
 
@@ -188,7 +188,7 @@ pub const Decoder = struct {
         const format_bytes: [4]u8 = @bitCast(pixel_format);
         const bits_per_pixel = (bytes_per_row * 8) / width;
 
-        std.debug.print("📊 Decoded: {d}x{d}, {s} ({d}-bit/pixel)\n", .{ width, height, &format_bytes, bits_per_pixel });
+        std.debug.print("Decoded: {d}x{d}, {s} ({d}-bit/pixel)\n", .{ width, height, &format_bytes, bits_per_pixel });
     }
 
     pub fn deinit(self: *Decoder) void {
@@ -235,7 +235,7 @@ export fn decompressionOutputCallback(
     presentationDuration: c.CMTime,
 ) callconv(.c) void {
     if (status != c.noErr) {
-        std.debug.print("❌ Decode callback error: {d}\n", .{status});
+        std.debug.print("Decode callback error: {d}\n", .{status});
         return;
     }
 
