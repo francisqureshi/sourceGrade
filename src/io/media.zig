@@ -14,6 +14,8 @@ pub const MediaContext = struct {
     allocator: Allocator,
 };
 
+const GLB = 9;
+
 /// Optional Overiddable type that holds original detected value
 /// and a user set 'override' value
 /// use .get() to return current value.
@@ -137,9 +139,9 @@ pub const SourceMedia = struct {
 
         // Create SMPTE calculator
         const smpte_calc = smpte.SMPTE.initFromRational(frame_rate.get(), drop_frame);
-        var start_tc_buffer: [32]u8 = undefined;
+        var start_tc_buf: [32]u8 = undefined;
 
-        const start_timecode_slice = try smpte_calc.getTC(start_frame_number, &start_tc_buffer);
+        const start_timecode_slice = try smpte_calc.getTC(start_frame_number, &start_tc_buf);
         const start_timecode = try mctx.allocator.dupe(u8, start_timecode_slice);
         errdefer mctx.allocator.free(start_timecode);
 
@@ -163,8 +165,8 @@ pub const SourceMedia = struct {
         const duration_in_frames = @as(i64, @intCast(frames.len));
         const end_frame_number = start_frame_number + duration_in_frames - 1;
 
-        var end_tc_buffer: [32]u8 = undefined;
-        const end_timecode_slice = try smpte_calc.getTC(end_frame_number, &end_tc_buffer);
+        var end_tc_buf: [32]u8 = undefined;
+        const end_timecode_slice = try smpte_calc.getTC(end_frame_number, &end_tc_buf);
         const end_timecode = try mctx.allocator.dupe(u8, end_timecode_slice);
         errdefer mctx.allocator.free(end_timecode);
 
@@ -217,7 +219,7 @@ pub const SourceMedia = struct {
         metal_device: videotoolbox.MTLDeviceRef, // Pass per-decode, not at init
         scratch_allocator: Allocator,
     ) !videotoolbox.DecodedFrame {
-        // Lazilyy initialize  VideoToolBox decoder with metal device
+        // Lazily initialize  VideoToolBox decoder with metal device
 
         if (self.decoder == null) {
             self.decoder = try videotoolbox.Decoder.init(self, metal_device);
@@ -228,7 +230,7 @@ pub const SourceMedia = struct {
     /// Read a compressed frame into the provided buffer
     /// Returns the number of bytes written to the buffer
     /// Returns error.BufferTooSmall if buffer is insufficient
-    pub fn readFrame(self: *const SourceMedia, frame_index: usize, buffer: []u8) !usize {
+    pub fn readFrame(self: *const SourceMedia, frame_index: usize, compressed_frame_buf: []u8) !usize {
         if (frame_index >= self.frames.len) return error.FrameIndexOutOfBounds;
 
         const frame_data = try mov.extractFrame(
@@ -239,9 +241,9 @@ pub const SourceMedia = struct {
         );
         defer self.mctx.allocator.free(frame_data);
 
-        if (buffer.len < frame_data.len) return error.BufferTooSmall;
+        if (compressed_frame_buf.len < frame_data.len) return error.BufferTooSmall;
 
-        @memcpy(buffer[0..frame_data.len], frame_data);
+        @memcpy(compressed_frame_buf[0..frame_data.len], frame_data);
         return frame_data.len;
     }
 
@@ -315,10 +317,10 @@ pub fn main() !void {
         const frame_size = try test_source.getFrameSize(0);
         std.debug.print("\nFirst frame size: {d} bytes\n", .{frame_size});
 
-        const buffer = try allocator.alloc(u8, frame_size);
-        defer allocator.free(buffer);
+        const compressed_frame_buf = try allocator.alloc(u8, frame_size);
+        defer allocator.free(compressed_frame_buf);
 
-        const bytes_read = try test_source.readFrame(0, buffer);
+        const bytes_read = try test_source.readFrame(0, compressed_frame_buf);
         std.debug.print("Read {d} bytes from frame 0\n", .{bytes_read});
     }
 }

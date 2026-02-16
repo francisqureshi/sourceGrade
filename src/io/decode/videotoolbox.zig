@@ -1,4 +1,5 @@
 const std = @import("std");
+const decoder = @import("../decode/decoder.zig");
 const media = @import("../media.zig");
 const c = @import("c.zig");
 
@@ -8,20 +9,37 @@ const Allocator = std.mem.Allocator;
 const Io = std.Io;
 pub const log = std.log.scoped(.videoToolBox);
 
+const VideoToolboxError = error{
+    CreateFormatDescriptionFailed,
+    CreateDecompressionSessionFailed,
+    CreateBlockBufferFailed,
+    CreateSampleBufferFailed,
+    DecodeFrameFailed,
+    DecoderWaitFailed,
+    TextureCreationFailed,
+};
+
 /// For packed y416 format (kCVPixelFormatType_4444AYpCbCr16), we use a single RGBA16Unorm texture.
 /// The 64-bit AYUV data maps to Metal's RGBA16 as: R=A, G=Y, B=Cb, A=Cr
 pub const MetalTextureSet = struct {
     texture: c.CVMetalTextureRef, // Single packed AYUV texture
 
+    /// Returns the underlying MTLTexture for binding to Metal render pipelines.
+    /// The texture remains valid as long as this MetalTextureSet is alive.
     pub fn getMetalTexture(self: *const MetalTextureSet) c.MTLTextureRef {
         return c.CVMetalTextureGetTexture(self.texture);
     }
 
+    /// Releases the CVMetalTexture reference.
+    /// The underlying Metal texture becomes invalid after this call.
     pub fn deinit(self: *MetalTextureSet) void {
         c.CFRelease(self.texture);
     }
 };
 
+/// macOS VideoToolbox hardware decoder wrapper.
+/// Uses Apple's hardware-accelerated ProRes/H.264/HEVC decoding via VTDecompressionSession.
+/// Outputs GPU-backed CVPixelBuffers for zero-copy Metal rendering.
 pub const Decoder = struct {
     session: c.VTDecompressionSessionRef,
     format_desc: c.CMVideoFormatDescriptionRef,
@@ -30,6 +48,9 @@ pub const Decoder = struct {
     texture_cache: c.CVMetalTextureCacheRef, // Metal texture cache for zero-copy textures
     metal_device: c.MTLDeviceRef, // Metal device
 
+    /// Creates a VideoToolbox decoder for the given source media.
+    /// Registers professional codecs (ProRes), creates format description from stsd atom,
+    /// sets up decompression session with Metal-compatible output, and creates texture cache.
     pub fn init(
         source_media: *const media.SourceMedia,
         metal_device: c.MTLDeviceRef,
@@ -75,11 +96,40 @@ pub const Decoder = struct {
         };
     }
 
+    /// Passes videotoolbox.zig implemetnation of Apple's VTB Decoder
+    pub fn toAbstract(self: *Decoder) decoder.Decoder {
+        return .{
+            .impl = @ptrCast(self),
+            .decode_frame_fn = decodeFrameWrapper,
+            .deinit_fn = deinitWrapper,
+        };
+    }
+
+    /// Calls videotoolbox.zig Decoder's deinit()
+    fn deinitWrapper(impl: *anyopaque) void {
+        const self: *Decoder = @ptrCast(@alignCast(impl));
+        return self.deinit();
+    }
+
+    /// Calls videotoolbox.zig Decoder's decodeFrame()
+    fn decodeFrameWrapper(
+        impl: *anyopaque,
+        frame_idx: usize,
+        allocator: Allocator,
+    ) anyerror!decoder.DecodedFrame {
+        const self: *Decoder = @ptrCast(@alignCast(impl));
+        return self.decodeFrame(frame_idx, allocator);
+    }
+
+    /// Decodes a single frame by index, returning a platform-agnostic DecodedFrame.
+    /// Reads compressed data from source media, wraps in CoreMedia buffers,
+    /// submits to VTDecompressionSession, and returns GPU-backed CVPixelBuffer.
+    /// The scratch_allocator is used for temporary compressed frame data.
     pub fn decodeFrame(
         self: *Decoder,
         frame_index: usize,
         scratch_allocator: Allocator,
-    ) !DecodedFrame {
+    ) !decoder.DecodedFrame {
         self.frame_ctx.pixel_buffer = null;
 
         const frame_size = try self.source_media.getFrameSize(frame_index);
@@ -107,10 +157,13 @@ pub const Decoder = struct {
             // try cpuInspectPixelBufferData(pb); // CPU PixBuf check
             const decoded_frame_size = c.CVPixelBufferGetDataSize(pb);
 
-            return DecodedFrame{
-                .pixel_buffer = pb,
-                .compressed_frame_size = compressed_frame_size,
-                .decoded_frame_size = decoded_frame_size,
+            return decoder.DecodedFrame{
+                .platform_handle = pb,
+                .width = c.CVPixelBufferGetWidth(pb),
+                .height = c.CVPixelBufferGetHeight(pb),
+                .compressed_size = compressed_frame_size,
+                .decoded_size = decoded_frame_size,
+                .deinit_fn = releasePixelBuffer,
             };
         } else {
             return error.DecodeFrameFailed;
@@ -191,6 +244,8 @@ pub const Decoder = struct {
         std.debug.print("Decoded: {d}x{d}, {s} ({d}-bit/pixel)\n", .{ width, height, &format_bytes, bits_per_pixel });
     }
 
+    /// Releases all VideoToolbox resources: format description, decompression session,
+    /// texture cache, and frame context. Must be called when decoder is no longer needed.
     pub fn deinit(self: *Decoder) void {
         c.CFRelease(self.format_desc);
         c.VTDecompressionSessionInvalidate(self.session);
@@ -200,31 +255,31 @@ pub const Decoder = struct {
     }
 };
 
-const VideoToolboxError = error{
-    CreateFormatDescriptionFailed,
-    CreateDecompressionSessionFailed,
-    CreateBlockBufferFailed,
-    CreateSampleBufferFailed,
-    DecodeFrameFailed,
-    DecoderWaitFailed,
-    TextureCreationFailed,
-};
 /// CoreVideo pixel buffer - decoded pixel data (GPU-backed, ref-counted)
 const FrameContext = struct {
     pixel_buffer: ?c.CVPixelBufferRef,
 };
 
-pub const DecodedFrame = struct {
-    pixel_buffer: c.CVPixelBufferRef,
-    compressed_frame_size: usize,
-    decoded_frame_size: usize,
+/// Cleanup function for DecodedFrame's deinit_fn.
+/// Releases the CVPixelBuffer via CoreFoundation reference counting.
+/// Called automatically when DecodedFrame.deinit() is invoked.
+fn releasePixelBuffer(handle: *anyopaque) void {
+    c.CFRelease(handle);
+}
 
-    pub fn deinit(self: *const DecodedFrame) void {
-        c.CFRelease(self.pixel_buffer);
-    }
-};
+// FIXME: Deprecated for abstracted version via decoder.zig
+// pub const DecodedFrame = struct {
+//     pixel_buffer: c.CVPixelBufferRef,
+//     compressed_frame_size: usize,
+//     decoded_frame_size: usize,
+//     pub fn deinit(self: *const DecodedFrame) void {
+//         c.CFRelease(self.pixel_buffer);
+//     }
+// };
 
-// Callback that receives decoded frames from VideoToolbox
+/// VideoToolbox decompression callback - receives decoded frames asynchronously.
+/// Called by VTDecompressionSession after each frame is decoded.
+/// Stores the CVPixelBuffer in FrameContext and retains it for later use.
 export fn decompressionOutputCallback(
     decompressionOutputRefCon: ?*anyopaque,
     sourceFrameRefCon: ?*anyopaque,
@@ -265,6 +320,9 @@ export fn decompressionOutputCallback(
     // std.debug.print("   Total Size: {d} bytes\n", .{bytes_per_row * height});
 }
 
+/// Creates CMVideoFormatDescription from the stsd (sample description) atom.
+/// Parses the QuickTime ImageDescription data embedded in source media's stsd_data.
+/// This tells VideoToolbox the codec type, dimensions, and color info.
 fn createFormatDescription(source_media: *const media.SourceMedia) !c.CMVideoFormatDescriptionRef {
     var format_desc: c.CMVideoFormatDescriptionRef = null;
 
@@ -298,6 +356,9 @@ fn createFormatDescription(source_media: *const media.SourceMedia) !c.CMVideoFor
     return format_desc.?;
 }
 
+/// Creates VTDecompressionSession with Metal-compatible pixel buffer output.
+/// Configures 64-bit RGBA half-float format (kCVPixelFormatType_64RGBAHalf) for HDR support.
+/// Sets up callback to receive decoded frames into the provided FrameContext.
 fn createDecompressionSession(
     format_desc: c.CMVideoFormatDescriptionRef,
     frame_ctx: *FrameContext,
@@ -358,30 +419,9 @@ fn createDecompressionSession(
     return decompression_session.?;
 }
 
-/// DEBUG: Print supported pixel formats
-fn getSupportedPixelFormats(session: c.VTDecompressionSessionRef) !void {
-    var props: ?*anyopaque = null;
-    const prop_status = c.VTSessionCopyProperty(
-        session,
-        c.kVTDecompressionPropertyKey_SupportedPixelFormatsOrderedByQuality,
-        null,
-        &props,
-    );
-    if (prop_status == c.noErr and props != null) {
-        std.debug.print("\n📋 Supported Pixel Formats (ordered by quality):\n", .{});
-        const count = c.CFArrayGetCount(@ptrCast(props));
-        std.debug.print("   Count: {}\n", .{count});
-        for (0..@intCast(count)) |i| {
-            const num = c.CFArrayGetValueAtIndex(@ptrCast(props), @intCast(i));
-            var format: u32 = 0;
-            _ = c.CFNumberGetValue(@ptrCast(@alignCast(@constCast(num))), c.kCFNumberSInt32Type, &format);
-            const bytes = @as([4]u8, @bitCast(format));
-            std.debug.print("   [{}] 0x{X:0>8} ('{c}{c}{c}{c}')\n", .{ i, format, bytes[3], bytes[2], bytes[1], bytes[0] });
-        }
-        c.CFRelease(props.?);
-    }
-}
-
+/// Wraps raw compressed frame data in a CMBlockBuffer for VideoToolbox.
+/// The block buffer references the existing memory without copying.
+/// Must remain valid until decoding completes.
 fn createBlockBuffer(frame_data: []u8) !c.CMBlockBufferRef {
     var block_buffer: c.CMBlockBufferRef = null;
 
@@ -404,6 +444,9 @@ fn createBlockBuffer(frame_data: []u8) !c.CMBlockBufferRef {
     return block_buffer.?;
 }
 
+/// Builds timing info (PTS, DTS, duration) for a frame.
+/// Uses source media's frame rate to calculate presentation timestamp.
+/// For intraframe codecs like ProRes, DTS equals PTS.
 fn createSampleTimingInfo(
     frame_index: usize,
     source_media: *const media.SourceMedia,
@@ -429,6 +472,9 @@ fn createSampleTimingInfo(
     };
 }
 
+/// Combines block buffer, timing, and format into a CMSampleBuffer.
+/// This is the final package VideoToolbox needs to decode a frame.
+/// Contains one sample (frame) ready for decompression.
 fn createSampleBuffer(
     block_buffer: c.CMBlockBufferRef,
     timing_info: c.CMSampleTimingInfo,
@@ -455,6 +501,9 @@ fn createSampleBuffer(
     return sample_buffer.?;
 }
 
+/// Submits sample buffer to VideoToolbox for decoding and waits for completion.
+/// Triggers decompressionOutputCallback with the decoded CVPixelBuffer.
+/// Blocks until the frame is fully decoded (synchronous decode).
 fn decompress(
     session: c.VTDecompressionSessionRef,
     sample_buffer: c.CMSampleBufferRef,
@@ -480,6 +529,9 @@ fn decompress(
     }
 }
 
+/// Standalone test function for VideoToolbox decoding.
+/// Decodes frame 0 and prints debug info. Used during development.
+/// Does not require Metal device - cannot create textures.
 pub fn decode(source_media: *const media.SourceMedia) !void {
     std.debug.print("\n=== VideoToolbox Tests ===\n", .{});
 
@@ -541,9 +593,32 @@ pub fn decode(source_media: *const media.SourceMedia) !void {
     }
 }
 
-//
-//
-/// Debug test checks
+/// DEBUG: Print supported pixel formats
+fn getSupportedPixelFormats(session: c.VTDecompressionSessionRef) !void {
+    var props: ?*anyopaque = null;
+    const prop_status = c.VTSessionCopyProperty(
+        session,
+        c.kVTDecompressionPropertyKey_SupportedPixelFormatsOrderedByQuality,
+        null,
+        &props,
+    );
+    if (prop_status == c.noErr and props != null) {
+        std.debug.print("\n📋 Supported Pixel Formats (ordered by quality):\n", .{});
+        const count = c.CFArrayGetCount(@ptrCast(props));
+        std.debug.print("   Count: {}\n", .{count});
+        for (0..@intCast(count)) |i| {
+            const num = c.CFArrayGetValueAtIndex(@ptrCast(props), @intCast(i));
+            var format: u32 = 0;
+            _ = c.CFNumberGetValue(@ptrCast(@alignCast(@constCast(num))), c.kCFNumberSInt32Type, &format);
+            const bytes = @as([4]u8, @bitCast(format));
+            std.debug.print("   [{}] 0x{X:0>8} ('{c}{c}{c}{c}')\n", .{ i, format, bytes[3], bytes[2], bytes[1], bytes[0] });
+        }
+        c.CFRelease(props.?);
+    }
+}
+
+/// Debug: Prints format description details (codec FourCC, dimensions).
+/// Useful for verifying stsd parsing worked correctly.
 fn verifyFmtDes(format_desc: c.CMVideoFormatDescriptionRef) !void {
     std.debug.print("Format description created: {*}\n", .{format_desc});
 
