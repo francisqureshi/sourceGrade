@@ -49,7 +49,7 @@ pub const Decoder = struct {
     metal_device: c.MTLDeviceRef, // Metal device
 
     /// Creates a VideoToolbox decoder for the given source media.
-    /// Registers professional codecs (ProRes), creates format description from stsd atom,
+    /// Attempts to registers professional codecs (ProRes), creates format description from stsd atom,
     /// sets up decompression session with Metal-compatible output, and creates texture cache.
     pub fn init(
         source_media: *const media.SourceMedia,
@@ -96,8 +96,8 @@ pub const Decoder = struct {
         };
     }
 
-    /// Passes videotoolbox.zig implemetnation of Apple's VTB Decoder
-    pub fn toAbstract(self: *Decoder) decoder.Decoder {
+    /// Returns this VideoToolbox decoder as the abstract Decoder interface.
+    pub fn asDecoder(self: *Decoder) decoder.Decoder {
         return .{
             .impl = @ptrCast(self),
             .decode_frame_fn = decodeFrameWrapper,
