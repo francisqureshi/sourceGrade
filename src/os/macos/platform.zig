@@ -5,6 +5,8 @@ const App = @import("../../app.zig").App;
 const ui = @import("../../gui/ui.zig");
 
 const media = @import("../../io/media.zig");
+const Decoder = @import("../../io/decode/decoder.zig").Decoder;
+const DecodedFrame = @import("../../io/decode/decoder.zig").DecodedFrame;
 const videotoolbox = @import("../../io/decode/videotoolbox.zig");
 const vm = @import("../../gpu/video_monitor.zig");
 
@@ -79,7 +81,10 @@ pub const Platform = struct {
         std.debug.print("✓ Created IMGUI context (triple-buffered)\n\n", .{});
 
         // Initialize ImGuiRenderer
-        const imgui_renderer = try ImGuiRenderer.init(&renderer.device, imgui_ctx.atlas.size);
+        const imgui_renderer = try ImGuiRenderer.init(
+            &renderer.device,
+            imgui_ctx.atlas.size,
+        );
 
         // Initialize NSApplication (must happen before showing window)
         Window.initApp();
@@ -152,6 +157,10 @@ fn displayLinkCallback(userdata: ?*anyopaque) callconv(.c) void {
 const RenderState = struct {
     /// The loaded video source (file handle, decoder, metadata).
     source_media: *media.SourceMedia,
+
+    /// Apple VideoToolBox deceoder
+    decoder: videotoolbox.Decoder,
+
     /// Video playback controller (timing, frame index, decode triggers).
     video_monitor: vm.VideoMonitor,
 
@@ -159,7 +168,7 @@ const RenderState = struct {
 
     // Video frame holders — keep CVPixelBuffer and Metal textures alive between frames
     packed_metal_texture: ?metal.MetalTexture,
-    decoded_frame_holder: ?videotoolbox.DecodedFrame,
+    decoded_frame_holder: ?DecodedFrame,
     texture_set_holder: ?videotoolbox.MetalTextureSet,
 };
 
@@ -188,8 +197,14 @@ fn renderUiFrame(self: *Platform) void {
     const backing_scale = self.window.getBackingScale();
     self.imgui_ctx.backing_scale_factor = @floatCast(backing_scale);
 
-    const display_width_pts = @as(f32, @floatFromInt(drawable_width)) / @as(f32, @floatCast(backing_scale));
-    const display_height_pts = @as(f32, @floatFromInt(drawable_height)) / @as(f32, @floatCast(backing_scale));
+    const display_width_pts = @as(f32, @floatFromInt(drawable_width)) / @as(
+        f32,
+        @floatCast(backing_scale),
+    );
+    const display_height_pts = @as(f32, @floatFromInt(drawable_height)) / @as(
+        f32,
+        @floatCast(backing_scale),
+    );
     self.imgui_ctx.display_width = display_width_pts;
     self.imgui_ctx.display_height = display_height_pts;
 
@@ -223,7 +238,7 @@ fn renderUiFrame(self: *Platform) void {
     state.video_monitor.ctrl_playback_speed = self.app.playback_state.speed;
 
     // Decode the frame with Metal
-    decodeVideoFrame(state, self) catch {};
+    decodeVideoFrame(state) catch {};
 
     self.app.playback_state.current_frame = state.video_monitor.current_frame_index;
 
@@ -286,7 +301,12 @@ fn initRenderState(platform: *Platform) ?*RenderState {
     // Lazy init of video on first frame
     const video_path = platform.app.test_args.video_path;
 
-    const sm = media.SourceMedia.init(video_path, platform.app.io, platform.app.allocator) catch |err| {
+    //FIXME: Catch CITY WHYYYY?
+    const sm = media.SourceMedia.init(
+        video_path,
+        platform.app.io,
+        platform.app.allocator,
+    ) catch |err| {
         std.debug.print("Error: Failed to load video file ({})\n", .{err});
         return null;
     };
@@ -296,6 +316,16 @@ fn initRenderState(platform: *Platform) ?*RenderState {
         return null;
     };
     source_media.* = sm;
+
+    const decoder = videotoolbox.Decoder.init(
+        source_media,
+        @ptrCast(platform.window.device_ptr),
+    ) catch |err| {
+        std.debug.print("Error: Failed to create decoder ({})\n", .{err});
+        source_media.deinit();
+        platform.app.allocator.destroy(source_media);
+        return null;
+    };
 
     const state = platform.app.allocator.create(RenderState) catch {
         std.debug.print("Error: Failed to allocate render state\n", .{});
@@ -325,6 +355,7 @@ fn initRenderState(platform: *Platform) ?*RenderState {
 
     state.* = .{
         .source_media = source_media,
+        .decoder = decoder,
         .video_monitor = video_monitor,
         .decoded_frame_holder = null,
         .ui_frame = 0,
@@ -334,7 +365,7 @@ fn initRenderState(platform: *Platform) ?*RenderState {
     return state;
 }
 
-fn decodeVideoFrame(state: *RenderState, platform: *Platform) !void {
+fn decodeVideoFrame(state: *RenderState) !void {
 
     // Video monitor - decode and manage playback
     const result = state.video_monitor.monitor();
@@ -369,9 +400,8 @@ fn decodeVideoFrame(state: *RenderState, platform: *Platform) !void {
                 @as(f64, @floatFromInt(state.video_monitor.monitor_stats.frame_duration_ns)) / std.time.ns_per_ms,
             });
 
-            const decoded_frame = state.source_media.decodeSourceFrame(
+            const decoded_frame = state.decoder.decodeFrame(
                 frame_info.frame_idx,
-                @ptrCast(platform.window.device_ptr),
                 state.video_monitor.decode_arena.allocator(),
             ) catch |err| {
                 std.debug.print("Failed to decode frame: {}\n", .{err});
@@ -379,10 +409,15 @@ fn decodeVideoFrame(state: *RenderState, platform: *Platform) !void {
             };
             state.decoded_frame_holder = decoded_frame; // Keep alive until end of loop
 
-            std.debug.print("\nFrame info: \nCompressed Size:{d} \nDecompressed Size: {d}\n", .{ decoded_frame.compressed_frame_size, decoded_frame.decoded_frame_size });
+            std.debug.print("\nFrame info: \nCompressed Size:{d} \nDecompressed Size: {d}\n", .{
+                decoded_frame.compressed_size,
+                decoded_frame.decoded_size,
+            });
 
             // Create Metal texture from packed AYUV buffer (y416 format)
-            var texture_set = state.source_media.decoder.?.createMetalTextures(decoded_frame.pixel_buffer) catch |err| {
+            var texture_set = state.decoder.createMetalTextures(
+                @ptrCast(decoded_frame.platform_handle),
+            ) catch |err| {
                 std.debug.print("Failed to create Metal textures: {}\n", .{err});
                 return error.TextureCreationFailed;
             };

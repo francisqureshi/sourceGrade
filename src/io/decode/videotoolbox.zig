@@ -158,7 +158,7 @@ pub const Decoder = struct {
             const decoded_frame_size = c.CVPixelBufferGetDataSize(pb);
 
             return decoder.DecodedFrame{
-                .platform_handle = pb,
+                .platform_handle = pb.?,
                 .width = c.CVPixelBufferGetWidth(pb),
                 .height = c.CVPixelBufferGetHeight(pb),
                 .compressed_size = compressed_frame_size,

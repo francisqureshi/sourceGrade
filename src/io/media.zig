@@ -1,7 +1,6 @@
 const std = @import("std");
 const smpte = @import("smpte");
 const mov = @import("mov.zig");
-const videotoolbox = @import("decode/videotoolbox.zig");
 
 const assert = std.debug.assert;
 
@@ -69,7 +68,6 @@ pub const SourceMedia = struct {
     codec: []const u8,
     stsd_data: []const u8,
     frames: []mov.FrameInfo,
-    decoder: ?videotoolbox.Decoder,
 
     pub fn init(fp: []const u8, io: Io, allocator: Allocator) !SourceMedia {
         // Open video file
@@ -190,7 +188,6 @@ pub const SourceMedia = struct {
             .codec = codec,
             .stsd_data = stsd_data,
             .frames = frames,
-            .decoder = null,
         };
     }
 
@@ -211,20 +208,6 @@ pub const SourceMedia = struct {
         // std.debug.print("source_media: {any}\n", .{source_media});
 
         return source_media;
-    }
-
-    pub fn decodeSourceFrame(
-        self: *SourceMedia,
-        frame_idx: usize,
-        metal_device: videotoolbox.MTLDeviceRef, // Pass per-decode, not at init
-        scratch_allocator: Allocator,
-    ) !videotoolbox.DecodedFrame {
-        // Lazily initialize  VideoToolBox decoder with metal device
-
-        if (self.decoder == null) {
-            self.decoder = try videotoolbox.Decoder.init(self, metal_device);
-        }
-        return try self.decoder.?.decodeFrame(frame_idx, scratch_allocator);
     }
 
     /// Read a compressed frame into the provided buffer
@@ -267,10 +250,6 @@ pub const SourceMedia = struct {
     }
 
     pub fn deinit(self: *SourceMedia) void {
-        // self.decoder.?.deinit();
-        if (self.decoder) |*decoder| {
-            decoder.deinit();
-        }
         self.mctx.allocator.free(self.file_path);
         self.mctx.allocator.free(self.file_name);
         self.mctx.allocator.free(self.codec);
