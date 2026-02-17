@@ -14,6 +14,8 @@ pub const MonitorStats = struct {
     frame_duration_ns: u64 = 0,
 };
 
+// FIXME: Make Video Monitor play as close to proper frame rates
+// 25 / 3:2 pull down or whatever 25fps @60Hz looks like...
 pub const VideoMonitor = struct {
     source_media: *media.SourceMedia,
     io: std.Io,

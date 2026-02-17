@@ -128,10 +128,10 @@ pub const Platform = struct {
         self.imgui_ctx.deinit();
         self.ui_renderer.deinit();
 
-        //FIXME: Make render state deinit() for these?
+        //FIXME: Make specific render state deinit() for these?
         if (self.render_state) |state| {
             // Clean up frame holders if present
-            if (state.decoded_frame_holder) |*df| df.deinit();
+            if (state.decoded_frame_buffer) |*df| df.deinit();
             if (state.texture_set_holder) |*ts| ts.deinit();
 
             // Clean up decoder and video monitor
@@ -187,8 +187,54 @@ const RenderState = struct {
 
     // Video frame holders — keep CVPixelBuffer and Metal textures alive between frames
     packed_metal_texture: ?metal.MetalTexture,
-    decoded_frame_holder: ?DecodedFrame,
+    decoded_frame_buffer: ?DecodedFrame,
     texture_set_holder: ?videotoolbox.MetalTextureSet,
+
+    pub fn init(platform: *Platform) !RenderState {
+        const video_path = platform.app.test_args.video_path;
+
+        const sm = try media.SourceMedia.init(
+            video_path,
+            platform.app.io,
+            platform.app.allocator,
+        );
+
+        var source_media = try platform.app.allocator.create(media.SourceMedia);
+        source_media.* = sm;
+        errdefer {
+            source_media.deinit();
+            platform.app.allocator.destroy(source_media);
+        }
+
+        var decoder = try videotoolbox.Decoder.init(
+            source_media,
+            @ptrCast(platform.window.device_ptr),
+        );
+        errdefer decoder.deinit();
+
+        const video_monitor = try vm.VideoMonitor.init(
+            source_media,
+            platform.app.io,
+            platform.app.allocator,
+        );
+
+        std.debug.print("✓ Loaded video: {d}x{d} @ {d:.2}fps, {d} frames\n\n", .{
+            source_media.resolution.width,
+            source_media.resolution.height,
+            source_media.frame_rate_float,
+            source_media.duration_in_frames,
+        });
+
+        return .{
+            .source_media = source_media,
+            .decoder = decoder,
+            .video_monitor = video_monitor,
+            .decoded_frame_buffer = null,
+            .ui_frame = 0,
+            .packed_metal_texture = null,
+            .texture_set_holder = null,
+        };
+    }
 };
 
 /// Main render function called every vsync.
@@ -198,7 +244,13 @@ fn renderUiFrame(self: *Platform) void {
 
     // Get or init Render State
     if (self.render_state == null) {
-        self.render_state = initRenderState(self);
+        const state = self.app.allocator.create(RenderState) catch return;
+        state.* = RenderState.init(self) catch |err| {
+            std.debug.print("Error: Failed to init render state ({})\n", .{err});
+            self.app.allocator.destroy(state);
+            return;
+        };
+        self.render_state = state;
     }
     const state = self.render_state orelse return;
 
@@ -316,74 +368,6 @@ fn renderUiFrame(self: *Platform) void {
     window_c.releaseTexture(texture_ptr);
 }
 
-fn initRenderState(platform: *Platform) ?*RenderState {
-    // Lazy init of video on first frame
-    const video_path = platform.app.test_args.video_path;
-
-    //FIXME: Catch CITY WHYYYY?
-    const sm = media.SourceMedia.init(
-        video_path,
-        platform.app.io,
-        platform.app.allocator,
-    ) catch |err| {
-        std.debug.print("Error: Failed to load video file ({})\n", .{err});
-        return null;
-    };
-
-    var source_media = platform.app.allocator.create(media.SourceMedia) catch {
-        std.debug.print("Error: Failed to allocate source media\n", .{});
-        return null;
-    };
-    source_media.* = sm;
-
-    const decoder = videotoolbox.Decoder.init(
-        source_media,
-        @ptrCast(platform.window.device_ptr),
-    ) catch |err| {
-        std.debug.print("Error: Failed to create decoder ({})\n", .{err});
-        source_media.deinit();
-        platform.app.allocator.destroy(source_media);
-        return null;
-    };
-
-    const state = platform.app.allocator.create(RenderState) catch {
-        std.debug.print("Error: Failed to allocate render state\n", .{});
-        source_media.deinit();
-        platform.app.allocator.destroy(source_media);
-        return null;
-    };
-
-    const video_monitor = vm.VideoMonitor.init(
-        source_media,
-        platform.app.io,
-        platform.app.allocator,
-    ) catch |err| {
-        std.debug.print("Error: Failed to create video monitor ({})\n", .{err});
-        source_media.deinit();
-        platform.app.allocator.destroy(source_media);
-        platform.app.allocator.destroy(state);
-        return null;
-    };
-
-    std.debug.print("✓ Loaded video: {d}x{d} @ {d:.2}fps, {d} frames\n\n", .{
-        source_media.resolution.width,
-        source_media.resolution.height,
-        source_media.frame_rate_float,
-        source_media.duration_in_frames,
-    });
-
-    state.* = .{
-        .source_media = source_media,
-        .decoder = decoder,
-        .video_monitor = video_monitor,
-        .decoded_frame_holder = null,
-        .ui_frame = 0,
-        .packed_metal_texture = null,
-        .texture_set_holder = null,
-    };
-    return state;
-}
-
 fn decodeVideoFrame(state: *RenderState) !void {
 
     // Video monitor - decode and manage playback
@@ -395,9 +379,9 @@ fn decodeVideoFrame(state: *RenderState) !void {
             _ = state.video_monitor.decode_arena.reset(.free_all);
 
             // Clean up previous frame resources before next decode
-            if (state.decoded_frame_holder) |*df| {
+            if (state.decoded_frame_buffer) |*df| {
                 df.deinit();
-                state.decoded_frame_holder = null;
+                state.decoded_frame_buffer = null;
             }
             if (state.texture_set_holder) |*ts| {
                 ts.deinit();
@@ -426,7 +410,7 @@ fn decodeVideoFrame(state: *RenderState) !void {
                 std.debug.print("Failed to decode frame: {}\n", .{err});
                 return error.DecodeFrameFailed;
             };
-            state.decoded_frame_holder = decoded_frame; // Keep alive until end of loop
+            state.decoded_frame_buffer = decoded_frame; // Keep alive until end of loop
 
             std.debug.print("\nFrame info: \nCompressed Size:{d} \nDecompressed Size: {d}\n", .{
                 decoded_frame.compressed_size,
