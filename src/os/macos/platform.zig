@@ -127,6 +127,25 @@ pub const Platform = struct {
         self.displaylink.deinit();
         self.imgui_ctx.deinit();
         self.ui_renderer.deinit();
+
+        //FIXME: Make render state deinit() for these?
+        if (self.render_state) |state| {
+            // Clean up frame holders if present
+            if (state.decoded_frame_holder) |*df| df.deinit();
+            if (state.texture_set_holder) |*ts| ts.deinit();
+
+            // Clean up decoder and video monitor
+            state.decoder.deinit();
+            state.video_monitor.deinit();
+
+            // Clean up source media
+            state.source_media.deinit();
+            self.app.allocator.destroy(state.source_media);
+
+            // Free the RenderState itself
+            self.app.allocator.destroy(state);
+        }
+
         self.app.allocator.destroy(self.imgui_ctx);
         self.renderer.deinit();
         self.window.deinit();
