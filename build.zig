@@ -20,10 +20,6 @@ pub fn build(b: *std.Build) void {
     // of this build script using `b.option()`. All defined flags (including
     // target and optimize options) will be listed when running `zig build --help`
     // in this directory.
-    const metal_dep = b.dependency("metal_bindings", .{
-        .target = target,
-        .optimize = optimize,
-    });
 
     const smpte_dep = b.dependency("smpte", .{
         .target = target,
@@ -92,167 +88,183 @@ pub fn build(b: *std.Build) void {
     });
 
     exe.root_module.addImport("pg", b.dependency("pg", .{}).module("pg"));
-    exe.root_module.addImport("metal", metal_dep.module("metal_bindings"));
     exe.root_module.addImport("smpte", smpte_dep.module("smpte"));
 
-    // Add the Swift AppKit bridge
-    exe.root_module.addSystemIncludePath(b.path("macos"));
+    // Apple macOS spefici modules,
+    // Swift bridge, Metal bindings, macOS frameworks
+    if (target.result.os.tag == .macos) {
+        const metal_dep = b.dependency("metal_bindings", .{
+            .target = target,
+            .optimize = optimize,
+        });
 
-    // Detect native framework paths for VideoToolbox linking
-    var io_instance: std.Io.Threaded = .init_single_threaded;
-    defer io_instance.deinit();
+        exe.root_module.addImport("metal", metal_dep.module("metal_bindings"));
+        // Add the Swift AppKit bridge
+        exe.root_module.addSystemIncludePath(b.path("macos"));
 
-    // Create environ map
-    var environ_map = std.process.Environ.Map.init(b.allocator);
-    defer environ_map.deinit();
+        // Detect native framework paths for VideoToolbox linking
+        var io_instance: std.Io.Threaded = .init_single_threaded;
+        defer io_instance.deinit();
 
-    const io = io_instance.io();
-    const native_paths = std.zig.system.NativePaths.detect(b.allocator, io, &target.result, &environ_map) catch |err| {
-        std.debug.print("Warning: Failed to detect native paths: {}\n", .{err});
-        @panic("Cannot detect framework paths");
-    };
-    for (native_paths.framework_dirs.items) |dir| {
-        exe.root_module.addFrameworkPath(.{ .cwd_relative = dir });
+        // Create environ map
+        var environ_map = std.process.Environ.Map.init(b.allocator);
+        defer environ_map.deinit();
+
+        const io = io_instance.io();
+        const native_paths = std.zig.system.NativePaths.detect(b.allocator, io, &target.result, &environ_map) catch |err| {
+            std.debug.print("Warning: Failed to detect native paths: {}\n", .{err});
+            @panic("Cannot detect framework paths");
+        };
+        for (native_paths.framework_dirs.items) |dir| {
+            exe.root_module.addFrameworkPath(.{ .cwd_relative = dir });
+        }
+
+        // Build Swift code as a dynamic library
+        const swift_compile = b.addSystemCommand(&.{
+            "swiftc",
+            "-emit-library",
+            "-o",
+        });
+        const swift_dylib = swift_compile.addOutputFileArg("libMetalWindow.dylib");
+        swift_compile.addFileArg(b.path("macos/MetalWindow.swift"));
+        swift_compile.addArgs(&.{
+            "-emit-module",
+            "-module-name",
+            "MetalWindow",
+            "-framework",
+            "AppKit",
+            "-framework",
+            "Metal",
+            "-framework",
+            "QuartzCore",
+            "-framework",
+            "AVFoundation",
+            "-framework",
+            "VideoToolbox",
+            "-framework",
+            "CoreMedia",
+            "-framework",
+            "CoreVideo",
+            "-framework",
+            "CoreText",
+            "-framework",
+            "CoreGraphics",
+            // Export all C-callable symbols directly
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_window_create",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_window_get_layer",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_window_get_device",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_window_show",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_window_init_app",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_window_run_app",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_window_is_running",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_layer_get_next_drawable",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_drawable_get_texture",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_drawable_present",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_drawable_release",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_texture_release",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_window_process_events",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_window_release",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_window_get_mouse_state",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_layer_set_pixel_format",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_window_get_backing_scale",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_displaylink_create",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_displaylink_set_callback",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_displaylink_start",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_displaylink_stop",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_displaylink_release",
+            "-Xlinker",
+            "-exported_symbol",
+            "-Xlinker",
+            "_metal_displaylink_set_dispatch_to_main",
+        });
+
+        // Link the Swift dylib
+        exe.root_module.addLibraryPath(swift_dylib.dirname());
+        exe.root_module.linkSystemLibrary("MetalWindow", .{});
+
+        // Link CoreText and CoreGraphics frameworks for text rendering
+        exe.root_module.linkFramework("CoreText", .{});
+        exe.root_module.linkFramework("CoreGraphics", .{});
+
+        // Link VideoToolbox frameworks for hardware video decoding
+        exe.root_module.linkFramework("VideoToolbox", .{});
+        exe.root_module.linkFramework("CoreMedia", .{});
+        exe.root_module.linkFramework("CoreVideo", .{});
+        exe.root_module.linkFramework("CoreFoundation", .{});
     }
 
-    // Build Swift code as a dynamic library
-    const swift_compile = b.addSystemCommand(&.{
-        "swiftc",
-        "-emit-library",
-        "-o",
-    });
-    const swift_dylib = swift_compile.addOutputFileArg("libMetalWindow.dylib");
-    swift_compile.addFileArg(b.path("macos/MetalWindow.swift"));
-    swift_compile.addArgs(&.{
-        "-emit-module",
-        "-module-name",
-        "MetalWindow",
-        "-framework",
-        "AppKit",
-        "-framework",
-        "Metal",
-        "-framework",
-        "QuartzCore",
-        "-framework",
-        "AVFoundation",
-        "-framework",
-        "VideoToolbox",
-        "-framework",
-        "CoreMedia",
-        "-framework",
-        "CoreVideo",
-        "-framework",
-        "CoreText",
-        "-framework",
-        "CoreGraphics",
-        // Export all C-callable symbols directly
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_window_create",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_window_get_layer",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_window_get_device",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_window_show",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_window_init_app",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_window_run_app",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_window_is_running",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_layer_get_next_drawable",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_drawable_get_texture",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_drawable_present",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_drawable_release",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_texture_release",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_window_process_events",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_window_release",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_window_get_mouse_state",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_layer_set_pixel_format",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_window_get_backing_scale",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_displaylink_create",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_displaylink_set_callback",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_displaylink_start",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_displaylink_stop",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_displaylink_release",
-        "-Xlinker",
-        "-exported_symbol",
-        "-Xlinker",
-        "_metal_displaylink_set_dispatch_to_main",
-    });
-
-    // Link the Swift dylib
-    exe.root_module.addLibraryPath(swift_dylib.dirname());
-    exe.root_module.linkSystemLibrary("MetalWindow", .{});
-
-    // Link CoreText and CoreGraphics frameworks for text rendering
-    exe.root_module.linkFramework("CoreText", .{});
-    exe.root_module.linkFramework("CoreGraphics", .{});
-
-    // Link VideoToolbox frameworks for hardware video decoding
-    exe.root_module.linkFramework("VideoToolbox", .{});
-    exe.root_module.linkFramework("CoreMedia", .{});
-    exe.root_module.linkFramework("CoreVideo", .{});
-    exe.root_module.linkFramework("CoreFoundation", .{});
+    // Linux / Vulkan module imports
+    if (target.result.os.tag == .linux) {
+        // SDL3, Vulkan
+        // exe.root_module.linkSystemLibrary("SDL3", .{});
+        // exe.root_module.linkSystemLibrary("vulkan", .{});
+    }
 
     // This declares intent for the executable to be installed into the
     // install prefix when running `zig build` (i.e. when executing the default
@@ -312,32 +324,6 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
-
-    // VideoToolbox decoder test - reuse framework paths from main exe
-    const vt_test = b.addExecutable(.{
-        .name = "video_decoder_test",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/io/decode/vt_decode.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-
-    // Add framework paths (reuse the same detection from above)
-    for (native_paths.framework_dirs.items) |dir| {
-        vt_test.root_module.addFrameworkPath(.{ .cwd_relative = dir });
-    }
-
-    // Link frameworks
-    vt_test.root_module.linkSystemLibrary("c", .{});
-    vt_test.root_module.linkFramework("VideoToolbox", .{});
-    vt_test.root_module.linkFramework("CoreMedia", .{});
-    vt_test.root_module.linkFramework("CoreVideo", .{});
-    vt_test.root_module.linkFramework("CoreFoundation", .{});
-
-    const vt_test_run = b.addRunArtifact(vt_test);
-    const vt_test_step = b.step("test-vt", "Test VideoToolbox C API imports");
-    vt_test_step.dependOn(&vt_test_run.step);
 
     // Just like flags, top level steps are also listed in the `--help` menu.
     //
