@@ -90,8 +90,6 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("pg", b.dependency("pg", .{}).module("pg"));
     exe.root_module.addImport("smpte", smpte_dep.module("smpte"));
 
-    //FIXME: We shoul use a switch..
-
     // Apple macOS spefici modules,
     // Swift bridge, Metal bindings, macOS frameworks
     switch (target.result.os.tag) {
@@ -267,6 +265,15 @@ pub fn build(b: *std.Build) void {
             // SDL3, Vulkan
             // exe.root_module.linkSystemLibrary("SDL3", .{});
             // exe.root_module.linkSystemLibrary("vulkan", .{});
+
+            const sdl3 = b.dependency("sdl3", .{
+                .target = target,
+                .optimize = optimize,
+                .callbacks = false,
+                .ext_image = true,
+            });
+
+            exe.root_module.addImport("sdl3", sdl3.module("sdl3"));
         },
         else => |tag| {
             std.debug.print("Unsupported platform: {s}\n", .{@tagName(tag)});

@@ -42,6 +42,9 @@
             .url = "git+https://github.com/francisqureshi/smpte.git#1ee42133d53423250d872aeab6c5aa27f4317028",
             .hash = "smpte-0.0.0-P_FX_J8xAABoQ09xSq5BqEcCZP48tUbgQV4vEEpyBs9u",
         },
+        .sdl3 = .{
+            .path = "../zig-sdl3",
+        },
     },
     .paths = .{
         "build.zig",
