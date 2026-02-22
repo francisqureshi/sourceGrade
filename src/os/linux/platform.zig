@@ -20,6 +20,8 @@ pub const Platform = struct {
 
     pub fn deinit(self: *Platform) void {
         self.render.cleanup(self.app.allocator) catch return;
+
+        std.debug.print("bye! from Platform.deinit()\n", .{});
     }
 
     pub fn init(app: *App) !Platform {
@@ -57,10 +59,9 @@ pub const Platform = struct {
             }
 
             try self.render.render(self);
+            errdefer self.deinit();
             lastTime = now;
         }
-
-        self.deinit();
     }
 };
 

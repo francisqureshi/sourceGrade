@@ -34,9 +34,4 @@ pub fn main(init: std.process.Init.Minimal) !void {
         else => {},
     }
     try platform.run();
-
-    // const wndTitle = "Vulkan Book";
-    // var game = Game{};
-    // var engine = try pltfrm.Platform.Engine(Game).create(io, allocator, &game, wndTitle);
-    // try engine.run();
 }
