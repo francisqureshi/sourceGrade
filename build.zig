@@ -87,7 +87,18 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    exe.root_module.addImport("pg", b.dependency("pg", .{}).module("pg"));
+    // pg.zig - PostgresSQL
+    exe.root_module.addImport("pg", b.dependency("pg", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("pg"));
+
+    // TOML
+    exe.root_module.addImport("toml", b.dependency("toml", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("toml"));
+
     exe.root_module.addImport("smpte", smpte_dep.module("smpte"));
 
     // Apple macOS spefici modules,
@@ -262,10 +273,7 @@ pub fn build(b: *std.Build) void {
 
         // Linux / Vulkan module imports
         .linux => {
-            // SDL3, Vulkan
-            // exe.root_module.linkSystemLibrary("SDL3", .{});
-            // exe.root_module.linkSystemLibrary("vulkan", .{});
-
+            // SDL3
             const sdl3 = b.dependency("sdl3", .{
                 .target = target,
                 .optimize = optimize,
@@ -274,7 +282,15 @@ pub fn build(b: *std.Build) void {
             });
 
             exe.root_module.addImport("sdl3", sdl3.module("sdl3"));
+
+            // Vulkan
+            const vulkan_dep = b.dependency("vulkan", .{
+                .registry = b.dependency("vulkan_headers", .{}).path("registry/vk.xml"),
+            });
+            const vulkan = vulkan_dep.module("vulkan-zig");
+            exe.root_module.addImport("vulkan", vulkan);
         },
+
         else => |tag| {
             std.debug.print("Unsupported platform: {s}\n", .{@tagName(tag)});
             @panic("Unsupported platform");

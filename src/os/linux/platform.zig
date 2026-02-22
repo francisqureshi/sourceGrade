@@ -1,7 +1,10 @@
 const std = @import("std");
 
+const com = @import("../../com/common.zig");
 const App = @import("../../app.zig").App;
-const Wnd = @import("window.zig").Wnd;
+
+const rend = @import("renderer.zig");
+const wnd = @import("window.zig");
 
 // ============================================================================
 // Platform - Linux and Vulkan
@@ -11,27 +14,52 @@ const Wnd = @import("window.zig").Wnd;
 /// This is the top-level coordinator for the Linux backend.
 pub const Platform = struct {
     app: *App,
+    wnd: wnd.Wnd,
+    render: rend.Render,
+    constants: com.Constants,
+
+    pub fn deinit(self: *Platform) void {
+        self.render.cleanup(self.app.allocator) catch return;
+    }
+
     pub fn init(app: *App) !Platform {
-        try Wnd.testSdl();
+        const wnd_title = " zvk x sourceGrade";
 
         return .{
             .app = app,
+            .wnd = try wnd.Wnd.create(wnd_title),
+            .render = try rend.Render.create(),
+            .constants = try com.Constants.load(app.io, app.allocator),
         };
     }
 
-    pub fn startDisplayLink(self: *Platform) void {
-        _ = self;
-        // std.debug.print("Linux not yet implement\n", .{});
-    }
+    pub fn run(self: *Platform) !void {
+        var timer = try std.time.Timer.start();
+        var lastTime = timer.read();
+        var updateTime = lastTime;
+        var deltaUpdate: f32 = 0.0;
+        const timeU: f32 = 1.0 / self.constants.ups;
 
-    pub fn run(self: *Platform) void {
-        _ = self;
-        // std.debug.print("Linux not yet implement\n", .{});
-    }
+        while (!self.wnd.closed) {
+            const now = timer.read();
+            const deltaNs = now - lastTime;
+            const deltaSec = @as(f32, @floatFromInt(deltaNs)) / 1_000_000_000.0;
+            deltaUpdate += deltaSec / timeU;
+            try self.wnd.pollEvents();
 
-    pub fn deinit(self: *Platform) void {
-        _ = self;
-        // std.debug.print("Linux not yet implement\n", .{});
-        std.debug.print("bye!\n", .{});
+            self.app.update(deltaSec);
+
+            if (deltaUpdate >= 1) {
+                const difUpdateSecs = @as(f32, @floatFromInt(now - updateTime)) / 1_000_000_000.0;
+                self.app.update(difUpdateSecs);
+                deltaUpdate -= 1;
+                updateTime = now;
+            }
+
+            try self.render.render(self);
+            lastTime = now;
+        }
+
+        self.deinit();
     }
 };

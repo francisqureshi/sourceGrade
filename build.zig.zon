@@ -45,6 +45,18 @@
         .sdl3 = .{
             .path = "../zig-sdl3",
         },
+        .vulkan = .{
+            .url = "git+https://github.com/Snektron/vulkan-zig#30c3a9d582ae39dd7bfd8b44995e0864a442c7af",
+            .hash = "vulkan-0.0.0-r7Ytx_9JAwCBoNziuwO4USPOo-kR-3Ss4bqSUMVgVpYS",
+        },
+        .vulkan_headers = .{
+            .url = "https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.338.tar.gz",
+            .hash = "N-V-__8AAMZuLQIcPe--JSv0kn_Ga8tsjgbkaojW0OHW2Rfd",
+        },
+        .toml = .{
+            .url = "git+https://github.com/sam701/zig-toml#cf50bd59c6276fb2b6d34b8d71d35486eecc719c",
+            .hash = "toml-0.3.0-bV14Bd-EAQBKoXhpYft303BtA2vgLNlxntUCIWgRUl46",
+        },
     },
     .paths = .{
         "build.zig",
