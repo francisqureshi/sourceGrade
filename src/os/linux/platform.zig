@@ -63,3 +63,27 @@ pub const Platform = struct {
         self.deinit();
     }
 };
+
+//INFO: Old zvk Game.....
+// const Game = struct {
+//     pub fn cleanup(self: *Game) void {
+//         _ = self;
+//     }
+//
+//     pub fn init(self: *Game, platformCtx: *pltfrm.Platform.PlatformCtx) void {
+//         _ = self;
+//         _ = platformCtx;
+//     }
+//
+//     pub fn input(self: *Game, platformCtx: *pltfrm.Platform.PlatformCtx, deltaSec: f32) void {
+//         _ = self;
+//         _ = platformCtx;
+//         _ = deltaSec;
+//     }
+//
+//     pub fn update(self: *Game, platformCtx: *pltfrm.Platform.PlatformCtx, deltaSec: f32) void {
+//         _ = self;
+//         _ = platformCtx;
+//         _ = deltaSec;
+//     }
+// };

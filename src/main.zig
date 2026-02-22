@@ -1,4 +1,6 @@
 const std = @import("std");
+const builtin = @import("builtin");
+
 const App = @import("app.zig").App;
 const Platform = @import("os/mod.zig").Platform;
 
@@ -27,8 +29,10 @@ pub fn main(init: std.process.Init.Minimal) !void {
     var platform = try Platform.init(&app);
     defer platform.deinit();
 
-    // platform.startDisplayLink(); // macOS....
-    // WARN: make macOS Platform.run() failable..
+    switch (builtin.os.tag) {
+        .macos => platform.startDisplayLink(),
+        else => {},
+    }
     try platform.run();
 
     // const wndTitle = "Vulkan Book";
@@ -36,26 +40,3 @@ pub fn main(init: std.process.Init.Minimal) !void {
     // var engine = try pltfrm.Platform.Engine(Game).create(io, allocator, &game, wndTitle);
     // try engine.run();
 }
-
-// const Game = struct {
-//     pub fn cleanup(self: *Game) void {
-//         _ = self;
-//     }
-//
-//     pub fn init(self: *Game, platformCtx: *pltfrm.Platform.PlatformCtx) void {
-//         _ = self;
-//         _ = platformCtx;
-//     }
-//
-//     pub fn input(self: *Game, platformCtx: *pltfrm.Platform.PlatformCtx, deltaSec: f32) void {
-//         _ = self;
-//         _ = platformCtx;
-//         _ = deltaSec;
-//     }
-//
-//     pub fn update(self: *Game, platformCtx: *pltfrm.Platform.PlatformCtx, deltaSec: f32) void {
-//         _ = self;
-//         _ = platformCtx;
-//         _ = deltaSec;
-//     }
-// };

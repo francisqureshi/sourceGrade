@@ -139,7 +139,7 @@ pub const Platform = struct {
     /// Runs the macOS event loop. Blocks forever until the app terminates.
     /// All rendering happens via CVDisplayLink callbacks while this runs.
     /// The display link must be started before calling this.
-    pub fn run(self: *Platform) void {
+    pub fn run(self: *Platform) !void {
         _ = self;
         // Run NSApplication event loop (blocks forever)
         Window.runEventLoop();
