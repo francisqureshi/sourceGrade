@@ -26,12 +26,13 @@ pub const Platform = struct {
 
     pub fn init(app: *App) !Platform {
         const wnd_title = " zvk x sourceGrade";
+        const constants = try com.Constants.load(app.io, app.allocator);
 
         return .{
             .app = app,
             .wnd = try wnd.Wnd.create(wnd_title),
-            .render = try rend.Render.create(),
-            .constants = try com.Constants.load(app.io, app.allocator),
+            .constants = constants,
+            .render = try rend.Render.create(app.allocator, constants),
         };
     }
 

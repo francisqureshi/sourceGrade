@@ -1,14 +1,22 @@
+const com = @import("../../com/common.zig");
 const Platform = @import("platform.zig").Platform;
 const std = @import("std");
+const vk = @import("vk/mod.zig");
 
 pub const Render = struct {
-    pub fn cleanup(self: *Render, allocator: std.mem.Allocator) !void {
-        _ = self;
-        _ = allocator;
+    vkCtx: vk.ctx.VkCtx,
+
+
+
+    pub fn create(allocator: std.mem.Allocator, constants: com.Constants) !Render {
+        const vkCtx = try vk.ctx.VkCtx.create(allocator, constants);
+        return .{
+            .vkCtx = vkCtx,
+        };
     }
 
-    pub fn create() !Render {
-        return .{};
+    pub fn cleanup(self: *Render, allocator: std.mem.Allocator) !void {
+        try self.vkCtx.cleanup(allocator);
     }
 
     pub fn render(self: *Render, platform: *Platform) !void {

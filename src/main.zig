@@ -33,5 +33,6 @@ pub fn main(init: std.process.Init.Minimal) !void {
         .macos => platform.startDisplayLink(),
         else => {},
     }
+
     try platform.run();
 }

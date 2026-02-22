@@ -3,6 +3,7 @@ const toml = @import("toml");
 
 pub const Constants = struct {
     ups: f32,
+    validation: bool,
 
     pub fn load(io: std.Io, allocator: std.mem.Allocator) !Constants {
         var parser = toml.Parser(Constants).init(allocator);
@@ -14,6 +15,7 @@ pub const Constants = struct {
         const tmp = result.value;
         const constants = Constants{
             .ups = tmp.ups,
+            .validation = tmp.validation,
         };
 
         return constants;
