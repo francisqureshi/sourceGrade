@@ -4,8 +4,10 @@ const toml = @import("toml");
 
 pub const Constants = struct {
     gpu: []const u8,
+    swapChainImages: u8,
     ups: f32,
     validation: bool,
+    vsync: bool,
 
     pub fn load(io: std.Io, allocator: std.mem.Allocator) !Constants {
         var parser = toml.Parser(Constants).init(allocator);
@@ -15,10 +17,13 @@ pub const Constants = struct {
         defer result.deinit();
 
         const tmp = result.value;
+
         const constants = Constants{
             .gpu = try allocator.dupe(u8, tmp.gpu),
+            .swapChainImages = tmp.swapChainImages,
             .ups = tmp.ups,
             .validation = tmp.validation,
+            .vsync = tmp.vsync,
         };
 
         return constants;

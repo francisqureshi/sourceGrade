@@ -18,7 +18,12 @@ pub const VkPhysDevice = struct {
     queuesInfo: QueuesInfo,
     memProps: vulkan.PhysicalDeviceMemoryProperties,
 
-    pub fn create(allocator: std.mem.Allocator, constants: com.common.Constants, instance: vulkan.InstanceProxy, vkSurface: vk.surf.VkSurface) !VkPhysDevice {
+    pub fn create(
+        allocator: std.mem.Allocator,
+        constants: com.common.Constants,
+        instance: vulkan.InstanceProxy,
+        vkSurface: vk.surf.VkSurface,
+    ) !VkPhysDevice {
         const pdevs = try instance.enumeratePhysicalDevicesAlloc(allocator);
         defer allocator.free(pdevs);
 

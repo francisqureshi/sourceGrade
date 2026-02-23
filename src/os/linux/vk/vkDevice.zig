@@ -8,7 +8,11 @@ const reqExtensions = [_][*:0]const u8{vulkan.extensions.khr_swapchain.name};
 pub const VkDevice = struct {
     deviceProxy: vulkan.DeviceProxy,
 
-    pub fn create(allocator: std.mem.Allocator, vkInstance: vk.inst.VkInstance, vkPhysDevice: vk.phys.VkPhysDevice) !VkDevice {
+    pub fn create(
+        allocator: std.mem.Allocator,
+        vkInstance: vk.inst.VkInstance,
+        vkPhysDevice: vk.phys.VkPhysDevice,
+    ) !VkDevice {
         const priority = [_]f32{0};
         const qci = [_]vulkan.DeviceQueueCreateInfo{
             .{

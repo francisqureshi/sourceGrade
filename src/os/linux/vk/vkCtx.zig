@@ -9,6 +9,7 @@ pub const VkCtx = struct {
     vkInstance: vk.inst.VkInstance,
     vkPhysDevice: vk.phys.VkPhysDevice,
     vkSurface: vk.surf.VkSurface,
+    vkSwapChain: vk.swap.VkSwapChain,
 
     pub fn create(allocator: std.mem.Allocator, constants: com.common.Constants, window: sdl3.video.Window) !VkCtx {
         const vkInstance = try vk.inst.VkInstance.create(allocator, constants.validation);
@@ -20,6 +21,16 @@ pub const VkCtx = struct {
             vkSurface,
         );
         const vkDevice = try vk.dev.VkDevice.create(allocator, vkInstance, vkPhysDevice);
+        const vkSwapChain = try vk.swap.VkSwapChain.create(
+            allocator,
+            window,
+            vkInstance,
+            vkPhysDevice,
+            vkDevice,
+            vkSurface,
+            constants.swapChainImages,
+            constants.vsync,
+        );
 
         return .{
             .constants = constants,
@@ -27,10 +38,12 @@ pub const VkCtx = struct {
             .vkInstance = vkInstance,
             .vkPhysDevice = vkPhysDevice,
             .vkSurface = vkSurface,
+            .vkSwapChain = vkSwapChain,
         };
     }
 
     pub fn cleanup(self: *VkCtx, allocator: std.mem.Allocator) !void {
+        self.vkSwapChain.cleanup(allocator, self.vkDevice);
         self.vkDevice.cleanup(allocator);
         self.vkSurface.cleanup(self.vkInstance);
         try self.vkInstance.cleanup(allocator);
