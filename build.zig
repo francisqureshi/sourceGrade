@@ -25,6 +25,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+
     // This creates a module, which represents a collection of source files alongside
     // some compilation options, such as optimization mode and linked system libraries.
     // Zig modules are the preferred way of making Zig code available to consumers.
@@ -94,11 +95,18 @@ pub fn build(b: *std.Build) void {
     }).module("pg"));
 
     // TOML
-    exe.root_module.addImport("toml", b.dependency("toml", .{
+    const toml = b.dependency("toml", .{
         .target = target,
         .optimize = optimize,
-    }).module("toml"));
+    }).module("toml");
+    exe.root_module.addImport("toml", toml);
 
+    // Common config
+    const com = b.addModule("com", .{ .root_source_file = b.path("src/com/mod.zig") });
+    com.addImport("toml", toml);
+    exe.root_module.addImport("com", com);
+
+    // SMPTE TC calculator
     exe.root_module.addImport("smpte", smpte_dep.module("smpte"));
 
     // Apple macOS spefici modules,
@@ -289,6 +297,12 @@ pub fn build(b: *std.Build) void {
             });
             const vulkan = vulkan_dep.module("vulkan-zig");
             exe.root_module.addImport("vulkan", vulkan);
+
+            const vk = b.addModule("vk", .{ .root_source_file = b.path("src/os/linux/vk/mod.zig") });
+            vk.addImport("vulkan", vulkan);
+            vk.addImport("sdl3", sdl3.module("sdl3"));
+            vk.addImport("com", com);
+            exe.root_module.addImport("vk", vk);
         },
 
         else => |tag| {

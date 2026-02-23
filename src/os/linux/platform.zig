@@ -1,8 +1,8 @@
 const std = @import("std");
 
-const com = @import("../../com/common.zig");
-const App = @import("../../app.zig").App;
+const com = @import("com");
 
+const App = @import("../../app.zig").App;
 const rend = @import("renderer.zig");
 const wnd = @import("window.zig");
 
@@ -16,23 +16,27 @@ pub const Platform = struct {
     app: *App,
     wnd: wnd.Wnd,
     render: rend.Render,
-    constants: com.Constants,
+    constants: com.common.Constants,
 
     pub fn deinit(self: *Platform) void {
         self.render.cleanup(self.app.allocator) catch return;
+        try self.wnd.cleanup();
+        self.constants.cleanup(self.app.allocator);
 
         std.debug.print("bye! from Platform.deinit()\n", .{});
     }
 
     pub fn init(app: *App) !Platform {
         const wnd_title = " zvk x sourceGrade";
-        const constants = try com.Constants.load(app.io, app.allocator);
+        const window = try wnd.Wnd.create(wnd_title);
+        const constants = try com.common.Constants.load(app.io, app.allocator);
+        const render = try rend.Render.create(app.allocator, constants, window.window);
 
         return .{
             .app = app,
-            .wnd = try wnd.Wnd.create(wnd_title),
+            .wnd = window,
             .constants = constants,
-            .render = try rend.Render.create(app.allocator, constants),
+            .render = render,
         };
     }
 

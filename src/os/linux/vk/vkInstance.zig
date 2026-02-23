@@ -1,7 +1,9 @@
-const builtin = @import("builtin");
 const std = @import("std");
-const vulkan = @import("vulkan");
+const builtin = @import("builtin");
+
 const sdl3 = @import("sdl3");
+const vulkan = @import("vulkan");
+
 const log = std.log.scoped(.vk);
 
 const VALIDATION_LAYER = "VK_LAYER_KHRONOS_validation";
@@ -21,9 +23,9 @@ pub const VkInstance = struct {
         const vkb = vulkan.BaseWrapper.load(loader);
 
         const appInfo = vulkan.ApplicationInfo{
-            .p_application_name = "app_name",
+            .p_application_name = "sourceGrade",
             .application_version = @bitCast(vulkan.makeApiVersion(0, 1, 0, 0)),
-            .p_engine_name = "app_name",
+            .p_engine_name = "sourceGrade",
             .engine_version = @bitCast(vulkan.makeApiVersion(0, 1, 0, 0)),
             .api_version = @bitCast(vulkan.API_VERSION_1_3),
         };

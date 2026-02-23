@@ -1,7 +1,9 @@
 const std = @import("std");
+
 const toml = @import("toml");
 
 pub const Constants = struct {
+    gpu: []const u8,
     ups: f32,
     validation: bool,
 
@@ -14,6 +16,7 @@ pub const Constants = struct {
 
         const tmp = result.value;
         const constants = Constants{
+            .gpu = try allocator.dupe(u8, tmp.gpu),
             .ups = tmp.ups,
             .validation = tmp.validation,
         };
@@ -22,7 +25,6 @@ pub const Constants = struct {
     }
 
     pub fn cleanup(self: *Constants, allocator: std.mem.Allocator) void {
-        _ = self;
-        _ = allocator;
+        allocator.free(self.gpu);
     }
 };

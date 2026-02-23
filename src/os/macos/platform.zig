@@ -1,17 +1,16 @@
 const std = @import("std");
+
 const metal = @import("metal");
 
 const App = @import("../../app.zig").App;
-const RenderState = @import("render_state.zig").RenderState;
-const ui = @import("../../gui/ui.zig");
-
-const Window = @import("window.zig").Window;
-const DisplayLink = @import("window.zig").DisplayLink;
-const window_c = @import("window.zig");
-const MetalRenderer = @import("renderer.zig").MetalRenderer;
-const ImGuiRenderer = @import("ui_renderer.zig").ImGuiRenderer;
-
 const gpu_renderer = @import("../../gpu/renderer.zig");
+const ui = @import("../../gui/ui.zig");
+const DisplayLink = @import("window.zig").DisplayLink;
+const ImGuiRenderer = @import("ui_renderer.zig").ImGuiRenderer;
+const MetalRenderer = @import("renderer.zig").MetalRenderer;
+const RenderState = @import("render_state.zig").RenderState;
+const Window = @import("window.zig").Window;
+const window_c = @import("window.zig");
 
 // ============================================================================
 // Platform - macOS AppKit + Metal

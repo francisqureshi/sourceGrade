@@ -1,22 +1,24 @@
-const com = @import("../../com/common.zig");
-const Platform = @import("platform.zig").Platform;
 const std = @import("std");
-const vk = @import("vk/mod.zig");
+
+const com = @import("com");
+const sdl3 = @import("sdl3");
+const vk = @import("vk");
+
+const Platform = @import("platform.zig").Platform;
 
 pub const Render = struct {
     vkCtx: vk.ctx.VkCtx,
 
+    pub fn cleanup(self: *Render, allocator: std.mem.Allocator) !void {
+        try self.vkCtx.vkDevice.wait();
+        try self.vkCtx.cleanup(allocator);
+    }
 
-
-    pub fn create(allocator: std.mem.Allocator, constants: com.Constants) !Render {
-        const vkCtx = try vk.ctx.VkCtx.create(allocator, constants);
+    pub fn create(allocator: std.mem.Allocator, constants: com.common.Constants, window: sdl3.video.Window) !Render {
+        const vkCtx = try vk.ctx.VkCtx.create(allocator, constants, window);
         return .{
             .vkCtx = vkCtx,
         };
-    }
-
-    pub fn cleanup(self: *Render, allocator: std.mem.Allocator) !void {
-        try self.vkCtx.cleanup(allocator);
     }
 
     pub fn render(self: *Render, platform: *Platform) !void {
