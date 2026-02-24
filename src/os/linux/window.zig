@@ -4,6 +4,7 @@ const sdl3 = @import("sdl3");
 
 const log = std.log.scoped(.window);
 
+/// Per-frame mouse position, button flags, and motion deltas.
 pub const MouseState = struct {
     flags: sdl3.mouse.ButtonFlags,
     x: f32 = 0.0,
@@ -12,17 +13,21 @@ pub const MouseState = struct {
     deltaY: f32 = 0.0,
 };
 
+/// Window dimensions in pixels.
 const Size = struct {
     width: usize,
     height: usize,
 };
 
+/// SDL3 window wrapper. Owns the SDL window lifetime and exposes input state.
 pub const Wnd = struct {
     window: sdl3.video.Window,
     closed: bool,
     mouseState: MouseState,
     resized: bool,
 
+    /// Initialises SDL3, loads the Vulkan library, and creates a resizable window
+    /// sized to the primary display's usable bounds. Prefers Wayland if available.
     pub fn create(wndTitle: [:0]const u8) !Wnd {
         log.debug("Creating window", .{});
 
@@ -65,23 +70,28 @@ pub const Wnd = struct {
         };
     }
 
+    /// Destroys the SDL window and shuts down SDL.
     pub fn cleanup(self: *Wnd) !void {
         log.debug("Destroying window", .{});
         self.window.deinit();
         sdl3.shutdown();
     }
 
+    /// Returns the window's current size in pixels.
     pub fn getSize(self: *Wnd) !Size {
         const res = try sdl3.video.Window.getSizeInPixels(self.window);
         return Size{ .width = res[0], .height = res[1] };
     }
 
+    /// Returns true if the given key is currently held down.
     pub fn isKeyPressed(self: *Wnd, keyCode: sdl3.Scancode) bool {
         _ = self;
         const keyState = sdl3.keyboard.getState();
         return keyState[@intFromEnum(keyCode)];
     }
 
+    /// Drains the SDL event queue for one frame, updating `closed`, `resized`,
+    /// and `mouseState` (position, button flags, per-frame deltas).
     pub fn pollEvents(self: *Wnd) !void {
         self.resized = false;
         self.mouseState.deltaX = 0.0;

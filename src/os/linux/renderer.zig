@@ -5,25 +5,34 @@ const sdl3 = @import("sdl3");
 const vk = @import("vk");
 const vulkan = @import("vulkan");
 
-const eng = @import("mod.zig");
-const platform = @import("platform.zig");
+const mcach = @import("modelsCache.zig");
+const rscn = @import("renderScn.zig");
+const wnd = @import("window.zig");
+const ui = @import("../../gui/ui.zig");
+const ImGuiRenderer = @import("ui_renderer.zig").ImGuiRenderer;
 
+/// Top-level Vulkan renderer. Owns the VkCtx, per-frame sync objects,
+/// command pools/buffers, queues, scene pipeline, and models cache.
 pub const Render = struct {
     vkCtx: vk.ctx.VkCtx,
     cmdPools: []vk.cmd.VkCmdPool,
     cmdBuffs: []vk.cmd.VkCmdBuff,
     currentFrame: u8,
     fences: []vk.sync.VkFence,
-    modelsCache: eng.mcach.ModelsCache,
+    modelsCache: mcach.ModelsCache,
     queueGraphics: vk.queue.VkQueue,
     queuePresent: vk.queue.VkQueue,
-    renderScn: eng.rscn.RenderScn,
+    renderScn: rscn.RenderScn,
+    uiRenderer: ImGuiRenderer,
     semsPresComplete: []vk.sync.VkSemaphore,
     semsRenderComplete: []vk.sync.VkSemaphore,
 
+    /// Waits for the device to go idle then destroys all Vulkan resources in
+    /// reverse creation order.
     pub fn cleanup(self: *Render, allocator: std.mem.Allocator) !void {
         try self.vkCtx.vkDevice.wait();
 
+        self.uiRenderer.cleanup(&self.vkCtx);
         self.renderScn.cleanup(allocator, &self.vkCtx);
 
         self.modelsCache.cleanup(allocator, &self.vkCtx);
@@ -41,6 +50,8 @@ pub const Render = struct {
 
         self.cleanupSemphs(allocator);
 
+        self.uiRenderer.cleanup(&self.vkCtx);
+
         try self.vkCtx.cleanup(allocator);
     }
 
@@ -56,6 +67,8 @@ pub const Render = struct {
         defer allocator.free(self.semsPresComplete);
     }
 
+    /// Creates the full Vulkan rendering context: VkCtx, sync objects (fences,
+    /// semaphores), command pools/buffers, queues, scene pipeline, and models cache.
     pub fn create(allocator: std.mem.Allocator, io: std.Io, constants: com.common.Constants, window: sdl3.video.Window) !Render {
         const vkCtx = try vk.ctx.VkCtx.create(allocator, constants, window);
 
@@ -87,9 +100,11 @@ pub const Render = struct {
         const queueGraphics = vk.queue.VkQueue.create(&vkCtx, vkCtx.vkPhysDevice.queuesInfo.graphics_family);
         const queuePresent = vk.queue.VkQueue.create(&vkCtx, vkCtx.vkPhysDevice.queuesInfo.present_family);
 
-        const renderScn = try eng.rscn.RenderScn.create(allocator, io, &vkCtx);
+        const uiRenderer = try ImGuiRenderer.create(allocator, io, &vkCtx);
 
-        const modelsCache = eng.mcach.ModelsCache.create(allocator);
+        const renderScn = try rscn.RenderScn.create(allocator, io, &vkCtx);
+
+        const modelsCache = mcach.ModelsCache.create(allocator);
 
         return .{
             .vkCtx = vkCtx,
@@ -103,16 +118,20 @@ pub const Render = struct {
             .renderScn = renderScn,
             .semsPresComplete = semsPresComplete,
             .semsRenderComplete = semsRenderComplete,
+            .uiRenderer = uiRenderer,
         };
     }
 
-    pub fn init(self: *Render, allocator: std.mem.Allocator, initData: *const platform.InitData) !void {
+    /// Uploads initial scene geometry to the GPU via the models cache.
+    pub fn init(self: *Render, allocator: std.mem.Allocator, initData: *const com.mdata.InitData) !void {
         try self.modelsCache.init(allocator, &self.vkCtx, &self.cmdPools[0], self.queueGraphics, initData);
     }
 
-    pub fn render(self: *Render, engCtx: *eng.Platform) !void {
+    /// Renders one frame: acquires a swapchain image, records and submits draw
+    /// commands, then presents. Skips the frame if the window was just resized.
+    pub fn render(self: *Render, window: *wnd.Wnd, imgui_ctx: *ui.ImGuiContext) !void {
         // Check resize Before acquiring to avoid leaving semaphore signaled
-        if (engCtx.wnd.resized) {
+        if (window.resized) {
             return;
         }
 
@@ -138,6 +157,8 @@ pub const Render = struct {
 
         try self.renderScn.render(&self.vkCtx, vkCmdBuff, &self.modelsCache, imageIndex);
 
+        try self.uiRenderer.render(&self.vkCtx, vkCmdBuff, imgui_ctx, self.currentFrame, self.vkCtx.vkSwapChain.extent);
+
         self.renderMainFinish(vkCmdBuff, imageIndex);
 
         try vkCmdBuff.end(&self.vkCtx);
@@ -149,6 +170,8 @@ pub const Render = struct {
         self.currentFrame = (self.currentFrame + 1) % com.common.FRAMES_IN_FLIGHT;
     }
 
+    /// Records a pipeline barrier transitioning the swapchain image from
+    /// `color_attachment_optimal` to `present_src_khr` ready for presentation.
     fn renderMainFinish(self: *Render, vkCmd: vk.cmd.VkCmdBuff, imageIndex: u32) void {
         const endBarriers = [_]vulkan.ImageMemoryBarrier2{.{
             .old_layout = vulkan.ImageLayout.color_attachment_optimal,
@@ -175,6 +198,8 @@ pub const Render = struct {
         self.vkCtx.vkDevice.deviceProxy.cmdPipelineBarrier2(vkCmd.cmdBuffProxy.handle, &endDepInfo);
     }
 
+    /// Records a pipeline barrier transitioning the swapchain image from
+    /// `undefined` to `color_attachment_optimal` ready for rendering.
     fn renderMainInit(self: *Render, vkCmd: vk.cmd.VkCmdBuff, imageIndex: u32) void {
         const initBarriers = [_]vulkan.ImageMemoryBarrier2{.{
             .old_layout = vulkan.ImageLayout.undefined,
@@ -201,6 +226,8 @@ pub const Render = struct {
         self.vkCtx.vkDevice.deviceProxy.cmdPipelineBarrier2(vkCmd.cmdBuffProxy.handle, &initDepInfo);
     }
 
+    /// Submits the command buffer to the graphics queue, waiting on the
+    /// present-complete semaphore and signalling the render-complete semaphore.
     fn submit(self: *Render, vkCmdBuff: *const vk.cmd.VkCmdBuff, imageIndex: u32) !void {
         const vkFence = self.fences[self.currentFrame];
 

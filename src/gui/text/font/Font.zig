@@ -1,8 +1,9 @@
-//! Font face wrapper using CoreText
+//! Font face wrapper using CoreText (macOS only — stubbed on other platforms)
 
 const Font = @This();
 
 const std = @import("std");
+const builtin = @import("builtin");
 const ct = @import("../coretext.zig");
 const Glyph = @import("Glyph.zig");
 
@@ -16,6 +17,7 @@ size: f32,
 ascent: f32,
 
 pub fn init(name: [:0]const u8, size: f32) !Font {
+    if (comptime builtin.os.tag != .macos) return error.FontNotAvailable;
     const cf_name = ct.createCFString(name) orelse return error.CFStringCreateFailed;
     defer ct.releaseCF(cf_name);
 
@@ -35,11 +37,13 @@ pub fn init(name: [:0]const u8, size: f32) !Font {
 }
 
 pub fn deinit(self: *Font) void {
+    if (comptime builtin.os.tag != .macos) return;
     ct.releaseCF(self.ct_font);
 }
 
 /// Get glyph ID for a Unicode codepoint
 pub fn getGlyphID(self: *Font, codepoint: u21) !u16 {
+    if (comptime builtin.os.tag != .macos) return error.FontNotAvailable;
     const chars = [_]u16{@intCast(codepoint)};
     var glyphs: [1]u16 = undefined;
 
@@ -55,6 +59,7 @@ pub fn getGlyphID(self: *Font, codepoint: u21) !u16 {
 
 /// Get glyph metrics for a glyph ID
 pub fn getGlyphMetrics(self: *Font, glyph_id: u16) !Glyph {
+    if (comptime builtin.os.tag != .macos) return error.FontNotAvailable;
     const glyphs = [_]u16{glyph_id};
     var bounds: [1]ct.CGRect = undefined;
     var advances: [1]ct.CGSize = undefined;
@@ -115,6 +120,7 @@ pub fn renderGlyph(
     width: u32,
     height: u32,
 ) !void {
+    if (comptime builtin.os.tag != .macos) return error.FontNotAvailable;
     if (buffer.len < width * height) return error.BufferTooSmall;
 
     // Clear buffer to 0 (alpha=0 background) - MUST do this before creating context

@@ -5,6 +5,7 @@ const mcach = @import("modelsCache.zig");
 const vk = @import("vk");
 const vulkan = @import("vulkan");
 
+/// Vertex layout for scene geometry: a single XYZ position attribute.
 const VtxBuffDesc = struct {
     const binding_description = vulkan.VertexInputBindingDescription{
         .binding = 0,
@@ -24,14 +25,18 @@ const VtxBuffDesc = struct {
     pos: [3]f32,
 };
 
+/// Owns the graphics pipeline for 3D scene rendering.
 pub const RenderScn = struct {
     vkPipeline: vk.pipe.VkPipeline,
 
+    /// Destroys the graphics pipeline.
     pub fn cleanup(self: *RenderScn, allocator: std.mem.Allocator, vkCtx: *const vk.ctx.VkCtx) void {
         _ = allocator;
         self.vkPipeline.cleanup(vkCtx);
     }
 
+    /// Loads SPIR-V vertex and fragment shaders from disk and creates the
+    /// graphics pipeline for scene rendering.
     pub fn create(allocator: std.mem.Allocator, io: std.Io, vkCtx: *const vk.ctx.VkCtx) !RenderScn {
         // Shader modules
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -72,6 +77,8 @@ pub const RenderScn = struct {
         };
     }
 
+    /// Records draw commands into `vkCmd`: begins dynamic rendering, binds the
+    /// pipeline, sets viewport/scissor, then draws every mesh in `modelsCache`.
     pub fn render(self: *RenderScn, vkCtx: *const vk.ctx.VkCtx, vkCmd: vk.cmd.VkCmdBuff, modelsCache: *const mcach.ModelsCache, imageIndex: u32) !void {
         const cmdHandle = vkCmd.cmdBuffProxy.handle;
         const device = vkCtx.vkDevice.deviceProxy;

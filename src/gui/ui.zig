@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const Font = @import("text/font/Font.zig");
 const Atlas = @import("text/font/Atlas.zig");
@@ -94,17 +95,17 @@ pub const ImGuiContext = struct {
         const default_font_size: f32 = 48.0;
         const atlas_size: u32 = 2048;
 
-        // Create default font
-        var default_font = try Font.init(font_name, default_font_size);
-        errdefer default_font.deinit();
-
         // Create font entries map
         var font_entries = std.AutoHashMap(u32, FontEntry).init(allocator);
         errdefer font_entries.deinit();
 
-        // Add default font size
-        const size_key: u32 = @intFromFloat(default_font_size);
-        try font_entries.put(size_key, FontEntry.init(default_font));
+        // Font initialisation is macOS only (CoreText) — stubbed on Linux
+        if (comptime builtin.os.tag == .macos) {
+            var default_font = try Font.init(font_name, default_font_size);
+            errdefer default_font.deinit();
+            const size_key: u32 = @intFromFloat(default_font_size);
+            try font_entries.put(size_key, FontEntry.init(default_font));
+        }
 
         // Create atlas
         var atlas = try Atlas.init(allocator, atlas_size, .grayscale);
@@ -494,6 +495,10 @@ pub const ImGuiContext = struct {
             font_size: f32,
             color: [4]u8,
         ) !TextWidget {
+            // Text rendering is macOS only (CoreText) — stub on Linux
+            if (comptime builtin.os.tag != .macos) {
+                return .{ .parent = null, .width = 0, .height = font_size, .center_x = x };
+            }
             // if (text.len == 0) return;
 
             // Scale font size by backing scale factor for HiDPI rendering

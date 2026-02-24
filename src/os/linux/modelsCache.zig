@@ -1,11 +1,13 @@
-const eng = @import("mod.zig");
-const platform = @import("platform.zig");
 const std = @import("std");
+
 const vk = @import("vk");
 const vulkan = @import("vulkan");
 
-const log = std.log.scoped(.eng);
+const com = @import("com");
 
+const log = std.log.scoped(.modelsCache);
+
+/// GPU-resident mesh: index buffer, vertex buffer, and draw metadata.
 pub const VulkanMesh = struct {
     buffIdx: vk.buf.VkBuffer,
     buffVtx: vk.buf.VkBuffer,
@@ -18,6 +20,7 @@ pub const VulkanMesh = struct {
     }
 };
 
+/// A named collection of GPU-resident meshes.
 pub const VulkanModel = struct {
     id: []const u8,
     meshes: std.ArrayList(VulkanMesh),
@@ -30,9 +33,11 @@ pub const VulkanModel = struct {
     }
 };
 
+/// Hash map of model ID → `VulkanModel`. Owns all GPU buffer memory.
 pub const ModelsCache = struct {
     modelsMap: std.StringHashMap(VulkanModel),
 
+    /// Destroys all GPU buffers for every cached model and frees the map.
     pub fn cleanup(self: *ModelsCache, allocator: std.mem.Allocator, vkCtx: *const vk.ctx.VkCtx) void {
         var iter = self.modelsMap.iterator();
         while (iter.next()) |entry| {
@@ -42,6 +47,7 @@ pub const ModelsCache = struct {
         self.modelsMap.deinit();
     }
 
+    /// Returns an empty models cache backed by the given allocator.
     pub fn create(allocator: std.mem.Allocator) ModelsCache {
         const modelsMap = std.StringHashMap(VulkanModel).init(allocator);
         return .{
@@ -49,13 +55,15 @@ pub const ModelsCache = struct {
         };
     }
 
+    /// Uploads all meshes from `initData` to the GPU using staging buffers,
+    /// then stores the resulting `VulkanModel` entries in the cache.
     pub fn init(
         self: *ModelsCache,
         allocator: std.mem.Allocator,
         vkCtx: *const vk.ctx.VkCtx,
         cmdPool: *vk.cmd.VkCmdPool,
         vkQueue: vk.queue.VkQueue,
-        initData: *const platform.InitData,
+        initData: *const com.mdata.InitData,
     ) !void {
         log.debug("Loading {d} model(s)", .{initData.models.len});
 

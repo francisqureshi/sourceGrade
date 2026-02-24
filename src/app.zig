@@ -2,8 +2,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 
-const eng = @import("os/linux/mod.zig");
-const platform = @import("os/linux/platform.zig");
+const com = @import("com");
 const renderer = @import("gpu/renderer.zig");
 const ui = @import("gui/ui.zig");
 
@@ -68,10 +67,10 @@ pub const App = struct {
         _ = dt;
     }
 
-    pub fn vkDemo(arenaAlloc: std.mem.Allocator) !platform.InitData {
-        const triangleModel = eng.mdata.ModelData{
+    pub fn vkDemo(arenaAlloc: std.mem.Allocator) !com.mdata.InitData {
+        const triangleModel = com.mdata.ModelData{
             .id = "TriangleModel",
-            .meshes = &[_]eng.mdata.MeshData{
+            .meshes = &[_]com.mdata.MeshData{
                 .{
                     .id = "TriangleMesh",
                     .vertices = &[_]f32{ -0.5, -0.5, 0.0, 0.0, 0.5, 0.0, 0.5, -0.5, 0.0 },
@@ -79,7 +78,7 @@ pub const App = struct {
                 },
             },
         };
-        const models = try arenaAlloc.alloc(eng.mdata.ModelData, 1);
+        const models = try arenaAlloc.alloc(com.mdata.ModelData, 1);
         models[0] = triangleModel;
 
         return .{ .models = models };

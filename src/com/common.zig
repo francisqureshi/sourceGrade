@@ -3,6 +3,8 @@ const std = @import("std");
 const toml = @import("toml");
 
 pub const FRAMES_IN_FLIGHT = 2;
+pub const MAX_UI_VERTICES = 65536;
+pub const MAX_UI_INDICES = 131072;
 
 pub const Constants = struct {
     gpu: []const u8,

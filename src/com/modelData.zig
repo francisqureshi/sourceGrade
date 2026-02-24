@@ -8,3 +8,7 @@ pub const ModelData = struct {
     id: []const u8,
     meshes: []const MeshData,
 };
+
+pub const InitData = struct {
+    models: []const ModelData,
+};
