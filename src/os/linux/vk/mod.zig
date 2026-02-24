@@ -6,3 +6,7 @@ pub const queue = @import("vkQueue.zig");
 pub const surf = @import("vkSurface.zig");
 pub const swap = @import("vkSwapChain.zig");
 pub const imv = @import("vkImageView.zig");
+pub const cmd = @import("vkCmd.zig");
+pub const sync = @import("vkSync.zig");
+pub const buf = @import("vkBuffer.zig");
+pub const pipe = @import("vkPipeline.zig");

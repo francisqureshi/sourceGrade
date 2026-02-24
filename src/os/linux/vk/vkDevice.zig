@@ -8,6 +8,9 @@ const reqExtensions = [_][*:0]const u8{vulkan.extensions.khr_swapchain.name};
 pub const VkDevice = struct {
     deviceProxy: vulkan.DeviceProxy,
 
+    /// Creates the logical device. Enables graphics and present queues (1 queue each,
+    /// deduplicated if they share the same family), VK_KHR_swapchain extension,
+    /// and Vulkan 1.2/1.3 features (dynamic rendering, synchronization2, anisotropy).
     pub fn create(
         allocator: std.mem.Allocator,
         vkInstance: vk.inst.VkInstance,
@@ -60,12 +63,15 @@ pub const VkDevice = struct {
         return .{ .deviceProxy = deviceProxy };
     }
 
+    /// Destroys the logical device and frees the heap-allocated DeviceWrapper dispatch table.
     pub fn cleanup(self: *VkDevice, allocator: std.mem.Allocator) void {
         log.debug("Destroying Vulkan Device", .{});
         self.deviceProxy.destroyDevice(null);
         allocator.destroy(self.deviceProxy.wrapper);
     }
 
+    /// Blocks until all submitted work on this device has completed.
+    /// Call before cleanup to avoid destroying resources still in use by the GPU.
     pub fn wait(self: *VkDevice) !void {
         try self.deviceProxy.deviceWaitIdle();
     }

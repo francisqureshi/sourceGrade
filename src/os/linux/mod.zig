@@ -1,1 +1,4 @@
 pub const Platform = @import("platform.zig").Platform;
+pub const rscn = @import("renderScn.zig");
+pub const mcach = @import("modelsCache.zig");
+pub const mdata = @import("modelData.zig");

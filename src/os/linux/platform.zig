@@ -3,12 +3,17 @@ const std = @import("std");
 const com = @import("com");
 
 const App = @import("../../app.zig").App;
+const eng = @import("mod.zig");
 const rend = @import("renderer.zig");
 const wnd = @import("window.zig");
 
 // ============================================================================
 // Platform - Linux and Vulkan
 // ============================================================================
+
+pub const InitData = struct {
+    models: []const eng.mdata.ModelData,
+};
 
 /// Linux platform layer that orchestrates window, renderer, and display
 /// This is the top-level coordinator for the Linux backend.
@@ -30,7 +35,14 @@ pub const Platform = struct {
         const wnd_title = " zvk x sourceGrade";
         const window = try wnd.Wnd.create(wnd_title);
         const constants = try com.common.Constants.load(app.io, app.allocator);
-        const render = try rend.Render.create(app.allocator, constants, window.window);
+        var render = try rend.Render.create(app.allocator, app.io, constants, window.window);
+
+        var arena = std.heap.ArenaAllocator.init(app.allocator);
+        const arenaAlloc = arena.allocator();
+        defer arena.deinit();
+
+        const initData = try App.vkDemo(arenaAlloc);
+        try render.init(app.allocator, &initData);
 
         return .{
             .app = app,
@@ -69,27 +81,3 @@ pub const Platform = struct {
         }
     }
 };
-
-//INFO: Old zvk Game.....
-// const Game = struct {
-//     pub fn cleanup(self: *Game) void {
-//         _ = self;
-//     }
-//
-//     pub fn init(self: *Game, platformCtx: *pltfrm.Platform.PlatformCtx) void {
-//         _ = self;
-//         _ = platformCtx;
-//     }
-//
-//     pub fn input(self: *Game, platformCtx: *pltfrm.Platform.PlatformCtx, deltaSec: f32) void {
-//         _ = self;
-//         _ = platformCtx;
-//         _ = deltaSec;
-//     }
-//
-//     pub fn update(self: *Game, platformCtx: *pltfrm.Platform.PlatformCtx, deltaSec: f32) void {
-//         _ = self;
-//         _ = platformCtx;
-//         _ = deltaSec;
-//     }
-// };

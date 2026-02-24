@@ -15,6 +15,8 @@ pub const VkImageView = struct {
     image: vulkan.Image,
     view: vulkan.ImageView,
 
+    /// Creates a VkImageView for the given image. VkImageViewData configures format,
+    /// aspect mask, mip/layer ranges, and view type (defaults to 2D color).
     pub fn create(vkDevice: vk.dev.VkDevice, image: vulkan.Image, imageViewData: VkImageViewData) !VkImageView {
         const createInfo = vulkan.ImageViewCreateInfo{
             .image = image,
@@ -38,6 +40,8 @@ pub const VkImageView = struct {
         };
     }
 
+    /// Destroys the image view handle. Does not destroy the underlying image
+    /// (swapchain images are owned by the swapchain).
     pub fn cleanup(self: *VkImageView, vkDevice: vk.dev.VkDevice) void {
         vkDevice.deviceProxy.destroyImageView(self.view, null);
         self.view = .null_handle;

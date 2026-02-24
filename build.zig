@@ -1,5 +1,10 @@
 const std = @import("std");
 
+const Shader = struct {
+    path: []const u8,
+    stage: []const u8,
+};
+
 // Although this function looks imperative, it does not perform the build
 // directly and instead it mutates the build graph (`b`) that will be then
 // executed by an external runner. The functions in `std.Build` implement a DSL
@@ -303,6 +308,29 @@ pub fn build(b: *std.Build) void {
             vk.addImport("sdl3", sdl3.module("sdl3"));
             vk.addImport("com", com);
             exe.root_module.addImport("vk", vk);
+
+            // Shaders
+            const shaders = [_]Shader{
+                .{ .path = "res/shaders/scn_vtx.glsl", .stage = "vertex" },
+                .{ .path = "res/shaders/scn_frg.glsl", .stage = "fragment" },
+            };
+            for (shaders) |shader| {
+                std.log.debug("Compiling [{s}]", .{shader.path});
+                const outputPath = b.fmt("{s}.spv", .{shader.path});
+                const stage = b.fmt("-fshader-stage={s}", .{shader.stage});
+                const compFragment = b.addSystemCommand(&[_][]const u8{
+                    "glslc",
+                    "--target-env=vulkan1.3",
+                    stage,
+                    "-g", // Debug
+                    "-o",
+                    outputPath,
+                    shader.path,
+                });
+                b.getInstallStep().dependOn(&compFragment.step);
+            }
+
+            b.installArtifact(exe);
         },
 
         else => |tag| {

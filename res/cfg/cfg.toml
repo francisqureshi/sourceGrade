@@ -1,4 +1,5 @@
-gpu="NVIDIA GeForce RTX 4090" # GPU name key to query against
+# gpu="NVIDIA GeForce RTX 4090" # GPU name key to query against
+gpu=""
 ups=40
 validation=true
 swapChainImages=3

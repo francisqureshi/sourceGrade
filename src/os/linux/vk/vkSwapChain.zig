@@ -17,6 +17,31 @@ pub const VkSwapChain = struct {
     handle: vulkan.SwapchainKHR,
     vsync: bool,
 
+    pub fn acquire(
+        self: *const VkSwapChain,
+        device: vk.dev.VkDevice,
+        semaphore: vk.sync.VkSemaphore,
+    ) !AcquireResult {
+        const res = device.deviceProxy.acquireNextImageKHR(
+            self.handle,
+            std.math.maxInt(u64),
+            semaphore.semaphore,
+            .null_handle,
+        );
+
+        if (res) |ok| {
+            return switch (ok.result) {
+                .success, .suboptimal_khr => .{ .ok = ok.image_index },
+                else => .recreate,
+            };
+        } else |err| {
+            return switch (err) {
+                error.OutOfDateKHR => .recreate,
+                else => err,
+            };
+        }
+    }
+
     fn calcExtent(window: sdl3.video.Window, caps: vulkan.SurfaceCapabilitiesKHR) !vulkan.Extent2D {
         if (caps.current_extent.width != std.math.maxInt(u32)) {
             return caps.current_extent;
@@ -174,5 +199,32 @@ pub const VkSwapChain = struct {
         }
 
         return views;
+    }
+
+    pub fn present(
+        self: *const VkSwapChain,
+        device: vk.dev.VkDevice,
+        queue: vk.queue.VkQueue,
+        waitSem: vk.sync.VkSemaphore,
+        imgIdx: u32,
+    ) bool {
+        const sems = [_]vulkan.Semaphore{waitSem.semaphore};
+        const swaps = [_]vulkan.SwapchainKHR{self.handle};
+        const indices = [_]u32{imgIdx};
+
+        const info = vulkan.PresentInfoKHR{
+            .wait_semaphore_count = 1,
+            .p_wait_semaphores = &sems,
+            .swapchain_count = 1,
+            .p_swapchains = &swaps,
+            .p_image_indices = &indices,
+        };
+
+        const result = device.deviceProxy.queuePresentKHR(queue.handle, &info) catch return false;
+
+        return switch (result) {
+            .success, .suboptimal_khr => true,
+            else => false,
+        };
     }
 };

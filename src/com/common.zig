@@ -2,6 +2,8 @@ const std = @import("std");
 
 const toml = @import("toml");
 
+pub const FRAMES_IN_FLIGHT = 2;
+
 pub const Constants = struct {
     gpu: []const u8,
     swapChainImages: u8,

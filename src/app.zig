@@ -1,10 +1,11 @@
 const std = @import("std");
-
-const renderer = @import("gpu/renderer.zig");
-const ui = @import("gui/ui.zig");
-
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
+
+const eng = @import("os/linux/mod.zig");
+const platform = @import("os/linux/platform.zig");
+const renderer = @import("gpu/renderer.zig");
+const ui = @import("gui/ui.zig");
 
 const TestingConfig = struct {
     video_path: []const u8,
@@ -65,6 +66,23 @@ pub const App = struct {
         // TODO: will contain playback logic
         _ = self;
         _ = dt;
+    }
+
+    pub fn vkDemo(arenaAlloc: std.mem.Allocator) !platform.InitData {
+        const triangleModel = eng.mdata.ModelData{
+            .id = "TriangleModel",
+            .meshes = &[_]eng.mdata.MeshData{
+                .{
+                    .id = "TriangleMesh",
+                    .vertices = &[_]f32{ -0.5, -0.5, 0.0, 0.0, 0.5, 0.0, 0.5, -0.5, 0.0 },
+                    .indices = &[_]u32{ 0, 1, 2 },
+                },
+            },
+        };
+        const models = try arenaAlloc.alloc(eng.mdata.ModelData, 1);
+        models[0] = triangleModel;
+
+        return .{ .models = models };
     }
 
     pub fn buildUI(self: *App, imgui: *ui.ImGuiContext) void {

@@ -13,6 +13,9 @@ pub const VkInstance = struct {
     debugMessenger: ?vulkan.DebugUtilsMessengerEXT = null,
     instanceProxy: vulkan.InstanceProxy,
 
+    /// Creates the Vulkan instance. Loads the Vulkan function pointers via SDL3,
+    /// adds SDL's required extensions, and optionally enables the Khronos validation
+    /// layer + debug messenger when `validate` is true.
     pub fn create(allocator: std.mem.Allocator, validate: bool) !VkInstance {
         const rawProc = sdl3.vulkan.getVkGetInstanceProcAddr() catch |err| {
             std.debug.print("Vulkan not available: {}\n", .{err});
@@ -94,6 +97,8 @@ pub const VkInstance = struct {
         };
     }
 
+    /// Validation layer callback. Routes Vulkan messages to Zig's scoped logger
+    /// at the appropriate severity level (err/warn/info/debug).
     fn debugUtilsMessengerCallback(
         severity: vulkan.DebugUtilsMessageSeverityFlagsEXT,
         msgType: vulkan.DebugUtilsMessageTypeFlagsEXT,
@@ -114,6 +119,8 @@ pub const VkInstance = struct {
         return vulkan.Bool32.false;
     }
 
+    /// Destroys the debug messenger (if active), the instance, and frees the
+    /// heap-allocated InstanceWrapper dispatch table.
     pub fn cleanup(self: *VkInstance, allocator: std.mem.Allocator) !void {
         log.debug("Destroying Vulkan instance", .{});
         if (self.debugMessenger) |dbg| {
@@ -124,6 +131,7 @@ pub const VkInstance = struct {
         self.instanceProxy = undefined;
     }
 
+    /// Returns true if VK_LAYER_KHRONOS_validation is available on this system.
     fn supportsValidation(allocator: std.mem.Allocator, vkb: *const vulkan.BaseWrapper) !bool {
         var result = false;
         var numLayers: u32 = 0;

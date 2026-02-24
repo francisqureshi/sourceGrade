@@ -1,6 +1,9 @@
 const std = @import("std");
-const sdl3 = @import("sdl3");
+
 const com = @import("com");
+const sdl3 = @import("sdl3");
+const vulkan = @import("vulkan");
+
 const vk = @import("mod.zig");
 
 pub const VkCtx = struct {
@@ -11,6 +14,8 @@ pub const VkCtx = struct {
     vkSurface: vk.surf.VkSurface,
     vkSwapChain: vk.swap.VkSwapChain,
 
+    /// Top-level factory. Creates all Vulkan objects in dependency order:
+    /// instance → surface → physical device → logical device → swapchain.
     pub fn create(allocator: std.mem.Allocator, constants: com.common.Constants, window: sdl3.video.Window) !VkCtx {
         const vkInstance = try vk.inst.VkInstance.create(allocator, constants.validation);
         const vkSurface = try vk.surf.VkSurface.create(window, vkInstance);
@@ -42,6 +47,18 @@ pub const VkCtx = struct {
         };
     }
 
+    pub fn findMemoryTypeIndex(self: *const VkCtx, memTypeBits: u32, flags: vulkan.MemoryPropertyFlags) !u32 {
+        const memProps = self.vkInstance.instanceProxy.getPhysicalDeviceMemoryProperties(self.vkPhysDevice.pdev);
+        for (memProps.memory_types[0..memProps.memory_type_count], 0..) |mem_type, i| {
+            if (memTypeBits & (@as(u32, 1) << @truncate(i)) != 0 and mem_type.property_flags.contains(flags)) {
+                return @truncate(i);
+            }
+        }
+
+        return error.NoSuitableMemoryType;
+    }
+
+    /// Destroys all Vulkan objects in reverse creation order.
     pub fn cleanup(self: *VkCtx, allocator: std.mem.Allocator) !void {
         self.vkSwapChain.cleanup(allocator, self.vkDevice);
         self.vkDevice.cleanup(allocator);

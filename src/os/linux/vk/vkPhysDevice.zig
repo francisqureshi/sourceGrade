@@ -18,6 +18,10 @@ pub const VkPhysDevice = struct {
     queuesInfo: QueuesInfo,
     memProps: vulkan.PhysicalDeviceMemoryProperties,
 
+    /// Enumerates all physical devices and selects the best one.
+    /// Priority: exact match on constants.gpu name → discrete GPU → any capable GPU.
+    /// A device is only considered if it supports VK_KHR_swapchain and has both
+    /// graphics and present queue families.
     pub fn create(
         allocator: std.mem.Allocator,
         constants: com.common.Constants,
@@ -68,6 +72,9 @@ pub const VkPhysDevice = struct {
         return result;
     }
 
+    /// Returns queue family indices for graphics and present if the device supports both,
+    /// or null if either is missing. Uses vkGetPhysicalDeviceSurfaceSupportKHR to check
+    /// present support against the actual surface.
     fn hasGraphicsQueue(
         instance: vulkan.InstanceProxy,
         pdev: vulkan.PhysicalDevice,
@@ -106,6 +113,7 @@ pub const VkPhysDevice = struct {
         return null;
     }
 
+    /// Returns true if all required device extensions (VK_KHR_swapchain) are supported.
     fn checkExtensionSupport(
         instance: vulkan.InstanceProxy,
         pdev: vulkan.PhysicalDevice,
