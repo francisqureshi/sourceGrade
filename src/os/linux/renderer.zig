@@ -100,7 +100,7 @@ pub const Render = struct {
         const queueGraphics = vk.queue.VkQueue.create(&vkCtx, vkCtx.vkPhysDevice.queuesInfo.graphics_family);
         const queuePresent = vk.queue.VkQueue.create(&vkCtx, vkCtx.vkPhysDevice.queuesInfo.present_family);
 
-        const uiRenderer = try ImGuiRenderer.create(allocator, io, &vkCtx);
+        const uiRenderer = try ImGuiRenderer.create(allocator, io, &vkCtx, &cmdPools[0], queueGraphics);
 
         const renderScn = try rscn.RenderScn.create(allocator, io, &vkCtx);
 
@@ -157,7 +157,7 @@ pub const Render = struct {
 
         try self.renderScn.render(&self.vkCtx, vkCmdBuff, &self.modelsCache, imageIndex);
 
-        try self.uiRenderer.render(&self.vkCtx, vkCmdBuff, imgui_ctx, self.currentFrame, self.vkCtx.vkSwapChain.extent);
+        try self.uiRenderer.render(&self.vkCtx, vkCmdBuff, imgui_ctx, self.currentFrame, imageIndex, self.vkCtx.vkSwapChain.extent);
 
         self.renderMainFinish(vkCmdBuff, imageIndex);
 

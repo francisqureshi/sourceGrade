@@ -164,6 +164,17 @@ pub const ImGuiContext = struct {
         self.hot_id = 0; // Reset hot tracking (active persists across frames)
     }
 
+    /// Call after buildUI() to finalise the frame's draw command.
+    /// Creates one draw cmd covering all accumulated geometry with a full-screen scissor.
+    pub fn endFrame(self: *ImGuiContext) !void {
+        if (self.indices.items.len == 0) return;
+        try self.draw_cmds.append(self.allocator, .{
+            .elem_count = @intCast(self.indices.items.len),
+            .clip_rect = .{ 0, 0, 10000, 10000 },
+            .texture_id = null,
+        });
+    }
+
     // INFO: Removed fn render in favour of ui_renderder.zig
 
     /// Add a filled triangle to the current frame's geometry, xy is first point, other points followed are relative.

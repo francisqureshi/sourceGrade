@@ -20,5 +20,5 @@ void main()
 {
     outTextCoords = inTextCoords;
     outColor = inColor;
-    gl_Position = vec4(inPos * pushConstants.scale + vec2(-1.0, 1.0), 0.0, 1.0);
+    gl_Position = vec4(inPos * pushConstants.scale + vec2(-1.0, -1.0), 0.0, 1.0);
 }

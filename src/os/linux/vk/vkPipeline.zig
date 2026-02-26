@@ -12,6 +12,8 @@ pub const VkPipelineCreateInfo = struct {
     modulesInfo: []ShaderModuleInfo,
     useBlend: bool,
     vtxBuffDesc: VtxBuffDesc,
+    pushConstantRanges: []const vulkan.PushConstantRange,
+    descriptorSetLayouts: []const vulkan.DescriptorSetLayout,
 };
 
 const VtxBuffDesc = struct {
@@ -112,10 +114,10 @@ pub const VkPipeline = struct {
 
         const pipelineLayout = try vkCtx.vkDevice.deviceProxy.createPipelineLayout(&.{
             .flags = .{},
-            .set_layout_count = 0,
-            .p_set_layouts = null,
-            .push_constant_range_count = 0,
-            .p_push_constant_ranges = null,
+            .set_layout_count = @intCast(createInfo.descriptorSetLayouts.len),
+            .p_set_layouts = createInfo.descriptorSetLayouts.ptr,
+            .push_constant_range_count = @intCast(createInfo.pushConstantRanges.len),
+            .p_push_constant_ranges = createInfo.pushConstantRanges.ptr,
         }, null);
 
         const gpci = vulkan.GraphicsPipelineCreateInfo{

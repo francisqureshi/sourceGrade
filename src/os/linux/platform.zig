@@ -89,6 +89,7 @@ pub const Platform = struct {
             self.imgui_ctx.mouse_two_down = self.wnd.mouseState.flags.right;
 
             self.app.buildUI(self.imgui_ctx);
+            try self.imgui_ctx.endFrame();
 
             self.app.update(deltaSec);
 

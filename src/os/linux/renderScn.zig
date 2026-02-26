@@ -69,6 +69,8 @@ pub const RenderScn = struct {
                 .attribute_description = @constCast(&VtxBuffDesc.attribute_description)[0..],
                 .binding_description = VtxBuffDesc.binding_description,
             },
+            .pushConstantRanges = &.{},
+            .descriptorSetLayouts = &.{},
         };
         const vkPipeline = try vk.pipe.VkPipeline.create(allocator, vkCtx, &vkPipelineCreateInfo);
 
