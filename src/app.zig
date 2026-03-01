@@ -6,6 +6,11 @@ const com = @import("com");
 const renderer = @import("gpu/renderer.zig");
 const ui = @import("gui/ui.zig");
 
+pub const WindowConfig = union(enum) {
+    maximised,
+    specific_size: struct { width: u32, height: u32 },
+};
+
 const TestingConfig = struct {
     video_path: []const u8,
 };
@@ -19,7 +24,8 @@ pub const PlaybackState = struct {
 pub const App = struct {
     allocator: Allocator,
     io: Io,
-    config: renderer.RenderConfig,
+    rndr_config: renderer.RenderConfig,
+    wnd_config: WindowConfig,
     test_args: TestingConfig,
 
     // App owns playback *intent*
@@ -28,6 +34,18 @@ pub const App = struct {
     test_slider_value: f32,
 
     pub fn init(allocator: Allocator, io: Io) App {
+
+        // Window config
+        const wnd_config = WindowConfig.maximised;
+
+        // Window config specific
+        // const wnd_config: WindowConfig = .{
+        // .specific_size = .{
+        //     .width = 1600,
+        //     .height = 900,
+        // },
+        // };
+
         // GPU/rendering config
         const config = renderer.RenderConfig{
             .use_display_p3 = true,
@@ -49,7 +67,8 @@ pub const App = struct {
         return .{
             .allocator = allocator,
             .io = io,
-            .config = config,
+            .wnd_config = wnd_config,
+            .rndr_config = config,
             .test_args = test_args,
             .playback_state = playback_state,
             .test_slider_value = 0.5,
@@ -68,18 +87,71 @@ pub const App = struct {
     }
 
     pub fn vkDemo(arenaAlloc: std.mem.Allocator) !com.mdata.InitData {
-        const triangleModel = com.mdata.ModelData{
-            .id = "TriangleModel",
+        const leftQuadModel = com.mdata.ModelData{
+            .id = "LeftQuadModel",
             .meshes = &[_]com.mdata.MeshData{
                 .{
-                    .id = "TriangleMesh",
-                    .vertices = &[_]f32{ -0.5, -0.5, 0.0, 0.0, 0.5, 0.0, 0.5, -0.5, 0.0 },
-                    .indices = &[_]u32{ 0, 1, 2 },
+                    .id = "LeftQuadMesh",
+                    .vertices = &[_]f32{
+                        -0.99, // '0' Vertex Triplet
+                        0.99,
+                        0.0,
+                        -0.2, // '1' Vertex
+                        0.5,
+                        0.0,
+                        -0.2, // '2' Vertex
+                        -0.5,
+                        0.0,
+                        -0.8, // '3' Vertex
+                        -0.5,
+                        0.0,
+                    },
+                    .indices = &[_]u32{
+                        0, // Tri 0
+                        1,
+                        2,
+                        0, // Tri 1
+                        2,
+                        3,
+                    },
                 },
             },
         };
-        const models = try arenaAlloc.alloc(com.mdata.ModelData, 1);
-        models[0] = triangleModel;
+
+        const rightQuadModel = com.mdata.ModelData{
+            .id = "RightQuadModel",
+            .meshes = &[_]com.mdata.MeshData{
+                .{
+                    .id = "RightQuadMesh",
+                    .vertices = &[_]f32{
+                        0.8, // '0' Vertex Triplet
+                        0.5,
+                        0.0,
+                        0.2, // '1' Vertex
+                        0.5,
+                        0.0,
+                        0.2, // '2' Vertex
+                        -0.5,
+                        0.0,
+                        0.8, // '3' Vertex
+                        -0.5,
+                        0.0,
+                    },
+                    .indices = &[_]u32{
+                        0, // Tri 0
+                        1,
+                        2,
+                        0, // Tri 1
+                        2,
+                        3,
+                    },
+                },
+            },
+        };
+
+        const models = try arenaAlloc.alloc(com.mdata.ModelData, 2);
+        models[0] = leftQuadModel;
+        models[1] = rightQuadModel;
 
         return .{ .models = models };
     }
@@ -137,6 +209,8 @@ pub const App = struct {
         _ = imgui.button(6, scrub_rect.x, scrub_rect.y, scrub_rect.w, scrub_rect.h, "------------|-------") catch false;
         _ = imgui.button(7, tc_rect.x, tc_rect.y, tc_rect.w, tc_rect.h, "TC 00:00:00:00") catch false;
         _ = imgui.button(8, second_fill_rect.x, second_fill_rect.y, second_fill_rect.w, second_fill_rect.h, "Second fill") catch false;
+
+        imgui.addCircle(900, 450, 100, 120, ui.ImGuiContext.packColor(0, 0, 1, 1)) catch {};
 
         var col = ui.layout.VStack.init(300, 50, 50, 500, 3);
         const vert_bar_width: ui.layout.SizePolicy = .{ .percent = 0.66 };

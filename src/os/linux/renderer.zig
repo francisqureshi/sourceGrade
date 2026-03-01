@@ -50,8 +50,6 @@ pub const Render = struct {
 
         self.cleanupSemphs(allocator);
 
-        self.uiRenderer.cleanup(&self.vkCtx);
-
         try self.vkCtx.cleanup(allocator);
     }
 

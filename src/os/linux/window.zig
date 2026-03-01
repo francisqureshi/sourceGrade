@@ -1,6 +1,5 @@
 const std = @import("std");
 const sdl3 = @import("sdl3");
-// const vulkan = @import("vulkan");
 
 const log = std.log.scoped(.window);
 
@@ -28,7 +27,7 @@ pub const Wnd = struct {
 
     /// Initialises SDL3, loads the Vulkan library, and creates a resizable window
     /// sized to the primary display's usable bounds. Prefers Wayland if available.
-    pub fn create(wndTitle: [:0]const u8) !Wnd {
+    pub fn create(wndTitle: [:0]const u8, wnd_config: anytype) !Wnd {
         log.debug("Creating window", .{});
 
         const initFlags = sdl3.InitFlags{ .video = true };
@@ -42,12 +41,23 @@ pub const Wnd = struct {
             return error.VulkanNotSupported;
         };
 
-        const bounds = try sdl3.video.Display.getUsableBounds(try sdl3.video.Display.getPrimaryDisplay());
+        const WndSize = struct { w: u32, h: u32 };
+        const size: WndSize = blk: {
+            switch (wnd_config) {
+                .maximised => {
+                    const bounds = try sdl3.video.Display.getUsableBounds(try sdl3.video.Display.getPrimaryDisplay());
+                    break :blk .{ .w = @as(u32, @intCast(bounds.w)), .h = @as(u32, @intCast(bounds.h)) };
+                },
+                .specific_size => |config| {
+                    break :blk .{ .w = config.width, .h = config.height };
+                },
+            }
+        };
 
         const window = try sdl3.video.Window.init(
             wndTitle,
-            @as(u32, @intCast(bounds.w)),
-            @as(u32, @intCast(bounds.h)),
+            size.w,
+            size.h,
             .{
                 .resizable = true,
                 .vulkan = true,

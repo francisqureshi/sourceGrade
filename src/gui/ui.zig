@@ -217,7 +217,7 @@ pub const ImGuiContext = struct {
         const radien: f32 = ((2.0 * std.math.pi) / @as(f32, @floatFromInt(subdivisions)));
         const center = @as(u16, @intCast(self.vertices.items.len));
 
-        // Centet vertex
+        // Center vertex
         try self.vertices.append(self.allocator, ImVertex.init(x, y, 0, 0, packColor(0, 0, 0, 1)));
 
         // add vertex for each sub division

@@ -38,7 +38,7 @@ pub const Platform = struct {
     /// the initial scene data returned by `App.vkDemo`.
     pub fn init(app: *App) !Platform {
         const wnd_title = " zvk x sourceGrade";
-        const window = try wnd.Wnd.create(wnd_title);
+        const window = try wnd.Wnd.create(wnd_title, app.wnd_config);
 
         // Initialize ImGui context on heap so pointer stays valid
         const imgui_ctx = try app.allocator.create(ui.ImGuiContext);
