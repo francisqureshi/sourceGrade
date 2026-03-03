@@ -86,8 +86,8 @@ pub const App = struct {
         _ = dt;
     }
 
-    pub fn vkDemo(arenaAlloc: std.mem.Allocator) !com.mdata.InitData {
-        const leftQuadModel = com.mdata.ModelData{
+    pub fn vkDemo(arena_alloc: std.mem.Allocator) !com.mdata.InitData {
+        const left_quad_model = com.mdata.ModelData{
             .id = "LeftQuadModel",
             .meshes = &[_]com.mdata.MeshData{
                 .{
@@ -118,7 +118,7 @@ pub const App = struct {
             },
         };
 
-        const rightQuadModel = com.mdata.ModelData{
+        const right_quad_model = com.mdata.ModelData{
             .id = "RightQuadModel",
             .meshes = &[_]com.mdata.MeshData{
                 .{
@@ -149,9 +149,9 @@ pub const App = struct {
             },
         };
 
-        const models = try arenaAlloc.alloc(com.mdata.ModelData, 2);
-        models[0] = leftQuadModel;
-        models[1] = rightQuadModel;
+        const models = try arena_alloc.alloc(com.mdata.ModelData, 2);
+        models[0] = left_quad_model;
+        models[1] = right_quad_model;
 
         return .{ .models = models };
     }

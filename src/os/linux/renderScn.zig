@@ -27,66 +27,66 @@ const VtxBuffDesc = struct {
 
 /// Owns the graphics pipeline for 3D scene rendering.
 pub const RenderScn = struct {
-    vkPipeline: vk.pipe.VkPipeline,
+    vk_pipeline: vk.pipe.VkPipeline,
 
     /// Destroys the graphics pipeline.
-    pub fn cleanup(self: *RenderScn, allocator: std.mem.Allocator, vkCtx: *const vk.ctx.VkCtx) void {
+    pub fn cleanup(self: *RenderScn, allocator: std.mem.Allocator, vk_ctx: *const vk.ctx.VkCtx) void {
         _ = allocator;
-        self.vkPipeline.cleanup(vkCtx);
+        self.vk_pipeline.cleanup(vk_ctx);
     }
 
     /// Loads SPIR-V vertex and fragment shaders from disk and creates the
     /// graphics pipeline for scene rendering.
-    pub fn create(allocator: std.mem.Allocator, io: std.Io, vkCtx: *const vk.ctx.VkCtx) !RenderScn {
+    pub fn create(allocator: std.mem.Allocator, io: std.Io, vk_ctx: *const vk.ctx.VkCtx) !RenderScn {
         // Shader modules
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
-        const vertCode align(@alignOf(u32)) = try com.utils.loadFile(arena.allocator(), io, "res/shaders/scn_vtx.glsl.spv");
-        const vert = try vkCtx.vkDevice.deviceProxy.createShaderModule(&.{
-            .code_size = vertCode.len,
-            .p_code = @ptrCast(@alignCast(vertCode)),
+        const vert_code align(@alignOf(u32)) = try com.utils.loadFile(arena.allocator(), io, "res/shaders/scn_vtx.glsl.spv");
+        const vert = try vk_ctx.vk_device.device_proxy.createShaderModule(&.{
+            .code_size = vert_code.len,
+            .p_code = @ptrCast(@alignCast(vert_code)),
         }, null);
-        defer vkCtx.vkDevice.deviceProxy.destroyShaderModule(vert, null);
+        defer vk_ctx.vk_device.device_proxy.destroyShaderModule(vert, null);
 
-        const fragCode align(@alignOf(u32)) = try com.utils.loadFile(arena.allocator(), io, "res/shaders/scn_frg.glsl.spv");
-        const frag = try vkCtx.vkDevice.deviceProxy.createShaderModule(&.{
-            .code_size = fragCode.len,
-            .p_code = @ptrCast(@alignCast(fragCode)),
+        const frag_code align(@alignOf(u32)) = try com.utils.loadFile(arena.allocator(), io, "res/shaders/scn_frg.glsl.spv");
+        const frag = try vk_ctx.vk_device.device_proxy.createShaderModule(&.{
+            .code_size = frag_code.len,
+            .p_code = @ptrCast(@alignCast(frag_code)),
         }, null);
-        defer vkCtx.vkDevice.deviceProxy.destroyShaderModule(frag, null);
+        defer vk_ctx.vk_device.device_proxy.destroyShaderModule(frag, null);
 
-        const modulesInfo = try allocator.alloc(vk.pipe.ShaderModuleInfo, 2);
-        modulesInfo[0] = .{ .module = vert, .stage = .{ .vertex_bit = true } };
-        modulesInfo[1] = .{ .module = frag, .stage = .{ .fragment_bit = true } };
-        defer allocator.free(modulesInfo);
+        const modules_info = try allocator.alloc(vk.pipe.ShaderModuleInfo, 2);
+        modules_info[0] = .{ .module = vert, .stage = .{ .vertex_bit = true } };
+        modules_info[1] = .{ .module = frag, .stage = .{ .fragment_bit = true } };
+        defer allocator.free(modules_info);
 
         // Pipeline
-        const vkPipelineCreateInfo = vk.pipe.VkPipelineCreateInfo{
-            .colorFormat = vkCtx.vkSwapChain.surfaceFormat.format,
-            .modulesInfo = modulesInfo,
-            .useBlend = false,
-            .vtxBuffDesc = .{
+        const vk_pipelineCreateInfo = vk.pipe.VkPipelineCreateInfo{
+            .color_format = vk_ctx.vk_swap_chain.surface_format.format,
+            .modules_info = modules_info,
+            .use_blend = false,
+            .vtx_buff_desc = .{
                 .attribute_description = @constCast(&VtxBuffDesc.attribute_description)[0..],
                 .binding_description = VtxBuffDesc.binding_description,
             },
-            .pushConstantRanges = &.{},
-            .descriptorSetLayouts = &.{},
+            .push_constant_ranges = &.{},
+            .descriptor_set_layouts = &.{},
         };
-        const vkPipeline = try vk.pipe.VkPipeline.create(allocator, vkCtx, &vkPipelineCreateInfo);
+        const vk_pipeline = try vk.pipe.VkPipeline.create(allocator, vk_ctx, &vk_pipelineCreateInfo);
 
         return .{
-            .vkPipeline = vkPipeline,
+            .vk_pipeline = vk_pipeline,
         };
     }
 
-    /// Records draw commands into `vkCmd`: begins dynamic rendering, binds the
-    /// pipeline, sets viewport/scissor, then draws every mesh in `modelsCache`.
-    pub fn render(self: *RenderScn, vkCtx: *const vk.ctx.VkCtx, vkCmd: vk.cmd.VkCmdBuff, modelsCache: *const mcach.ModelsCache, imageIndex: u32) !void {
-        const cmdHandle = vkCmd.cmdBuffProxy.handle;
-        const device = vkCtx.vkDevice.deviceProxy;
+    /// Records draw commands into `vk_cmd`: begins dynamic rendering, binds the
+    /// pipeline, sets viewport/scissor, then draws every mesh in `models_cache`.
+    pub fn render(self: *RenderScn, vk_ctx: *const vk.ctx.VkCtx, vk_cmd: vk.cmd.VkCmdBuff, models_cache: *const mcach.ModelsCache, image_index: u32) !void {
+        const cmd_handle = vk_cmd.cmd_buff_proxy.handle;
+        const device = vk_ctx.vk_device.device_proxy;
 
-        const renderAttInfo = vulkan.RenderingAttachmentInfo{
-            .image_view = vkCtx.vkSwapChain.imageViews[imageIndex].view,
+        const render_att_info = vulkan.RenderingAttachmentInfo{
+            .image_view = vk_ctx.vk_swap_chain.image_views[image_index].view,
             .image_layout = vulkan.ImageLayout.attachment_optimal_khr,
             .load_op = vulkan.AttachmentLoadOp.clear,
             .store_op = vulkan.AttachmentStoreOp.store,
@@ -95,20 +95,20 @@ pub const RenderScn = struct {
             .resolve_image_layout = vulkan.ImageLayout.attachment_optimal_khr,
         };
 
-        const extent = vkCtx.vkSwapChain.extent;
-        const renderInfo = vulkan.RenderingInfo{
+        const extent = vk_ctx.vk_swap_chain.extent;
+        const render_info = vulkan.RenderingInfo{
             .render_area = .{ .extent = extent, .offset = .{ .x = 0, .y = 0 } },
             .layer_count = 1,
             .color_attachment_count = 1,
-            .p_color_attachments = &[_]vulkan.RenderingAttachmentInfo{renderAttInfo},
+            .p_color_attachments = &[_]vulkan.RenderingAttachmentInfo{render_att_info},
             .view_mask = 0,
         };
 
-        device.cmdBeginRendering(cmdHandle, @ptrCast(&renderInfo));
+        device.cmdBeginRendering(cmd_handle, @ptrCast(&render_info));
 
-        device.cmdBindPipeline(cmdHandle, vulkan.PipelineBindPoint.graphics, self.vkPipeline.pipeline);
+        device.cmdBindPipeline(cmd_handle, vulkan.PipelineBindPoint.graphics, self.vk_pipeline.pipeline);
 
-        const viewPort = [_]vulkan.Viewport{.{
+        const view_port = [_]vulkan.Viewport{.{
             .x = 0,
             .y = @as(f32, @floatFromInt(extent.height)),
             .width = @as(f32, @floatFromInt(extent.width)),
@@ -116,23 +116,23 @@ pub const RenderScn = struct {
             .min_depth = 0,
             .max_depth = 1,
         }};
-        device.cmdSetViewport(cmdHandle, 0, viewPort.len, &viewPort);
+        device.cmdSetViewport(cmd_handle, 0, view_port.len, &view_port);
         const scissor = [_]vulkan.Rect2D{.{
             .offset = vulkan.Offset2D{ .x = 0, .y = 0 },
             .extent = vulkan.Extent2D{ .width = extent.width, .height = extent.height },
         }};
-        device.cmdSetScissor(cmdHandle, 0, scissor.len, &scissor);
+        device.cmdSetScissor(cmd_handle, 0, scissor.len, &scissor);
 
         const offset = [_]vulkan.DeviceSize{0};
-        var iter = modelsCache.modelsMap.valueIterator();
-        while (iter.next()) |vulkanRef| {
-            for (vulkanRef.meshes.items) |mesh| {
-                device.cmdBindIndexBuffer(cmdHandle, mesh.buffIdx.buffer, 0, vulkan.IndexType.uint32);
-                device.cmdBindVertexBuffers(cmdHandle, 0, 1, @ptrCast(&mesh.buffVtx.buffer), &offset);
-                device.cmdDrawIndexed(cmdHandle, @as(u32, @intCast(mesh.numIndices)), 1, 0, 0, 0);
+        var iter = models_cache.models_map.valueIterator();
+        while (iter.next()) |vulkan_ref| {
+            for (vulkan_ref.meshes.items) |mesh| {
+                device.cmdBindIndexBuffer(cmd_handle, mesh.buff_idx.buffer, 0, vulkan.IndexType.uint32);
+                device.cmdBindVertexBuffers(cmd_handle, 0, 1, @ptrCast(&mesh.buff_vtx.buffer), &offset);
+                device.cmdDrawIndexed(cmd_handle, @as(u32, @intCast(mesh.num_indices)), 1, 0, 0, 0);
             }
         }
 
-        device.cmdEndRendering(cmdHandle);
+        device.cmdEndRendering(cmd_handle);
     }
 };

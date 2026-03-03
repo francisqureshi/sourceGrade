@@ -8,8 +8,8 @@ pub const MouseState = struct {
     flags: sdl3.mouse.ButtonFlags,
     x: f32 = 0.0,
     y: f32 = 0.0,
-    deltaX: f32 = 0.0,
-    deltaY: f32 = 0.0,
+    delta_x: f32 = 0.0,
+    delta_y: f32 = 0.0,
 };
 
 /// Window dimensions in pixels.
@@ -22,16 +22,16 @@ const Size = struct {
 pub const Wnd = struct {
     window: sdl3.video.Window,
     closed: bool,
-    mouseState: MouseState,
+    mouse_state: MouseState,
     resized: bool,
 
     /// Initialises SDL3, loads the Vulkan library, and creates a resizable window
     /// sized to the primary display's usable bounds. Prefers Wayland if available.
-    pub fn create(wndTitle: [:0]const u8, wnd_config: anytype) !Wnd {
+    pub fn create(wnd_title: [:0]const u8, wnd_config: anytype) !Wnd {
         log.debug("Creating window", .{});
 
-        const initFlags = sdl3.InitFlags{ .video = true };
-        try sdl3.init(initFlags);
+        const init_flags = sdl3.InitFlags{ .video = true };
+        try sdl3.init(init_flags);
         if (!sdl3.c.SDL_SetHint("SDL_VIDEO_PREFER_WAYLAND", "1")) {
             // Handle error
         }
@@ -55,7 +55,7 @@ pub const Wnd = struct {
         };
 
         const window = try sdl3.video.Window.init(
-            wndTitle,
+            wnd_title,
             size.w,
             size.h,
             .{
@@ -69,7 +69,7 @@ pub const Wnd = struct {
         return .{
             .window = window,
             .closed = false,
-            .mouseState = .{ .flags = .{
+            .mouse_state = .{ .flags = .{
                 .left = false,
                 .right = false,
                 .middle = false,
@@ -94,25 +94,25 @@ pub const Wnd = struct {
     }
 
     /// Returns true if the given key is currently held down.
-    pub fn isKeyPressed(self: *Wnd, keyCode: sdl3.Scancode) bool {
+    pub fn isKeyPressed(self: *Wnd, key_code: sdl3.Scancode) bool {
         _ = self;
-        const keyState = sdl3.keyboard.getState();
-        return keyState[@intFromEnum(keyCode)];
+        const key_state = sdl3.keyboard.getState();
+        return key_state[@intFromEnum(key_code)];
     }
 
     /// Drains the SDL event queue for one frame, updating `closed`, `resized`,
-    /// and `mouseState` (position, button flags, per-frame deltas).
+    /// and `mouse_state` (position, button flags, per-frame deltas).
     pub fn pollEvents(self: *Wnd) !void {
         self.resized = false;
-        self.mouseState.deltaX = 0.0;
-        self.mouseState.deltaY = 0.0;
+        self.mouse_state.delta_x = 0.0;
+        self.mouse_state.delta_y = 0.0;
 
         while (sdl3.events.poll()) |event| {
             switch (event) {
                 .quit, .terminating => self.closed = true,
                 .mouse_motion => {
-                    self.mouseState.deltaX += event.mouse_motion.x_rel;
-                    self.mouseState.deltaY += event.mouse_motion.y_rel;
+                    self.mouse_state.delta_x += event.mouse_motion.x_rel;
+                    self.mouse_state.delta_y += event.mouse_motion.y_rel;
                 },
                 .window_resized => {
                     self.resized = true;
@@ -120,10 +120,10 @@ pub const Wnd = struct {
                 else => {},
             }
         }
-        const mouseState = sdl3.mouse.getState();
+        const mouse_state = sdl3.mouse.getState();
 
-        self.mouseState.flags = mouseState[0];
-        self.mouseState.x = mouseState[1];
-        self.mouseState.y = mouseState[2];
+        self.mouse_state.flags = mouse_state[0];
+        self.mouse_state.x = mouse_state[1];
+        self.mouse_state.y = mouse_state[2];
     }
 };

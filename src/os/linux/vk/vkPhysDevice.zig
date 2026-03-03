@@ -15,7 +15,7 @@ pub const VkPhysDevice = struct {
     features: vulkan.PhysicalDeviceFeatures,
     pdev: vulkan.PhysicalDevice,
     props: vulkan.PhysicalDeviceProperties,
-    queuesInfo: QueuesInfo,
+    queues_info: QueuesInfo,
     memProps: vulkan.PhysicalDeviceMemoryProperties,
 
     /// Enumerates all physical devices and selects the best one.
@@ -43,12 +43,12 @@ pub const VkPhysDevice = struct {
             if (!try checkExtensionSupport(instance, pdev, allocator)) {
                 continue;
             }
-            if (try hasGraphicsQueue(instance, pdev, vkSurface, allocator)) |queuesInfo| {
+            if (try hasGraphicsQueue(instance, pdev, vkSurface, allocator)) |queues_info| {
                 const vkPhysDevice = VkPhysDevice{
                     .features = features,
                     .pdev = pdev,
                     .props = props,
-                    .queuesInfo = queuesInfo,
+                    .queues_info = queues_info,
                     .memProps = memProps,
                 };
                 const name_slice = std.mem.sliceTo(&vkPhysDevice.props.device_name, 0);

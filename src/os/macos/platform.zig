@@ -52,7 +52,7 @@ pub const Platform = struct {
         }
 
         // Determine pixel format based on configuration
-        const pixel_format: metal.PixelFormat = if (app.config.use_10bit)
+        const pixel_format: metal.PixelFormat = if (app.rndr_config.use_10bit)
             .rgb10a2_unorm // 10-bit RGB + 2-bit alpha
         else
             .bgra8_unorm; // Standard 8-bit
@@ -100,7 +100,7 @@ pub const Platform = struct {
             .displaylink = displaylink,
             .imgui_ctx = imgui_ctx,
             .ui_renderer = imgui_renderer,
-            .config = app.config,
+            .config = app.rndr_config,
             .render_state = null,
             .start_time = start_time,
         };

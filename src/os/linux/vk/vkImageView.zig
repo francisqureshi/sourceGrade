@@ -2,13 +2,13 @@ const vk = @import("mod.zig");
 const vulkan = @import("vulkan");
 
 pub const VkImageViewData = struct {
-    aspectmask: vulkan.ImageAspectFlags = vulkan.ImageAspectFlags{ .color_bit = true },
-    baseArrayLayer: u32 = 0,
-    baseMipLevel: u32 = 0,
+    aspect_mask: vulkan.ImageAspectFlags = vulkan.ImageAspectFlags{ .color_bit = true },
+    base_array_layer: u32 = 0,
+    base_mip_level: u32 = 0,
     format: vulkan.Format,
-    layerCount: u32 = 1,
-    levelCount: u32 = 1,
-    viewType: vulkan.ImageViewType = .@"2d",
+    layer_count: u32 = 1,
+    level_count: u32 = 1,
+    view_type: vulkan.ImageViewType = .@"2d",
 };
 
 pub const VkImageView = struct {
@@ -17,33 +17,33 @@ pub const VkImageView = struct {
 
     /// Creates a VkImageView for the given image. VkImageViewData configures format,
     /// aspect mask, mip/layer ranges, and view type (defaults to 2D color).
-    pub fn create(vkDevice: vk.dev.VkDevice, image: vulkan.Image, imageViewData: VkImageViewData) !VkImageView {
+    pub fn create(vk_device: vk.dev.VkDevice, image: vulkan.Image, image_view_data: VkImageViewData) !VkImageView {
         const createInfo = vulkan.ImageViewCreateInfo{
             .image = image,
-            .view_type = imageViewData.viewType,
-            .format = imageViewData.format,
+            .view_type = image_view_data.view_type,
+            .format = image_view_data.format,
             .components = .{ .r = .identity, .g = .identity, .b = .identity, .a = .identity },
             .subresource_range = .{
-                .aspect_mask = imageViewData.aspectmask,
-                .base_mip_level = imageViewData.baseMipLevel,
-                .level_count = imageViewData.levelCount,
-                .base_array_layer = imageViewData.baseArrayLayer,
-                .layer_count = imageViewData.layerCount,
+                .aspect_mask = image_view_data.aspect_mask,
+                .base_mip_level = image_view_data.base_mip_level,
+                .level_count = image_view_data.level_count,
+                .base_array_layer = image_view_data.base_array_layer,
+                .layer_count = image_view_data.layer_count,
             },
             .p_next = null,
         };
-        const imageView = try vkDevice.deviceProxy.createImageView(&createInfo, null);
+        const image_view = try vk_device.device_proxy.createImageView(&createInfo, null);
 
         return .{
             .image = image,
-            .view = imageView,
+            .view = image_view,
         };
     }
 
     /// Destroys the image view handle. Does not destroy the underlying image
     /// (swapchain images are owned by the swapchain).
-    pub fn cleanup(self: *VkImageView, vkDevice: vk.dev.VkDevice) void {
-        vkDevice.deviceProxy.destroyImageView(self.view, null);
+    pub fn cleanup(self: *VkImageView, vk_device: vk.dev.VkDevice) void {
+        vk_device.device_proxy.destroyImageView(self.view, null);
         self.view = .null_handle;
     }
 };

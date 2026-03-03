@@ -8,12 +8,12 @@ pub const ShaderModuleInfo = struct {
 };
 
 pub const VkPipelineCreateInfo = struct {
-    colorFormat: vulkan.Format,
-    modulesInfo: []ShaderModuleInfo,
-    useBlend: bool,
-    vtxBuffDesc: VtxBuffDesc,
-    pushConstantRanges: []const vulkan.PushConstantRange,
-    descriptorSetLayouts: []const vulkan.DescriptorSetLayout,
+    color_format: vulkan.Format,
+    modules_info: []ShaderModuleInfo,
+    use_blend: bool,
+    vtx_buff_desc: VtxBuffDesc,
+    push_constant_ranges: []const vulkan.PushConstantRange,
+    descriptor_set_layouts: []const vulkan.DescriptorSetLayout,
 };
 
 const VtxBuffDesc = struct {
@@ -23,16 +23,16 @@ const VtxBuffDesc = struct {
 
 pub const VkPipeline = struct {
     pipeline: vulkan.Pipeline,
-    pipelineLayout: vulkan.PipelineLayout,
+    pipeline_layout: vulkan.PipelineLayout,
 
-    pub fn create(allocator: std.mem.Allocator, vkCtx: *const vk.ctx.VkCtx, createInfo: *const VkPipelineCreateInfo) !VkPipeline {
-        const pssci = try allocator.alloc(vulkan.PipelineShaderStageCreateInfo, createInfo.modulesInfo.len);
+    pub fn create(allocator: std.mem.Allocator, vk_ctx: *const vk.ctx.VkCtx, createInfo: *const VkPipelineCreateInfo) !VkPipeline {
+        const pssci = try allocator.alloc(vulkan.PipelineShaderStageCreateInfo, createInfo.modules_info.len);
         defer allocator.free(pssci);
 
         for (pssci, 0..) |*info, i| {
             info.* = .{
-                .stage = createInfo.modulesInfo[i].stage,
-                .module = createInfo.modulesInfo[i].module,
+                .stage = createInfo.modules_info[i].stage,
+                .module = createInfo.modules_info[i].module,
                 .p_name = "main",
             };
         }
@@ -78,7 +78,7 @@ pub const VkPipeline = struct {
         };
 
         const pcbas = vulkan.PipelineColorBlendAttachmentState{
-            .blend_enable = if (createInfo.useBlend) vulkan.Bool32.true else vulkan.Bool32.false,
+            .blend_enable = if (createInfo.use_blend) vulkan.Bool32.true else vulkan.Bool32.false,
             .color_blend_op = .add,
             .src_color_blend_factor = .src_alpha,
             .dst_color_blend_factor = .one_minus_src_alpha,
@@ -96,7 +96,7 @@ pub const VkPipeline = struct {
             .blend_constants = [_]f32{ 0, 0, 0, 0 },
         };
 
-        const formats = [_]vulkan.Format{createInfo.colorFormat};
+        const formats = [_]vulkan.Format{createInfo.color_format};
         const renderCreateInfo = vulkan.PipelineRenderingCreateInfo{
             .color_attachment_count = 1,
             .p_color_attachment_formats = &formats,
@@ -107,22 +107,22 @@ pub const VkPipeline = struct {
 
         const pvisci = vulkan.PipelineVertexInputStateCreateInfo{
             .vertex_binding_description_count = 1,
-            .p_vertex_binding_descriptions = @ptrCast(&createInfo.vtxBuffDesc.binding_description),
-            .vertex_attribute_description_count = @intCast(createInfo.vtxBuffDesc.attribute_description.len),
-            .p_vertex_attribute_descriptions = createInfo.vtxBuffDesc.attribute_description.ptr,
+            .p_vertex_binding_descriptions = @ptrCast(&createInfo.vtx_buff_desc.binding_description),
+            .vertex_attribute_description_count = @intCast(createInfo.vtx_buff_desc.attribute_description.len),
+            .p_vertex_attribute_descriptions = createInfo.vtx_buff_desc.attribute_description.ptr,
         };
 
-        const pipelineLayout = try vkCtx.vkDevice.deviceProxy.createPipelineLayout(&.{
+        const pipeline_layout = try vk_ctx.vk_device.device_proxy.createPipelineLayout(&.{
             .flags = .{},
-            .set_layout_count = @intCast(createInfo.descriptorSetLayouts.len),
-            .p_set_layouts = createInfo.descriptorSetLayouts.ptr,
-            .push_constant_range_count = @intCast(createInfo.pushConstantRanges.len),
-            .p_push_constant_ranges = createInfo.pushConstantRanges.ptr,
+            .set_layout_count = @intCast(createInfo.descriptor_set_layouts.len),
+            .p_set_layouts = createInfo.descriptor_set_layouts.ptr,
+            .push_constant_range_count = @intCast(createInfo.push_constant_ranges.len),
+            .p_push_constant_ranges = createInfo.push_constant_ranges.ptr,
         }, null);
 
         const gpci = vulkan.GraphicsPipelineCreateInfo{
             .flags = .{},
-            .stage_count = @intCast(createInfo.modulesInfo.len),
+            .stage_count = @intCast(createInfo.modules_info.len),
             .p_stages = pssci.ptr,
             .p_vertex_input_state = &pvisci,
             .p_input_assembly_state = &piasci,
@@ -133,7 +133,7 @@ pub const VkPipeline = struct {
             .p_depth_stencil_state = null,
             .p_color_blend_state = &pcbsci,
             .p_dynamic_state = &pdsci,
-            .layout = pipelineLayout,
+            .layout = pipeline_layout,
             .subpass = 0,
             .base_pipeline_handle = .null_handle,
             .base_pipeline_index = -1,
@@ -141,7 +141,7 @@ pub const VkPipeline = struct {
         };
 
         var pipeline: vulkan.Pipeline = undefined;
-        _ = try vkCtx.vkDevice.deviceProxy.createGraphicsPipelines(
+        _ = try vk_ctx.vk_device.device_proxy.createGraphicsPipelines(
             .null_handle,
             1,
             @ptrCast(&gpci),
@@ -149,11 +149,11 @@ pub const VkPipeline = struct {
             @ptrCast(&pipeline),
         );
 
-        return .{ .pipeline = pipeline, .pipelineLayout = pipelineLayout };
+        return .{ .pipeline = pipeline, .pipeline_layout = pipeline_layout };
     }
 
-    pub fn cleanup(self: *VkPipeline, vkCtx: *const vk.ctx.VkCtx) void {
-        vkCtx.vkDevice.deviceProxy.destroyPipeline(self.pipeline, null);
-        vkCtx.vkDevice.deviceProxy.destroyPipelineLayout(self.pipelineLayout, null);
+    pub fn cleanup(self: *VkPipeline, vk_ctx: *const vk.ctx.VkCtx) void {
+        vk_ctx.vk_device.device_proxy.destroyPipeline(self.pipeline, null);
+        vk_ctx.vk_device.device_proxy.destroyPipelineLayout(self.pipeline_layout, null);
     }
 };

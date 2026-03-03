@@ -6,23 +6,23 @@ pub const VkBuffer = struct {
     buffer: vulkan.Buffer,
     memory: vulkan.DeviceMemory,
 
-    pub fn create(vkCtx: *const vk.ctx.VkCtx, size: u64, bufferUsage: vulkan.BufferUsageFlags, memFlags: vulkan.MemoryPropertyFlags) !VkBuffer {
-        const createInfo = vulkan.BufferCreateInfo{
+    pub fn create(vk_ctx: *const vk.ctx.VkCtx, size: u64, buffer_usage: vulkan.BufferUsageFlags, mem_flags: vulkan.MemoryPropertyFlags) !VkBuffer {
+        const create_info = vulkan.BufferCreateInfo{
             .size = size,
-            .usage = bufferUsage,
+            .usage = buffer_usage,
             .sharing_mode = vulkan.SharingMode.exclusive,
         };
-        const buffer = try vkCtx.vkDevice.deviceProxy.createBuffer(&createInfo, null);
+        const buffer = try vk_ctx.vk_device.device_proxy.createBuffer(&create_info, null);
 
-        const memReqs = vkCtx.vkDevice.deviceProxy.getBufferMemoryRequirements(buffer);
+        const mem_reqs = vk_ctx.vk_device.device_proxy.getBufferMemoryRequirements(buffer);
 
-        const allocInfo = vulkan.MemoryAllocateInfo{
-            .allocation_size = memReqs.size,
-            .memory_type_index = try vkCtx.findMemoryTypeIndex(memReqs.memory_type_bits, memFlags),
+        const alloc_info = vulkan.MemoryAllocateInfo{
+            .allocation_size = mem_reqs.size,
+            .memory_type_index = try vk_ctx.findMemoryTypeIndex(mem_reqs.memory_type_bits, mem_flags),
         };
-        const memory = try vkCtx.vkDevice.deviceProxy.allocateMemory(&allocInfo, null);
+        const memory = try vk_ctx.vk_device.device_proxy.allocateMemory(&alloc_info, null);
 
-        try vkCtx.vkDevice.deviceProxy.bindBufferMemory(buffer, memory, 0);
+        try vk_ctx.vk_device.device_proxy.bindBufferMemory(buffer, memory, 0);
 
         return .{
             .size = size,
@@ -31,16 +31,16 @@ pub const VkBuffer = struct {
         };
     }
 
-    pub fn cleanup(self: *const VkBuffer, vkCtx: *const vk.ctx.VkCtx) void {
-        vkCtx.vkDevice.deviceProxy.destroyBuffer(self.buffer, null);
-        vkCtx.vkDevice.deviceProxy.freeMemory(self.memory, null);
+    pub fn cleanup(self: *const VkBuffer, vk_ctx: *const vk.ctx.VkCtx) void {
+        vk_ctx.vk_device.device_proxy.destroyBuffer(self.buffer, null);
+        vk_ctx.vk_device.device_proxy.freeMemory(self.memory, null);
     }
 
-    pub fn map(self: *const VkBuffer, vkCtx: *const vk.ctx.VkCtx) !?*anyopaque {
-        return try vkCtx.vkDevice.deviceProxy.mapMemory(self.memory, 0, vulkan.WHOLE_SIZE, .{});
+    pub fn map(self: *const VkBuffer, vk_ctx: *const vk.ctx.VkCtx) !?*anyopaque {
+        return try vk_ctx.vk_device.device_proxy.mapMemory(self.memory, 0, vulkan.WHOLE_SIZE, .{});
     }
 
-    pub fn unMap(self: *const VkBuffer, vkCtx: *const vk.ctx.VkCtx) void {
-        vkCtx.vkDevice.deviceProxy.unmapMemory(self.memory);
+    pub fn unMap(self: *const VkBuffer, vk_ctx: *const vk.ctx.VkCtx) void {
+        vk_ctx.vk_device.device_proxy.unmapMemory(self.memory);
     }
 };

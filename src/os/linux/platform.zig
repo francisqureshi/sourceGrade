@@ -48,11 +48,11 @@ pub const Platform = struct {
         var render = try rend.Render.create(app.allocator, app.io, constants, window.window);
 
         var arena = std.heap.ArenaAllocator.init(app.allocator);
-        const arenaAlloc = arena.allocator();
+        const arena_alloc = arena.allocator();
         defer arena.deinit();
 
-        const initData = try App.vkDemo(arenaAlloc);
-        try render.init(app.allocator, &initData);
+        const init_data = try App.vkDemo(arena_alloc);
+        try render.init(app.allocator, &init_data);
 
         return .{
             .app = app,
@@ -67,42 +67,42 @@ pub const Platform = struct {
     /// frame until the window is closed.
     pub fn run(self: *Platform) !void {
         var timer = try std.time.Timer.start();
-        var lastTime = timer.read();
-        var updateTime = lastTime;
-        var deltaUpdate: f32 = 0.0;
-        const timeU: f32 = 1.0 / self.constants.ups;
+        var last_time = timer.read();
+        var update_time = last_time;
+        var delta_update: f32 = 0.0;
+        const time_u: f32 = 1.0 / self.constants.ups;
 
         while (!self.wnd.closed) {
             const now = timer.read();
-            const deltaNs = now - lastTime;
-            const deltaSec = @as(f32, @floatFromInt(deltaNs)) / 1_000_000_000.0;
-            deltaUpdate += deltaSec / timeU;
+            const delta_ns = now - last_time;
+            const delta_sec = @as(f32, @floatFromInt(delta_ns)) / 1_000_000_000.0;
+            delta_update += delta_sec / time_u;
 
             try self.wnd.pollEvents();
 
             // ============ Build IMGUI frame
             self.imgui_ctx.newFrame();
 
-            self.imgui_ctx.mouse_x = self.wnd.mouseState.x;
-            self.imgui_ctx.mouse_y = self.wnd.mouseState.y;
-            self.imgui_ctx.mouse_down = self.wnd.mouseState.flags.left;
-            self.imgui_ctx.mouse_two_down = self.wnd.mouseState.flags.right;
+            self.imgui_ctx.mouse_x = self.wnd.mouse_state.x;
+            self.imgui_ctx.mouse_y = self.wnd.mouse_state.y;
+            self.imgui_ctx.mouse_down = self.wnd.mouse_state.flags.left;
+            self.imgui_ctx.mouse_two_down = self.wnd.mouse_state.flags.right;
 
             self.app.buildUI(self.imgui_ctx);
             try self.imgui_ctx.endFrame();
 
-            self.app.update(deltaSec);
+            self.app.update(delta_sec);
 
-            if (deltaUpdate >= 1) {
-                const difUpdateSecs = @as(f32, @floatFromInt(now - updateTime)) / 1_000_000_000.0;
-                self.app.update(difUpdateSecs);
-                deltaUpdate -= 1;
-                updateTime = now;
+            if (delta_update >= 1) {
+                const dif_update_secs = @as(f32, @floatFromInt(now - update_time)) / 1_000_000_000.0;
+                self.app.update(dif_update_secs);
+                delta_update -= 1;
+                update_time = now;
             }
 
             try self.render.render(&self.wnd, self.imgui_ctx);
             errdefer self.deinit();
-            lastTime = now;
+            last_time = now;
         }
     }
 };

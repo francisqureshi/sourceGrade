@@ -11,7 +11,7 @@ const VALIDATION_LAYER = "VK_LAYER_KHRONOS_validation";
 pub const VkInstance = struct {
     vkb: vulkan.BaseWrapper,
     debugMessenger: ?vulkan.DebugUtilsMessengerEXT = null,
-    instanceProxy: vulkan.InstanceProxy,
+    instance_proxy: vulkan.InstanceProxy,
 
     /// Creates the Vulkan instance. Loads the Vulkan function pointers via SDL3,
     /// adds SDL's required extensions, and optionally enables the Khronos validation
@@ -71,11 +71,11 @@ pub const VkInstance = struct {
 
         const vki = try allocator.create(vulkan.InstanceWrapper);
         vki.* = vulkan.InstanceWrapper.load(instance, vkb.dispatch.vkGetInstanceProcAddr.?);
-        const instanceProxy = vulkan.InstanceProxy.init(instance, vki);
+        const instance_proxy = vulkan.InstanceProxy.init(instance, vki);
 
         var debugMessenger: ?vulkan.DebugUtilsMessengerEXT = null;
         if (validate and supValidation) {
-            debugMessenger = try instanceProxy.createDebugUtilsMessengerEXT(&.{
+            debugMessenger = try instance_proxy.createDebugUtilsMessengerEXT(&.{
                 .message_severity = .{
                     .warning_bit_ext = true,
                     .error_bit_ext = true,
@@ -93,7 +93,7 @@ pub const VkInstance = struct {
         return .{
             .vkb = vkb,
             .debugMessenger = debugMessenger,
-            .instanceProxy = instanceProxy,
+            .instance_proxy = instance_proxy,
         };
     }
 
@@ -124,11 +124,11 @@ pub const VkInstance = struct {
     pub fn cleanup(self: *VkInstance, allocator: std.mem.Allocator) !void {
         log.debug("Destroying Vulkan instance", .{});
         if (self.debugMessenger) |dbg| {
-            self.instanceProxy.destroyDebugUtilsMessengerEXT(dbg, null);
+            self.instance_proxy.destroyDebugUtilsMessengerEXT(dbg, null);
         }
-        self.instanceProxy.destroyInstance(null);
-        allocator.destroy(self.instanceProxy.wrapper);
-        self.instanceProxy = undefined;
+        self.instance_proxy.destroyInstance(null);
+        allocator.destroy(self.instance_proxy.wrapper);
+        self.instance_proxy = undefined;
     }
 
     /// Returns true if VK_LAYER_KHRONOS_validation is available on this system.

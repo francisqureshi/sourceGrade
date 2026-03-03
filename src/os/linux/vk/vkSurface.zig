@@ -9,14 +9,14 @@ pub const VkSurface = struct {
     surface: vulkan.SurfaceKHR,
 
     /// Destroys the Vulkan surface. Must be called before destroying the instance.
-    pub fn cleanup(self: *VkSurface, vkInstance: vk.inst.VkInstance) void {
-        vkInstance.instanceProxy.destroySurfaceKHR(self.surface, null);
+    pub fn cleanup(self: *VkSurface, vk_instance: vk.inst.VkInstance) void {
+        vk_instance.instance_proxy.destroySurfaceKHR(self.surface, null);
     }
 
     /// Creates a Vulkan surface from an SDL3 window via SDL_Vulkan_CreateSurface.
     /// Bridges the SDL window handle to a VkSurfaceKHR for rendering.
-    pub fn create(window: sdl3.video.Window, vkInstance: vk.inst.VkInstance) !VkSurface {
-        const vkHandle = vkInstance.instanceProxy.handle;
+    pub fn create(window: sdl3.video.Window, vk_instance: vk.inst.VkInstance) !VkSurface {
+        const vkHandle = vk_instance.instance_proxy.handle;
         const instancePtr: ?*sdl3.c.struct_VkInstance_T = @ptrFromInt(@intFromEnum(vkHandle));
 
         const surface = sdl3.vulkan.Surface.init(window, instancePtr, null) catch |err| {
@@ -29,8 +29,8 @@ pub const VkSurface = struct {
     }
 
     /// Queries surface capabilities: min/max image count, supported extents, and transforms.
-    pub fn getSurfaceCaps(self: *const VkSurface, vkInstance: vk.inst.VkInstance, vkPhysDevice: vk.phys.VkPhysDevice) !vulkan.SurfaceCapabilitiesKHR {
-        return try vkInstance.instanceProxy.getPhysicalDeviceSurfaceCapabilitiesKHR(vkPhysDevice.pdev, self.surface);
+    pub fn getSurfaceCaps(self: *const VkSurface, vk_instance: vk.inst.VkInstance, vkPhysDevice: vk.phys.VkPhysDevice) !vulkan.SurfaceCapabilitiesKHR {
+        return try vk_instance.instance_proxy.getPhysicalDeviceSurfaceCapabilitiesKHR(vkPhysDevice.pdev, self.surface);
     }
 
     /// Selects the surface format. Prefers B8G8R8A8_SRGB + sRGB colorspace.
@@ -38,7 +38,7 @@ pub const VkSurface = struct {
     pub fn getSurfaceFormat(
         self: *const VkSurface,
         allocator: std.mem.Allocator,
-        vkInstance: vk.inst.VkInstance,
+        vk_instance: vk.inst.VkInstance,
         vkPhysDevice: vk.phys.VkPhysDevice,
     ) !vulkan.SurfaceFormatKHR {
         const preferred = vulkan.SurfaceFormatKHR{
@@ -46,7 +46,7 @@ pub const VkSurface = struct {
             .color_space = .srgb_nonlinear_khr,
         };
 
-        const surfaceFormats = try vkInstance.instanceProxy.getPhysicalDeviceSurfaceFormatsAllocKHR(
+        const surfaceFormats = try vk_instance.instance_proxy.getPhysicalDeviceSurfaceFormatsAllocKHR(
             vkPhysDevice.pdev,
             self.surface,
             allocator,

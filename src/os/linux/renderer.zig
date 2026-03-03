@@ -14,115 +14,115 @@ const ImGuiRenderer = @import("ui_renderer.zig").ImGuiRenderer;
 /// Top-level Vulkan renderer. Owns the VkCtx, per-frame sync objects,
 /// command pools/buffers, queues, scene pipeline, and models cache.
 pub const Render = struct {
-    vkCtx: vk.ctx.VkCtx,
-    cmdPools: []vk.cmd.VkCmdPool,
-    cmdBuffs: []vk.cmd.VkCmdBuff,
-    currentFrame: u8,
+    vk_ctx: vk.ctx.VkCtx,
+    cmd_pools: []vk.cmd.VkCmdPool,
+    cmd_buffs: []vk.cmd.VkCmdBuff,
+    current_frame: u8,
     fences: []vk.sync.VkFence,
-    modelsCache: mcach.ModelsCache,
-    queueGraphics: vk.queue.VkQueue,
-    queuePresent: vk.queue.VkQueue,
-    renderScn: rscn.RenderScn,
-    uiRenderer: ImGuiRenderer,
-    semsPresComplete: []vk.sync.VkSemaphore,
-    semsRenderComplete: []vk.sync.VkSemaphore,
+    models_cache: mcach.ModelsCache,
+    queue_graphics: vk.queue.VkQueue,
+    queue_present: vk.queue.VkQueue,
+    render_scn: rscn.RenderScn,
+    ui_renderer: ImGuiRenderer,
+    sems_pres_complete: []vk.sync.VkSemaphore,
+    sems_render_complete: []vk.sync.VkSemaphore,
 
     /// Waits for the device to go idle then destroys all Vulkan resources in
     /// reverse creation order.
     pub fn cleanup(self: *Render, allocator: std.mem.Allocator) !void {
-        try self.vkCtx.vkDevice.wait();
+        try self.vk_ctx.vk_device.wait();
 
-        self.uiRenderer.cleanup(&self.vkCtx);
-        self.renderScn.cleanup(allocator, &self.vkCtx);
+        self.ui_renderer.cleanup(&self.vk_ctx);
+        self.render_scn.cleanup(allocator, &self.vk_ctx);
 
-        self.modelsCache.cleanup(allocator, &self.vkCtx);
+        self.models_cache.cleanup(allocator, &self.vk_ctx);
 
-        for (self.cmdPools) |cmdPool| {
-            cmdPool.cleanup(&self.vkCtx);
+        for (self.cmd_pools) |cmd_pool| {
+            cmd_pool.cleanup(&self.vk_ctx);
         }
-        allocator.free(self.cmdBuffs);
+        allocator.free(self.cmd_buffs);
 
-        defer allocator.free(self.cmdPools);
+        defer allocator.free(self.cmd_pools);
         for (self.fences) |fence| {
-            fence.cleanup(&self.vkCtx);
+            fence.cleanup(&self.vk_ctx);
         }
         defer allocator.free(self.fences);
 
         self.cleanupSemphs(allocator);
 
-        try self.vkCtx.cleanup(allocator);
+        try self.vk_ctx.cleanup(allocator);
     }
 
     fn cleanupSemphs(self: *Render, allocator: std.mem.Allocator) void {
-        for (self.semsRenderComplete) |sem| {
-            sem.cleanup(&self.vkCtx);
+        for (self.sems_render_complete) |sem| {
+            sem.cleanup(&self.vk_ctx);
         }
-        defer allocator.free(self.semsRenderComplete);
+        defer allocator.free(self.sems_render_complete);
 
-        for (self.semsPresComplete) |sem| {
-            sem.cleanup(&self.vkCtx);
+        for (self.sems_pres_complete) |sem| {
+            sem.cleanup(&self.vk_ctx);
         }
-        defer allocator.free(self.semsPresComplete);
+        defer allocator.free(self.sems_pres_complete);
     }
 
     /// Creates the full Vulkan rendering context: VkCtx, sync objects (fences,
     /// semaphores), command pools/buffers, queues, scene pipeline, and models cache.
     pub fn create(allocator: std.mem.Allocator, io: std.Io, constants: com.common.Constants, window: sdl3.video.Window) !Render {
-        const vkCtx = try vk.ctx.VkCtx.create(allocator, constants, window);
+        const vk_ctx = try vk.ctx.VkCtx.create(allocator, constants, window);
 
         const fences = try allocator.alloc(vk.sync.VkFence, com.common.FRAMES_IN_FLIGHT);
         for (fences) |*fence| {
-            fence.* = try vk.sync.VkFence.create(&vkCtx);
+            fence.* = try vk.sync.VkFence.create(&vk_ctx);
         }
 
-        const semsRenderComplete = try allocator.alloc(vk.sync.VkSemaphore, vkCtx.vkSwapChain.imageViews.len);
-        for (semsRenderComplete) |*sem| {
-            sem.* = try vk.sync.VkSemaphore.create(&vkCtx);
+        const sems_render_complete = try allocator.alloc(vk.sync.VkSemaphore, vk_ctx.vk_swap_chain.image_views.len);
+        for (sems_render_complete) |*sem| {
+            sem.* = try vk.sync.VkSemaphore.create(&vk_ctx);
         }
 
-        const semsPresComplete = try allocator.alloc(vk.sync.VkSemaphore, com.common.FRAMES_IN_FLIGHT);
-        for (semsPresComplete) |*sem| {
-            sem.* = try vk.sync.VkSemaphore.create(&vkCtx);
+        const sems_pres_complete = try allocator.alloc(vk.sync.VkSemaphore, com.common.FRAMES_IN_FLIGHT);
+        for (sems_pres_complete) |*sem| {
+            sem.* = try vk.sync.VkSemaphore.create(&vk_ctx);
         }
 
-        const cmdPools = try allocator.alloc(vk.cmd.VkCmdPool, com.common.FRAMES_IN_FLIGHT);
-        for (cmdPools) |*cmdPool| {
-            cmdPool.* = try vk.cmd.VkCmdPool.create(&vkCtx, vkCtx.vkPhysDevice.queuesInfo.graphics_family, false);
+        const cmd_pools = try allocator.alloc(vk.cmd.VkCmdPool, com.common.FRAMES_IN_FLIGHT);
+        for (cmd_pools) |*cmd_pool| {
+            cmd_pool.* = try vk.cmd.VkCmdPool.create(&vk_ctx, vk_ctx.vk_phys_device.queues_info.graphics_family, false);
         }
 
-        const cmdBuffs = try allocator.alloc(vk.cmd.VkCmdBuff, com.common.FRAMES_IN_FLIGHT);
-        for (cmdBuffs, 0..) |*cmdBuff, i| {
-            cmdBuff.* = try vk.cmd.VkCmdBuff.create(&vkCtx, &cmdPools[i], true);
+        const cmd_buffs = try allocator.alloc(vk.cmd.VkCmdBuff, com.common.FRAMES_IN_FLIGHT);
+        for (cmd_buffs, 0..) |*cmd_buff, i| {
+            cmd_buff.* = try vk.cmd.VkCmdBuff.create(&vk_ctx, &cmd_pools[i], true);
         }
 
-        const queueGraphics = vk.queue.VkQueue.create(&vkCtx, vkCtx.vkPhysDevice.queuesInfo.graphics_family);
-        const queuePresent = vk.queue.VkQueue.create(&vkCtx, vkCtx.vkPhysDevice.queuesInfo.present_family);
+        const queue_graphics = vk.queue.VkQueue.create(&vk_ctx, vk_ctx.vk_phys_device.queues_info.graphics_family);
+        const queue_present = vk.queue.VkQueue.create(&vk_ctx, vk_ctx.vk_phys_device.queues_info.present_family);
 
-        const uiRenderer = try ImGuiRenderer.create(allocator, io, &vkCtx, &cmdPools[0], queueGraphics);
+        const ui_renderer = try ImGuiRenderer.create(allocator, io, &vk_ctx, &cmd_pools[0], queue_graphics);
 
-        const renderScn = try rscn.RenderScn.create(allocator, io, &vkCtx);
+        const render_scn = try rscn.RenderScn.create(allocator, io, &vk_ctx);
 
-        const modelsCache = mcach.ModelsCache.create(allocator);
+        const models_cache = mcach.ModelsCache.create(allocator);
 
         return .{
-            .vkCtx = vkCtx,
-            .cmdPools = cmdPools,
-            .cmdBuffs = cmdBuffs,
-            .currentFrame = 0,
+            .vk_ctx = vk_ctx,
+            .cmd_pools = cmd_pools,
+            .cmd_buffs = cmd_buffs,
+            .current_frame = 0,
             .fences = fences,
-            .modelsCache = modelsCache,
-            .queueGraphics = queueGraphics,
-            .queuePresent = queuePresent,
-            .renderScn = renderScn,
-            .semsPresComplete = semsPresComplete,
-            .semsRenderComplete = semsRenderComplete,
-            .uiRenderer = uiRenderer,
+            .models_cache = models_cache,
+            .queue_graphics = queue_graphics,
+            .queue_present = queue_present,
+            .render_scn = render_scn,
+            .sems_pres_complete = sems_pres_complete,
+            .sems_render_complete = sems_render_complete,
+            .ui_renderer = ui_renderer,
         };
     }
 
     /// Uploads initial scene geometry to the GPU via the models cache.
-    pub fn init(self: *Render, allocator: std.mem.Allocator, initData: *const com.mdata.InitData) !void {
-        try self.modelsCache.init(allocator, &self.vkCtx, &self.cmdPools[0], self.queueGraphics, initData);
+    pub fn init(self: *Render, allocator: std.mem.Allocator, init_data: *const com.mdata.InitData) !void {
+        try self.models_cache.init(allocator, &self.vk_ctx, &self.cmd_pools[0], self.queue_graphics, init_data);
     }
 
     /// Renders one frame: acquires a swapchain image, records and submits draw
@@ -133,45 +133,45 @@ pub const Render = struct {
             return;
         }
 
-        const fence = self.fences[self.currentFrame];
-        try fence.wait(&self.vkCtx);
-        try fence.reset(&self.vkCtx);
+        const fence = self.fences[self.current_frame];
+        try fence.wait(&self.vk_ctx);
+        try fence.reset(&self.vk_ctx);
 
-        const vkCmdPool = self.cmdPools[self.currentFrame];
-        try vkCmdPool.reset(&self.vkCtx);
+        const vk_cmd_pool = self.cmd_pools[self.current_frame];
+        try vk_cmd_pool.reset(&self.vk_ctx);
 
-        const vkCmdBuff = self.cmdBuffs[self.currentFrame];
-        try vkCmdBuff.begin(&self.vkCtx);
+        const vk_cmd_buff = self.cmd_buffs[self.current_frame];
+        try vk_cmd_buff.begin(&self.vk_ctx);
 
-        const res = try self.vkCtx.vkSwapChain.acquire(self.vkCtx.vkDevice, self.semsPresComplete[self.currentFrame]);
+        const res = try self.vk_ctx.vk_swap_chain.acquire(self.vk_ctx.vk_device, self.sems_pres_complete[self.current_frame]);
         if (res == .recreate) {
-            try vkCmdBuff.end(&self.vkCtx);
-            self.currentFrame = (self.currentFrame + 1) % com.common.FRAMES_IN_FLIGHT;
+            try vk_cmd_buff.end(&self.vk_ctx);
+            self.current_frame = (self.current_frame + 1) % com.common.FRAMES_IN_FLIGHT;
             return;
         }
-        const imageIndex = res.ok;
+        const image_index = res.ok;
 
-        self.renderMainInit(vkCmdBuff, imageIndex);
+        self.renderMainInit(vk_cmd_buff, image_index);
 
-        try self.renderScn.render(&self.vkCtx, vkCmdBuff, &self.modelsCache, imageIndex);
+        try self.render_scn.render(&self.vk_ctx, vk_cmd_buff, &self.models_cache, image_index);
 
-        try self.uiRenderer.render(&self.vkCtx, vkCmdBuff, imgui_ctx, self.currentFrame, imageIndex, self.vkCtx.vkSwapChain.extent);
+        try self.ui_renderer.render(&self.vk_ctx, vk_cmd_buff, imgui_ctx, self.current_frame, image_index, self.vk_ctx.vk_swap_chain.extent);
 
-        self.renderMainFinish(vkCmdBuff, imageIndex);
+        self.renderMainFinish(vk_cmd_buff, image_index);
 
-        try vkCmdBuff.end(&self.vkCtx);
+        try vk_cmd_buff.end(&self.vk_ctx);
 
-        try self.submit(&vkCmdBuff, imageIndex);
+        try self.submit(&vk_cmd_buff, image_index);
 
-        _ = self.vkCtx.vkSwapChain.present(self.vkCtx.vkDevice, self.queuePresent, self.semsRenderComplete[imageIndex], imageIndex);
+        _ = self.vk_ctx.vk_swap_chain.present(self.vk_ctx.vk_device, self.queue_present, self.sems_render_complete[image_index], image_index);
 
-        self.currentFrame = (self.currentFrame + 1) % com.common.FRAMES_IN_FLIGHT;
+        self.current_frame = (self.current_frame + 1) % com.common.FRAMES_IN_FLIGHT;
     }
 
     /// Records a pipeline barrier transitioning the swapchain image from
     /// `color_attachment_optimal` to `present_src_khr` ready for presentation.
-    fn renderMainFinish(self: *Render, vkCmd: vk.cmd.VkCmdBuff, imageIndex: u32) void {
-        const endBarriers = [_]vulkan.ImageMemoryBarrier2{.{
+    fn renderMainFinish(self: *Render, vk_cmd: vk.cmd.VkCmdBuff, image_index: u32) void {
+        const end_barriers = [_]vulkan.ImageMemoryBarrier2{.{
             .old_layout = vulkan.ImageLayout.color_attachment_optimal,
             .new_layout = vulkan.ImageLayout.present_src_khr,
             .src_stage_mask = .{ .color_attachment_output_bit = true },
@@ -187,19 +187,19 @@ pub const Render = struct {
                 .base_array_layer = 0,
                 .layer_count = vulkan.REMAINING_ARRAY_LAYERS,
             },
-            .image = self.vkCtx.vkSwapChain.imageViews[imageIndex].image,
+            .image = self.vk_ctx.vk_swap_chain.image_views[image_index].image,
         }};
-        const endDepInfo = vulkan.DependencyInfo{
-            .image_memory_barrier_count = endBarriers.len,
-            .p_image_memory_barriers = &endBarriers,
+        const end_dep_info = vulkan.DependencyInfo{
+            .image_memory_barrier_count = end_barriers.len,
+            .p_image_memory_barriers = &end_barriers,
         };
-        self.vkCtx.vkDevice.deviceProxy.cmdPipelineBarrier2(vkCmd.cmdBuffProxy.handle, &endDepInfo);
+        self.vk_ctx.vk_device.device_proxy.cmdPipelineBarrier2(vk_cmd.cmd_buff_proxy.handle, &end_dep_info);
     }
 
     /// Records a pipeline barrier transitioning the swapchain image from
     /// `undefined` to `color_attachment_optimal` ready for rendering.
-    fn renderMainInit(self: *Render, vkCmd: vk.cmd.VkCmdBuff, imageIndex: u32) void {
-        const initBarriers = [_]vulkan.ImageMemoryBarrier2{.{
+    fn renderMainInit(self: *Render, vk_cmd: vk.cmd.VkCmdBuff, image_index: u32) void {
+        const init_barriers = [_]vulkan.ImageMemoryBarrier2{.{
             .old_layout = vulkan.ImageLayout.undefined,
             .new_layout = vulkan.ImageLayout.color_attachment_optimal,
             .src_stage_mask = .{ .color_attachment_output_bit = true },
@@ -215,39 +215,39 @@ pub const Render = struct {
                 .base_array_layer = 0,
                 .layer_count = vulkan.REMAINING_ARRAY_LAYERS,
             },
-            .image = self.vkCtx.vkSwapChain.imageViews[imageIndex].image,
+            .image = self.vk_ctx.vk_swap_chain.image_views[image_index].image,
         }};
-        const initDepInfo = vulkan.DependencyInfo{
-            .image_memory_barrier_count = initBarriers.len,
-            .p_image_memory_barriers = &initBarriers,
+        const init_dep_info = vulkan.DependencyInfo{
+            .image_memory_barrier_count = init_barriers.len,
+            .p_image_memory_barriers = &init_barriers,
         };
-        self.vkCtx.vkDevice.deviceProxy.cmdPipelineBarrier2(vkCmd.cmdBuffProxy.handle, &initDepInfo);
+        self.vk_ctx.vk_device.device_proxy.cmdPipelineBarrier2(vk_cmd.cmd_buff_proxy.handle, &init_dep_info);
     }
 
     /// Submits the command buffer to the graphics queue, waiting on the
     /// present-complete semaphore and signalling the render-complete semaphore.
-    fn submit(self: *Render, vkCmdBuff: *const vk.cmd.VkCmdBuff, imageIndex: u32) !void {
-        const vkFence = self.fences[self.currentFrame];
+    fn submit(self: *Render, vk_cmd_buff: *const vk.cmd.VkCmdBuff, image_index: u32) !void {
+        const vk_fence = self.fences[self.current_frame];
 
-        const cmdBufferInfo = vulkan.CommandBufferSubmitInfo{
+        const cmd_buffer_info = vulkan.CommandBufferSubmitInfo{
             .device_mask = 0,
-            .command_buffer = vkCmdBuff.cmdBuffProxy.handle,
+            .command_buffer = vk_cmd_buff.cmd_buff_proxy.handle,
         };
 
-        const semWaitInfo = vulkan.SemaphoreSubmitInfo{
+        const sem_wait_info = vulkan.SemaphoreSubmitInfo{
             .device_index = 0,
             .value = 0,
             .stage_mask = .{ .color_attachment_output_bit = true },
-            .semaphore = self.semsPresComplete[self.currentFrame].semaphore,
+            .semaphore = self.sems_pres_complete[self.current_frame].semaphore,
         };
 
-        const semSignalInfo = vulkan.SemaphoreSubmitInfo{
+        const sem_signal_info = vulkan.SemaphoreSubmitInfo{
             .device_index = 0,
             .value = 0,
             .stage_mask = .{ .bottom_of_pipe_bit = true },
-            .semaphore = self.semsRenderComplete[imageIndex].semaphore,
+            .semaphore = self.sems_render_complete[image_index].semaphore,
         };
 
-        try self.queueGraphics.submit(&self.vkCtx, &.{cmdBufferInfo}, &.{semSignalInfo}, &.{semWaitInfo}, vkFence);
+        try self.queue_graphics.submit(&self.vk_ctx, &.{cmd_buffer_info}, &.{sem_signal_info}, &.{sem_wait_info}, vk_fence);
     }
 };

@@ -9,14 +9,14 @@ const log = std.log.scoped(.modelsCache);
 
 /// GPU-resident mesh: index buffer, vertex buffer, and draw metadata.
 pub const VulkanMesh = struct {
-    buffIdx: vk.buf.VkBuffer,
-    buffVtx: vk.buf.VkBuffer,
+    buff_idx: vk.buf.VkBuffer,
+    buff_vtx: vk.buf.VkBuffer,
     id: []const u8,
-    numIndices: usize,
+    num_indices: usize,
 
-    pub fn cleanup(self: *const VulkanMesh, vkCtx: *const vk.ctx.VkCtx) void {
-        self.buffVtx.cleanup(vkCtx);
-        self.buffIdx.cleanup(vkCtx);
+    pub fn cleanup(self: *const VulkanMesh, vk_ctx: *const vk.ctx.VkCtx) void {
+        self.buff_vtx.cleanup(vk_ctx);
+        self.buff_idx.cleanup(vk_ctx);
     }
 };
 
@@ -25,9 +25,9 @@ pub const VulkanModel = struct {
     id: []const u8,
     meshes: std.ArrayList(VulkanMesh),
 
-    pub fn cleanup(self: *VulkanModel, allocator: std.mem.Allocator, vkCtx: *const vk.ctx.VkCtx) void {
+    pub fn cleanup(self: *VulkanModel, allocator: std.mem.Allocator, vk_ctx: *const vk.ctx.VkCtx) void {
         for (self.meshes.items) |mesh| {
-            mesh.cleanup(vkCtx);
+            mesh.cleanup(vk_ctx);
         }
         self.meshes.deinit(allocator);
     }
@@ -35,126 +35,126 @@ pub const VulkanModel = struct {
 
 /// Hash map of model ID → `VulkanModel`. Owns all GPU buffer memory.
 pub const ModelsCache = struct {
-    modelsMap: std.StringHashMap(VulkanModel),
+    models_map: std.StringHashMap(VulkanModel),
 
     /// Destroys all GPU buffers for every cached model and frees the map.
-    pub fn cleanup(self: *ModelsCache, allocator: std.mem.Allocator, vkCtx: *const vk.ctx.VkCtx) void {
-        var iter = self.modelsMap.iterator();
+    pub fn cleanup(self: *ModelsCache, allocator: std.mem.Allocator, vk_ctx: *const vk.ctx.VkCtx) void {
+        var iter = self.models_map.iterator();
         while (iter.next()) |entry| {
             allocator.free(entry.key_ptr.*);
-            entry.value_ptr.*.cleanup(allocator, vkCtx);
+            entry.value_ptr.*.cleanup(allocator, vk_ctx);
         }
-        self.modelsMap.deinit();
+        self.models_map.deinit();
     }
 
     /// Returns an empty models cache backed by the given allocator.
     pub fn create(allocator: std.mem.Allocator) ModelsCache {
-        const modelsMap = std.StringHashMap(VulkanModel).init(allocator);
+        const models_map = std.StringHashMap(VulkanModel).init(allocator);
         return .{
-            .modelsMap = modelsMap,
+            .models_map = models_map,
         };
     }
 
-    /// Uploads all meshes from `initData` to the GPU using staging buffers,
+    /// Uploads all meshes from `init_data` to the GPU using staging buffers,
     /// then stores the resulting `VulkanModel` entries in the cache.
     pub fn init(
         self: *ModelsCache,
         allocator: std.mem.Allocator,
-        vkCtx: *const vk.ctx.VkCtx,
-        cmdPool: *vk.cmd.VkCmdPool,
-        vkQueue: vk.queue.VkQueue,
-        initData: *const com.mdata.InitData,
+        vk_ctx: *const vk.ctx.VkCtx,
+        cmd_pool: *vk.cmd.VkCmdPool,
+        vk_queue: vk.queue.VkQueue,
+        init_data: *const com.mdata.InitData,
     ) !void {
-        log.debug("Loading {d} model(s)", .{initData.models.len});
+        log.debug("Loading {d} model(s)", .{init_data.models.len});
 
-        const cmdBuff = try vk.cmd.VkCmdBuff.create(vkCtx, cmdPool, true);
+        const cmd_buff = try vk.cmd.VkCmdBuff.create(vk_ctx, cmd_pool, true);
 
-        var srcBuffers = try std.ArrayList(vk.buf.VkBuffer).initCapacity(allocator, 1);
-        defer srcBuffers.deinit(allocator);
-        try cmdBuff.begin(vkCtx);
-        const cmdHandle = cmdBuff.cmdBuffProxy.handle;
+        var src_buffers = try std.ArrayList(vk.buf.VkBuffer).initCapacity(allocator, 1);
+        defer src_buffers.deinit(allocator);
+        try cmd_buff.begin(vk_ctx);
+        const cmd_handle = cmd_buff.cmd_buff_proxy.handle;
 
-        for (initData.models) |*modelData| {
-            var vulkanMeshes = try std.ArrayList(VulkanMesh).initCapacity(allocator, modelData.meshes.len);
+        for (init_data.models) |*model_data| {
+            var vulkan_meshes = try std.ArrayList(VulkanMesh).initCapacity(allocator, model_data.meshes.len);
 
-            for (modelData.meshes) |meshData| {
-                const verticesSize = meshData.vertices.len * @sizeOf(f32);
-                const srcVtxBuffer = try vk.buf.VkBuffer.create(
-                    vkCtx,
-                    verticesSize,
+            for (model_data.meshes) |mesh_data| {
+                const vertices_size = mesh_data.vertices.len * @sizeOf(f32);
+                const src_vtx_buffer = try vk.buf.VkBuffer.create(
+                    vk_ctx,
+                    vertices_size,
                     vulkan.BufferUsageFlags{ .transfer_src_bit = true },
                     vulkan.MemoryPropertyFlags{ .host_visible_bit = true, .host_coherent_bit = true },
                 );
-                try srcBuffers.append(allocator, srcVtxBuffer);
-                const dstVtxBuffer = try vk.buf.VkBuffer.create(
-                    vkCtx,
-                    verticesSize,
+                try src_buffers.append(allocator, src_vtx_buffer);
+                const dst_vtx_buffer = try vk.buf.VkBuffer.create(
+                    vk_ctx,
+                    vertices_size,
                     vulkan.BufferUsageFlags{ .vertex_buffer_bit = true, .transfer_dst_bit = true },
                     vulkan.MemoryPropertyFlags{ .device_local_bit = true },
                 );
 
-                const dataVertices = try srcVtxBuffer.map(vkCtx);
-                const gpuVertices: [*]f32 = @ptrCast(@alignCast(dataVertices));
-                @memcpy(gpuVertices, meshData.vertices[0..]);
-                srcVtxBuffer.unMap(vkCtx);
+                const data_vertices = try src_vtx_buffer.map(vk_ctx);
+                const gpu_vertices: [*]f32 = @ptrCast(@alignCast(data_vertices));
+                @memcpy(gpu_vertices, mesh_data.vertices[0..]);
+                src_vtx_buffer.unMap(vk_ctx);
 
-                const indicesSize = meshData.indices.len * @sizeOf(u32);
-                const srcIdxBuffer = try vk.buf.VkBuffer.create(
-                    vkCtx,
-                    indicesSize,
+                const indices_size = mesh_data.indices.len * @sizeOf(u32);
+                const src_idx_buffer = try vk.buf.VkBuffer.create(
+                    vk_ctx,
+                    indices_size,
                     vulkan.BufferUsageFlags{ .transfer_src_bit = true },
                     vulkan.MemoryPropertyFlags{ .host_visible_bit = true, .host_coherent_bit = true },
                 );
-                try srcBuffers.append(allocator, srcIdxBuffer);
-                const dstIdxBuffer = try vk.buf.VkBuffer.create(
-                    vkCtx,
-                    indicesSize,
+                try src_buffers.append(allocator, src_idx_buffer);
+                const dst_idx_buffer = try vk.buf.VkBuffer.create(
+                    vk_ctx,
+                    indices_size,
                     vulkan.BufferUsageFlags{ .index_buffer_bit = true, .transfer_dst_bit = true },
                     vulkan.MemoryPropertyFlags{ .device_local_bit = true },
                 );
 
-                const dataIndices = try srcIdxBuffer.map(vkCtx);
-                const gpuIndices: [*]u32 = @ptrCast(@alignCast(dataIndices));
-                @memcpy(gpuIndices, meshData.indices[0..]);
-                srcIdxBuffer.unMap(vkCtx);
+                const data_indices = try src_idx_buffer.map(vk_ctx);
+                const gpu_indices: [*]u32 = @ptrCast(@alignCast(data_indices));
+                @memcpy(gpu_indices, mesh_data.indices[0..]);
+                src_idx_buffer.unMap(vk_ctx);
 
-                const vulkanMesh = VulkanMesh{
-                    .buffIdx = dstIdxBuffer,
-                    .buffVtx = dstVtxBuffer,
-                    .id = meshData.id,
-                    .numIndices = meshData.indices.len,
+                const vulkan_mesh = VulkanMesh{
+                    .buff_idx = dst_idx_buffer,
+                    .buff_vtx = dst_vtx_buffer,
+                    .id = mesh_data.id,
+                    .num_indices = mesh_data.indices.len,
                 };
-                try vulkanMeshes.append(allocator, vulkanMesh);
+                try vulkan_meshes.append(allocator, vulkan_mesh);
 
-                recordTransfer(vkCtx, cmdHandle, &srcVtxBuffer, &dstVtxBuffer);
-                recordTransfer(vkCtx, cmdHandle, &srcIdxBuffer, &dstIdxBuffer);
+                recordTransfer(vk_ctx, cmd_handle, &src_vtx_buffer, &dst_vtx_buffer);
+                recordTransfer(vk_ctx, cmd_handle, &src_idx_buffer, &dst_idx_buffer);
             }
 
-            const vulkanModel = VulkanModel{ .id = modelData.id, .meshes = vulkanMeshes };
-            try self.modelsMap.put(try allocator.dupe(u8, modelData.id), vulkanModel);
+            const vulkan_model = VulkanModel{ .id = model_data.id, .meshes = vulkan_meshes };
+            try self.models_map.put(try allocator.dupe(u8, model_data.id), vulkan_model);
         }
 
-        try cmdBuff.end(vkCtx);
-        try cmdBuff.submitAndWait(vkCtx, vkQueue);
+        try cmd_buff.end(vk_ctx);
+        try cmd_buff.submitAndWait(vk_ctx, vk_queue);
 
-        for (srcBuffers.items) |vkBuff| {
-            vkBuff.cleanup(vkCtx);
+        for (src_buffers.items) |vk_buff| {
+            vk_buff.cleanup(vk_ctx);
         }
 
-        log.debug("Loaded {d} model(s)", .{initData.models.len});
+        log.debug("Loaded {d} model(s)", .{init_data.models.len});
     }
 };
 
 fn recordTransfer(
-    vkCtx: *const vk.ctx.VkCtx,
-    cmdHandle: vulkan.CommandBuffer,
-    srcBuff: *const vk.buf.VkBuffer,
-    dstBuff: *const vk.buf.VkBuffer,
+    vk_ctx: *const vk.ctx.VkCtx,
+    cmd_handle: vulkan.CommandBuffer,
+    src_buff: *const vk.buf.VkBuffer,
+    dst_buff: *const vk.buf.VkBuffer,
 ) void {
-    const copyRegion = [_]vulkan.BufferCopy{.{
+    const copy_region = [_]vulkan.BufferCopy{.{
         .src_offset = 0,
         .dst_offset = 0,
-        .size = srcBuff.size,
+        .size = src_buff.size,
     }};
-    vkCtx.vkDevice.deviceProxy.cmdCopyBuffer(cmdHandle, srcBuff.buffer, dstBuff.buffer, copyRegion.len, &copyRegion);
+    vk_ctx.vk_device.device_proxy.cmdCopyBuffer(cmd_handle, src_buff.buffer, dst_buff.buffer, copy_region.len, &copy_region);
 }

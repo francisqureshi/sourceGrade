@@ -6,31 +6,31 @@ const log = std.log.scoped(.vk);
 const reqExtensions = [_][*:0]const u8{vulkan.extensions.khr_swapchain.name};
 
 pub const VkDevice = struct {
-    deviceProxy: vulkan.DeviceProxy,
+    device_proxy: vulkan.DeviceProxy,
 
     /// Creates the logical device. Enables graphics and present queues (1 queue each,
     /// deduplicated if they share the same family), VK_KHR_swapchain extension,
     /// and Vulkan 1.2/1.3 features (dynamic rendering, synchronization2, anisotropy).
     pub fn create(
         allocator: std.mem.Allocator,
-        vkInstance: vk.inst.VkInstance,
-        vkPhysDevice: vk.phys.VkPhysDevice,
+        vk_instance: vk.inst.VkInstance,
+        vk_phys_device: vk.phys.VkPhysDevice,
     ) !VkDevice {
         const priority = [_]f32{0};
         const qci = [_]vulkan.DeviceQueueCreateInfo{
             .{
-                .queue_family_index = vkPhysDevice.queuesInfo.graphics_family,
+                .queue_family_index = vk_phys_device.queues_info.graphics_family,
                 .queue_count = 1,
                 .p_queue_priorities = &priority,
             },
             .{
-                .queue_family_index = vkPhysDevice.queuesInfo.present_family,
+                .queue_family_index = vk_phys_device.queues_info.present_family,
                 .queue_count = 1,
                 .p_queue_priorities = &priority,
             },
         };
 
-        const queueCount: u32 = if (vkPhysDevice.queuesInfo.graphics_family == vkPhysDevice.queuesInfo.present_family)
+        const queueCount: u32 = if (vk_phys_device.queues_info.graphics_family == vk_phys_device.queues_info.present_family)
             1
         else
             2;
@@ -43,7 +43,7 @@ pub const VkDevice = struct {
             .p_next = @constCast(&features3),
         };
         const features = vulkan.PhysicalDeviceFeatures{
-            .sampler_anisotropy = vkPhysDevice.features.sampler_anisotropy,
+            .sampler_anisotropy = vk_phys_device.features.sampler_anisotropy,
         };
 
         const devCreateInfo: vulkan.DeviceCreateInfo = .{
@@ -54,25 +54,25 @@ pub const VkDevice = struct {
             .pp_enabled_extension_names = reqExtensions[0..].ptr,
             .p_enabled_features = @ptrCast(&features),
         };
-        const device = try vkInstance.instanceProxy.createDevice(vkPhysDevice.pdev, &devCreateInfo, null);
+        const device = try vk_instance.instance_proxy.createDevice(vk_phys_device.pdev, &devCreateInfo, null);
 
         const vkd = try allocator.create(vulkan.DeviceWrapper);
-        vkd.* = vulkan.DeviceWrapper.load(device, vkInstance.instanceProxy.wrapper.dispatch.vkGetDeviceProcAddr.?);
-        const deviceProxy = vulkan.DeviceProxy.init(device, vkd);
+        vkd.* = vulkan.DeviceWrapper.load(device, vk_instance.instance_proxy.wrapper.dispatch.vkGetDeviceProcAddr.?);
+        const device_proxy = vulkan.DeviceProxy.init(device, vkd);
 
-        return .{ .deviceProxy = deviceProxy };
+        return .{ .device_proxy = device_proxy };
     }
 
     /// Destroys the logical device and frees the heap-allocated DeviceWrapper dispatch table.
     pub fn cleanup(self: *VkDevice, allocator: std.mem.Allocator) void {
         log.debug("Destroying Vulkan Device", .{});
-        self.deviceProxy.destroyDevice(null);
-        allocator.destroy(self.deviceProxy.wrapper);
+        self.device_proxy.destroyDevice(null);
+        allocator.destroy(self.device_proxy.wrapper);
     }
 
     /// Blocks until all submitted work on this device has completed.
     /// Call before cleanup to avoid destroying resources still in use by the GPU.
     pub fn wait(self: *VkDevice) !void {
-        try self.deviceProxy.deviceWaitIdle();
+        try self.device_proxy.deviceWaitIdle();
     }
 };

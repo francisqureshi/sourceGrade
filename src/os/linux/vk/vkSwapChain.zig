@@ -12,8 +12,8 @@ pub const AcquireResult = union(enum) {
 
 pub const VkSwapChain = struct {
     extent: vulkan.Extent2D,
-    imageViews: []vk.imv.VkImageView,
-    surfaceFormat: vulkan.SurfaceFormatKHR,
+    image_views: []vk.imv.VkImageView,
+    surface_format: vulkan.SurfaceFormatKHR,
     handle: vulkan.SwapchainKHR,
     vsync: bool,
 
@@ -22,7 +22,7 @@ pub const VkSwapChain = struct {
         device: vk.dev.VkDevice,
         semaphore: vk.sync.VkSemaphore,
     ) !AcquireResult {
-        const res = device.deviceProxy.acquireNextImageKHR(
+        const res = device.device_proxy.acquireNextImageKHR(
             self.handle,
             std.math.maxInt(u64),
             semaphore.semaphore,
@@ -78,22 +78,22 @@ pub const VkSwapChain = struct {
     }
 
     pub fn cleanup(self: *const VkSwapChain, allocator: std.mem.Allocator, device: vk.dev.VkDevice) void {
-        for (self.imageViews) |*iv| {
+        for (self.image_views) |*iv| {
             iv.cleanup(device);
         }
-        allocator.free(self.imageViews);
-        device.deviceProxy.destroySwapchainKHR(self.handle, null);
+        allocator.free(self.image_views);
+        device.device_proxy.destroySwapchainKHR(self.handle, null);
     }
 
     fn calcPresentMode(
         allocator: std.mem.Allocator,
         instance: vk.inst.VkInstance,
-        physDevice: vk.phys.VkPhysDevice,
+        phys_device: vk.phys.VkPhysDevice,
         surface: vulkan.SurfaceKHR,
         vsync: bool,
     ) !vulkan.PresentModeKHR {
-        const modes = try instance.instanceProxy.getPhysicalDeviceSurfacePresentModesAllocKHR(
-            physDevice.pdev,
+        const modes = try instance.instance_proxy.getPhysicalDeviceSurfacePresentModesAllocKHR(
+            phys_device.pdev,
             surface,
             allocator,
         );
@@ -115,65 +115,65 @@ pub const VkSwapChain = struct {
         allocator: std.mem.Allocator,
         window: sdl3.video.Window,
         instance: vk.inst.VkInstance,
-        physDevice: vk.phys.VkPhysDevice,
+        phys_device: vk.phys.VkPhysDevice,
         device: vk.dev.VkDevice,
         surface: vk.surf.VkSurface,
-        reqImages: u32,
+        req_images: u32,
         vsync: bool,
     ) !VkSwapChain {
-        const caps = try surface.getSurfaceCaps(instance, physDevice);
-        const imageCount = calcNumImages(caps, reqImages);
+        const caps = try surface.getSurfaceCaps(instance, phys_device);
+        const image_count = calcNumImages(caps, req_images);
         const extent = try calcExtent(window, caps);
-        const surfaceFormat = try surface.getSurfaceFormat(allocator, instance, physDevice);
-        const presentMode = try calcPresentMode(allocator, instance, physDevice, surface.surface, vsync);
+        const surface_format = try surface.getSurfaceFormat(allocator, instance, phys_device);
+        const present_mode = try calcPresentMode(allocator, instance, phys_device, surface.surface, vsync);
 
-        const sameFamily =
-            physDevice.queuesInfo.graphics_family ==
-            physDevice.queuesInfo.present_family;
+        const same_family =
+            phys_device.queues_info.graphics_family ==
+            phys_device.queues_info.present_family;
 
         const qfi = [_]u32{
-            physDevice.queuesInfo.graphics_family,
-            physDevice.queuesInfo.present_family,
+            phys_device.queues_info.graphics_family,
+            phys_device.queues_info.present_family,
         };
 
-        const swapchain_info = vulkan.SwapchainCreateInfoKHR{
+        const swap_chain_info = vulkan.SwapchainCreateInfoKHR{
             .surface = surface.surface,
-            .min_image_count = imageCount,
-            .image_format = surfaceFormat.format,
-            .image_color_space = surfaceFormat.color_space,
+            .min_image_count = image_count,
+            .image_format = surface_format.format,
+            .image_color_space = surface_format.color_space,
             .image_extent = extent,
             .image_array_layers = 1,
             .image_usage = .{
                 .color_attachment_bit = true,
             },
-            .image_sharing_mode = if (sameFamily) .exclusive else .concurrent,
-            .queue_family_index_count = if (sameFamily) 0 else qfi.len,
-            .p_queue_family_indices = if (sameFamily) null else &qfi,
+            .image_sharing_mode = if (same_family) .exclusive else .concurrent,
+            .queue_family_index_count = if (same_family) 0 else qfi.len,
+            .p_queue_family_indices = if (same_family) null else &qfi,
             .pre_transform = caps.current_transform,
             .composite_alpha = .{ .opaque_bit_khr = true },
-            .present_mode = presentMode,
+            .present_mode = present_mode,
             .clipped = vulkan.Bool32.true,
             .old_swapchain = .null_handle,
         };
 
-        const handle = try device.deviceProxy.createSwapchainKHR(&swapchain_info, null);
+        const handle = try device.device_proxy.createSwapchainKHR(&swap_chain_info, null);
 
-        const imageViews = try createImageViews(
+        const image_views = try createImageViews(
             allocator,
             device,
             handle,
-            surfaceFormat.format,
+            surface_format.format,
         );
 
         log.debug(
             "VkSwapChain created: {d} images, extent {d}x{d}, present mode {any}",
-            .{ imageViews.len, extent.width, extent.height, presentMode },
+            .{ image_views.len, extent.width, extent.height, present_mode },
         );
 
         return .{
             .extent = extent,
-            .imageViews = imageViews,
-            .surfaceFormat = surfaceFormat,
+            .image_views = image_views,
+            .surface_format = surface_format,
             .handle = handle,
             .vsync = vsync,
         };
@@ -182,19 +182,19 @@ pub const VkSwapChain = struct {
     fn createImageViews(
         allocator: std.mem.Allocator,
         device: vk.dev.VkDevice,
-        swapChain: vulkan.SwapchainKHR,
+        swap_chain: vulkan.SwapchainKHR,
         format: vulkan.Format,
     ) ![]vk.imv.VkImageView {
-        const images = try device.deviceProxy.getSwapchainImagesAllocKHR(swapChain, allocator);
+        const images = try device.device_proxy.getSwapchainImagesAllocKHR(swap_chain, allocator);
         defer allocator.free(images);
 
         const views = try allocator.alloc(vk.imv.VkImageView, images.len);
 
-        const ivData = vk.imv.VkImageViewData{ .format = format };
+        const iv_data = vk.imv.VkImageViewData{ .format = format };
 
         var i: usize = 0;
         for (images) |img| {
-            views[i] = try vk.imv.VkImageView.create(device, img, ivData);
+            views[i] = try vk.imv.VkImageView.create(device, img, iv_data);
             i += 1;
         }
 
@@ -205,12 +205,12 @@ pub const VkSwapChain = struct {
         self: *const VkSwapChain,
         device: vk.dev.VkDevice,
         queue: vk.queue.VkQueue,
-        waitSem: vk.sync.VkSemaphore,
-        imgIdx: u32,
+        wait_sem: vk.sync.VkSemaphore,
+        img_idx: u32,
     ) bool {
-        const sems = [_]vulkan.Semaphore{waitSem.semaphore};
+        const sems = [_]vulkan.Semaphore{wait_sem.semaphore};
         const swaps = [_]vulkan.SwapchainKHR{self.handle};
-        const indices = [_]u32{imgIdx};
+        const indices = [_]u32{img_idx};
 
         const info = vulkan.PresentInfoKHR{
             .wait_semaphore_count = 1,
@@ -220,7 +220,7 @@ pub const VkSwapChain = struct {
             .p_image_indices = &indices,
         };
 
-        const result = device.deviceProxy.queuePresentKHR(queue.handle, &info) catch return false;
+        const result = device.device_proxy.queuePresentKHR(queue.handle, &info) catch return false;
 
         return switch (result) {
             .success, .suboptimal_khr => true,

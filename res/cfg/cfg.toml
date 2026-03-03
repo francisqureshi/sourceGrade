@@ -2,5 +2,6 @@
 gpu=""
 ups=40
 validation=true
-swapChainImages=3
+swap_chain_images=3
 vsync=true
+window_config="1600x900"

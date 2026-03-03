@@ -32,62 +32,62 @@ const GuiPushConstants = extern struct {
 /// Owns the Vulkan resources needed to render one frame of ImGuiContext output.
 pub const ImGuiRenderer = struct {
     /// Per-frame-in-flight host-visible vertex buffers.
-    vtxBuffers: [com.common.FRAMES_IN_FLIGHT]vk.buf.VkBuffer,
+    vtx_buffers: [com.common.FRAMES_IN_FLIGHT]vk.buf.VkBuffer,
     /// Per-frame-in-flight host-visible index buffers.
-    idxBuffers: [com.common.FRAMES_IN_FLIGHT]vk.buf.VkBuffer,
+    idx_buffers: [com.common.FRAMES_IN_FLIGHT]vk.buf.VkBuffer,
 
     /// GPU-side font atlas image (R8_UNORM grayscale, 1×1 white pixel placeholder).
-    atlasImage: vulkan.Image,
-    atlasMemory: vulkan.DeviceMemory,
-    atlasView: vulkan.ImageView,
-    atlasSampler: vulkan.Sampler,
+    atlas_image: vulkan.Image,
+    atlas_memory: vulkan.DeviceMemory,
+    atlas_view: vulkan.ImageView,
+    atlas_sampler: vulkan.Sampler,
 
     /// Descriptor pool + layout + set for binding the font atlas sampler.
-    descriptorPool: vulkan.DescriptorPool,
-    descriptorSetLayout: vulkan.DescriptorSetLayout,
-    descriptorSet: vulkan.DescriptorSet,
+    descriptor_pool: vulkan.DescriptorPool,
+    descriptor_set_layout: vulkan.DescriptorSetLayout,
+    descriptor_set: vulkan.DescriptorSet,
 
     /// 2D GUI pipeline with alpha blending and push constants.
-    vkPipeline: vk.pipe.VkPipeline,
+    vk_pipeline: vk.pipe.VkPipeline,
 
     /// Tracks atlas size and modification counter to avoid redundant uploads.
-    atlasSize: u32,
-    atlasModified: usize,
+    atlas_size: u32,
+    atlas_modified: usize,
 
     /// Creates all Vulkan resources for UI rendering.
-    /// cmdPool and vkQueue are needed to upload the initial atlas texture via staging buffer.
+    /// cmd_pool and vk_queue are needed to upload the initial atlas texture via staging buffer.
     pub fn create(
         allocator: std.mem.Allocator,
         io: std.Io,
-        vkCtx: *const vk.ctx.VkCtx,
-        cmdPool: *vk.cmd.VkCmdPool,
-        vkQueue: vk.queue.VkQueue,
+        vk_ctx: *const vk.ctx.VkCtx,
+        cmd_pool: *vk.cmd.VkCmdPool,
+        vk_queue: vk.queue.VkQueue,
     ) !ImGuiRenderer {
 
         // ---- Vertex / index buffers (per frame-in-flight) -------------------
-        const vtxSize = com.common.MAX_UI_VERTICES * @sizeOf(ui.ImVertex);
-        const idxSize = com.common.MAX_UI_INDICES * @sizeOf(u16);
+        const vtx_size = com.common.MAX_UI_VERTICES * @sizeOf(ui.ImVertex);
+        const idx_size = com.common.MAX_UI_INDICES * @sizeOf(u16);
 
-        var vtxBuffers: [com.common.FRAMES_IN_FLIGHT]vk.buf.VkBuffer = undefined;
-        var idxBuffers: [com.common.FRAMES_IN_FLIGHT]vk.buf.VkBuffer = undefined;
+        var vtx_buffers: [com.common.FRAMES_IN_FLIGHT]vk.buf.VkBuffer = undefined;
+        var idx_buffers: [com.common.FRAMES_IN_FLIGHT]vk.buf.VkBuffer = undefined;
 
         for (0..com.common.FRAMES_IN_FLIGHT) |i| {
-            vtxBuffers[i] = try vk.buf.VkBuffer.create(
-                vkCtx,
-                vtxSize,
+            vtx_buffers[i] = try vk.buf.VkBuffer.create(
+                vk_ctx,
+                vtx_size,
                 .{ .vertex_buffer_bit = true },
                 .{ .host_visible_bit = true, .host_coherent_bit = true },
             );
-            idxBuffers[i] = try vk.buf.VkBuffer.create(
-                vkCtx,
-                idxSize,
+            idx_buffers[i] = try vk.buf.VkBuffer.create(
+                vk_ctx,
+                idx_size,
                 .{ .index_buffer_bit = true },
                 .{ .host_visible_bit = true, .host_coherent_bit = true },
             );
         }
 
         // ---- Sampler (linear filter, clamp-to-edge) -------------------------
-        const atlasSampler = try vkCtx.vkDevice.deviceProxy.createSampler(&.{
+        const atlas_sampler = try vk_ctx.vk_device.device_proxy.createSampler(&.{
             .mag_filter = .linear,
             .min_filter = .linear,
             .address_mode_u = .clamp_to_edge,
@@ -106,22 +106,22 @@ pub const ImGuiRenderer = struct {
         }, null);
 
         // ---- Descriptor set layout (binding 0 = combined image sampler) -----
-        const dslBinding = vulkan.DescriptorSetLayoutBinding{
+        const dsl_binding = vulkan.DescriptorSetLayoutBinding{
             .binding = 0,
             .descriptor_type = .combined_image_sampler,
             .descriptor_count = 1,
             .stage_flags = .{ .fragment_bit = true },
             .p_immutable_samplers = null,
         };
-        const descriptorSetLayout = try vkCtx.vkDevice.deviceProxy.createDescriptorSetLayout(&.{
+        const descriptor_set_layout = try vk_ctx.vk_device.device_proxy.createDescriptorSetLayout(&.{
             .binding_count = 1,
-            .p_bindings = @ptrCast(&dslBinding),
+            .p_bindings = @ptrCast(&dsl_binding),
         }, null);
 
         // ---- Font atlas texture (1×1 white pixel placeholder) ---------------
         // A single R8_UNORM pixel at value 255 means UV (0,0) → white →
         // color * 1 = color, so solid rects render correctly without a real atlas.
-        const atlasImage = try vkCtx.vkDevice.deviceProxy.createImage(&.{
+        const atlas_image = try vk_ctx.vk_device.device_proxy.createImage(&.{
             .image_type = .@"2d",
             .format = .r8_unorm,
             .extent = .{ .width = 1, .height = 1, .depth = 1 },
@@ -134,18 +134,18 @@ pub const ImGuiRenderer = struct {
             .initial_layout = .undefined,
         }, null);
 
-        const imgMemReqs = vkCtx.vkDevice.deviceProxy.getImageMemoryRequirements(atlasImage);
-        const atlasMemory = try vkCtx.vkDevice.deviceProxy.allocateMemory(&.{
-            .allocation_size = imgMemReqs.size,
-            .memory_type_index = try vkCtx.findMemoryTypeIndex(
-                imgMemReqs.memory_type_bits,
+        const img_mem_reqs = vk_ctx.vk_device.device_proxy.getImageMemoryRequirements(atlas_image);
+        const atlas_memory = try vk_ctx.vk_device.device_proxy.allocateMemory(&.{
+            .allocation_size = img_mem_reqs.size,
+            .memory_type_index = try vk_ctx.findMemoryTypeIndex(
+                img_mem_reqs.memory_type_bits,
                 .{ .device_local_bit = true },
             ),
         }, null);
-        try vkCtx.vkDevice.deviceProxy.bindImageMemory(atlasImage, atlasMemory, 0);
+        try vk_ctx.vk_device.device_proxy.bindImageMemory(atlas_image, atlas_memory, 0);
 
-        const atlasView = try vkCtx.vkDevice.deviceProxy.createImageView(&.{
-            .image = atlasImage,
+        const atlas_view = try vk_ctx.vk_device.device_proxy.createImageView(&.{
+            .image = atlas_image,
             .view_type = .@"2d",
             .format = .r8_unorm,
             .components = .{ .r = .identity, .g = .identity, .b = .identity, .a = .identity },
@@ -159,34 +159,34 @@ pub const ImGuiRenderer = struct {
         }, null);
 
         // Upload white pixel via staging buffer + one-shot command buffer
-        const stagingBuf = try vk.buf.VkBuffer.create(
-            vkCtx,
+        const staging_buf = try vk.buf.VkBuffer.create(
+            vk_ctx,
             1,
             .{ .transfer_src_bit = true },
             .{ .host_visible_bit = true, .host_coherent_bit = true },
         );
-        defer stagingBuf.cleanup(vkCtx);
+        defer staging_buf.cleanup(vk_ctx);
 
-        if (try stagingBuf.map(vkCtx)) |ptr| {
+        if (try staging_buf.map(vk_ctx)) |ptr| {
             const bytes: [*]u8 = @ptrCast(ptr);
             bytes[0] = 255; // white pixel at (0,0) for solid rect rendering
-            stagingBuf.unMap(vkCtx);
+            staging_buf.unMap(vk_ctx);
         }
 
-        const uploadCmd = try vk.cmd.VkCmdBuff.create(vkCtx, cmdPool, true);
-        defer uploadCmd.cleanup(vkCtx, cmdPool);
-        try uploadCmd.begin(vkCtx);
-        const uploadHandle = uploadCmd.cmdBuffProxy.handle;
+        const upload_cmd = try vk.cmd.VkCmdBuff.create(vk_ctx, cmd_pool, true);
+        defer upload_cmd.cleanup(vk_ctx, cmd_pool);
+        try upload_cmd.begin(vk_ctx);
+        const upload_handle = upload_cmd.cmd_buff_proxy.handle;
 
         // Barrier: undefined → transfer_dst_optimal
-        const subresRange = vulkan.ImageSubresourceRange{
+        const subres_range = vulkan.ImageSubresourceRange{
             .aspect_mask = .{ .color_bit = true },
             .base_mip_level = 0,
             .level_count = 1,
             .base_array_layer = 0,
             .layer_count = 1,
         };
-        const toTransfer = [_]vulkan.ImageMemoryBarrier2{.{
+        const to_transfer = [_]vulkan.ImageMemoryBarrier2{.{
             .old_layout = .undefined,
             .new_layout = .transfer_dst_optimal,
             .src_stage_mask = .{ .top_of_pipe_bit = true },
@@ -195,16 +195,16 @@ pub const ImGuiRenderer = struct {
             .dst_access_mask = .{ .transfer_write_bit = true },
             .src_queue_family_index = vulkan.QUEUE_FAMILY_IGNORED,
             .dst_queue_family_index = vulkan.QUEUE_FAMILY_IGNORED,
-            .image = atlasImage,
-            .subresource_range = subresRange,
+            .image = atlas_image,
+            .subresource_range = subres_range,
         }};
-        vkCtx.vkDevice.deviceProxy.cmdPipelineBarrier2(uploadHandle, &.{
-            .image_memory_barrier_count = toTransfer.len,
-            .p_image_memory_barriers = &toTransfer,
+        vk_ctx.vk_device.device_proxy.cmdPipelineBarrier2(upload_handle, &.{
+            .image_memory_barrier_count = to_transfer.len,
+            .p_image_memory_barriers = &to_transfer,
         });
 
         // Copy staging buffer → atlas image
-        const copyRegion = [_]vulkan.BufferImageCopy{.{
+        const copy_region = [_]vulkan.BufferImageCopy{.{
             .buffer_offset = 0,
             .buffer_row_length = 0,
             .buffer_image_height = 0,
@@ -217,17 +217,17 @@ pub const ImGuiRenderer = struct {
             .image_offset = .{ .x = 0, .y = 0, .z = 0 },
             .image_extent = .{ .width = 1, .height = 1, .depth = 1 },
         }};
-        vkCtx.vkDevice.deviceProxy.cmdCopyBufferToImage(
-            uploadHandle,
-            stagingBuf.buffer,
-            atlasImage,
+        vk_ctx.vk_device.device_proxy.cmdCopyBufferToImage(
+            upload_handle,
+            staging_buf.buffer,
+            atlas_image,
             .transfer_dst_optimal,
-            copyRegion.len,
-            &copyRegion,
+            copy_region.len,
+            &copy_region,
         );
 
         // Barrier: transfer_dst_optimal → shader_read_only_optimal
-        const toShaderRead = [_]vulkan.ImageMemoryBarrier2{.{
+        const to_shader_read = [_]vulkan.ImageMemoryBarrier2{.{
             .old_layout = .transfer_dst_optimal,
             .new_layout = .shader_read_only_optimal,
             .src_stage_mask = .{ .all_transfer_bit = true },
@@ -236,144 +236,144 @@ pub const ImGuiRenderer = struct {
             .dst_access_mask = .{ .shader_read_bit = true },
             .src_queue_family_index = vulkan.QUEUE_FAMILY_IGNORED,
             .dst_queue_family_index = vulkan.QUEUE_FAMILY_IGNORED,
-            .image = atlasImage,
-            .subresource_range = subresRange,
+            .image = atlas_image,
+            .subresource_range = subres_range,
         }};
-        vkCtx.vkDevice.deviceProxy.cmdPipelineBarrier2(uploadHandle, &.{
-            .image_memory_barrier_count = toShaderRead.len,
-            .p_image_memory_barriers = &toShaderRead,
+        vk_ctx.vk_device.device_proxy.cmdPipelineBarrier2(upload_handle, &.{
+            .image_memory_barrier_count = to_shader_read.len,
+            .p_image_memory_barriers = &to_shader_read,
         });
 
-        try uploadCmd.end(vkCtx);
-        try uploadCmd.submitAndWait(vkCtx, vkQueue);
+        try upload_cmd.end(vk_ctx);
+        try upload_cmd.submitAndWait(vk_ctx, vk_queue);
 
         // ---- Descriptor pool + set ------------------------------------------
-        const poolSize = vulkan.DescriptorPoolSize{
+        const pool_size = vulkan.DescriptorPoolSize{
             .type = .combined_image_sampler,
             .descriptor_count = 1,
         };
-        const descriptorPool = try vkCtx.vkDevice.deviceProxy.createDescriptorPool(&.{
+        const descriptor_pool = try vk_ctx.vk_device.device_proxy.createDescriptorPool(&.{
             .max_sets = 1,
             .pool_size_count = 1,
-            .p_pool_sizes = @ptrCast(&poolSize),
+            .p_pool_sizes = @ptrCast(&pool_size),
         }, null);
 
-        var descriptorSet: vulkan.DescriptorSet = undefined;
-        try vkCtx.vkDevice.deviceProxy.allocateDescriptorSets(&.{
-            .descriptor_pool = descriptorPool,
+        var descriptor_set: vulkan.DescriptorSet = undefined;
+        try vk_ctx.vk_device.device_proxy.allocateDescriptorSets(&.{
+            .descriptor_pool = descriptor_pool,
             .descriptor_set_count = 1,
-            .p_set_layouts = @ptrCast(&descriptorSetLayout),
-        }, @ptrCast(&descriptorSet));
+            .p_set_layouts = @ptrCast(&descriptor_set_layout),
+        }, @ptrCast(&descriptor_set));
 
-        const imageInfo = vulkan.DescriptorImageInfo{
-            .sampler = atlasSampler,
-            .image_view = atlasView,
+        const image_info = vulkan.DescriptorImageInfo{
+            .sampler = atlas_sampler,
+            .image_view = atlas_view,
             .image_layout = .shader_read_only_optimal,
         };
-        const writeDescSet = vulkan.WriteDescriptorSet{
-            .dst_set = descriptorSet,
+        const write_desc_set = vulkan.WriteDescriptorSet{
+            .dst_set = descriptor_set,
             .dst_binding = 0,
             .dst_array_element = 0,
             .descriptor_count = 1,
             .descriptor_type = .combined_image_sampler,
-            .p_image_info = @ptrCast(&imageInfo),
+            .p_image_info = @ptrCast(&image_info),
             .p_buffer_info = undefined,
             .p_texel_buffer_view = undefined,
         };
-        vkCtx.vkDevice.deviceProxy.updateDescriptorSets(1, @ptrCast(&writeDescSet), 0, null);
+        vk_ctx.vk_device.device_proxy.updateDescriptorSets(1, @ptrCast(&write_desc_set), 0, null);
 
         // ---- Pipeline -------------------------------------------------------
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer arena.deinit();
-        const arenaAlloc = arena.allocator();
+        const arena_alloc = arena.allocator();
 
-        const vertCode align(@alignOf(u32)) = try com.utils.loadFile(arenaAlloc, io, "res/shaders/gui_vtx.glsl.spv");
-        const vert = try vkCtx.vkDevice.deviceProxy.createShaderModule(&.{
-            .code_size = vertCode.len,
-            .p_code = @ptrCast(@alignCast(vertCode)),
+        const vert_code align(@alignOf(u32)) = try com.utils.loadFile(arena_alloc, io, "res/shaders/gui_vtx.glsl.spv");
+        const vert = try vk_ctx.vk_device.device_proxy.createShaderModule(&.{
+            .code_size = vert_code.len,
+            .p_code = @ptrCast(@alignCast(vert_code)),
         }, null);
-        defer vkCtx.vkDevice.deviceProxy.destroyShaderModule(vert, null);
+        defer vk_ctx.vk_device.device_proxy.destroyShaderModule(vert, null);
 
-        const fragCode align(@alignOf(u32)) = try com.utils.loadFile(arenaAlloc, io, "res/shaders/gui_frg.glsl.spv");
-        const frag = try vkCtx.vkDevice.deviceProxy.createShaderModule(&.{
-            .code_size = fragCode.len,
-            .p_code = @ptrCast(@alignCast(fragCode)),
+        const frag_code align(@alignOf(u32)) = try com.utils.loadFile(arena_alloc, io, "res/shaders/gui_frg.glsl.spv");
+        const frag = try vk_ctx.vk_device.device_proxy.createShaderModule(&.{
+            .code_size = frag_code.len,
+            .p_code = @ptrCast(@alignCast(frag_code)),
         }, null);
-        defer vkCtx.vkDevice.deviceProxy.destroyShaderModule(frag, null);
+        defer vk_ctx.vk_device.device_proxy.destroyShaderModule(frag, null);
 
-        const modulesInfo = try allocator.alloc(vk.pipe.ShaderModuleInfo, 2);
-        defer allocator.free(modulesInfo);
-        modulesInfo[0] = .{ .module = vert, .stage = .{ .vertex_bit = true } };
-        modulesInfo[1] = .{ .module = frag, .stage = .{ .fragment_bit = true } };
+        const modules_info = try allocator.alloc(vk.pipe.ShaderModuleInfo, 2);
+        defer allocator.free(modules_info);
+        modules_info[0] = .{ .module = vert, .stage = .{ .vertex_bit = true } };
+        modules_info[1] = .{ .module = frag, .stage = .{ .fragment_bit = true } };
 
-        const pipelineCreateInfo = vk.pipe.VkPipelineCreateInfo{
-            .colorFormat = vkCtx.vkSwapChain.surfaceFormat.format,
-            .modulesInfo = modulesInfo,
-            .useBlend = true,
-            .vtxBuffDesc = .{
+        const pipeline_create_info = vk.pipe.VkPipelineCreateInfo{
+            .color_format = vk_ctx.vk_swap_chain.surface_format.format,
+            .modules_info = modules_info,
+            .use_blend = true,
+            .vtx_buff_desc = .{
                 .binding_description = binding_description,
                 .attribute_description = @constCast(&attribute_descriptions)[0..],
             },
-            .pushConstantRanges = &.{.{
+            .push_constant_ranges = &.{.{
                 .stage_flags = .{ .vertex_bit = true },
                 .offset = 0,
                 .size = @sizeOf(GuiPushConstants),
             }},
-            .descriptorSetLayouts = &.{descriptorSetLayout},
+            .descriptor_set_layouts = &.{descriptor_set_layout},
         };
-        const vkPipeline = try vk.pipe.VkPipeline.create(allocator, vkCtx, &pipelineCreateInfo);
+        const vk_pipeline = try vk.pipe.VkPipeline.create(allocator, vk_ctx, &pipeline_create_info);
 
         log.debug("ImGuiRenderer created", .{});
 
         return .{
-            .vtxBuffers = vtxBuffers,
-            .idxBuffers = idxBuffers,
-            .atlasImage = atlasImage,
-            .atlasMemory = atlasMemory,
-            .atlasView = atlasView,
-            .atlasSampler = atlasSampler,
-            .descriptorPool = descriptorPool,
-            .descriptorSetLayout = descriptorSetLayout,
-            .descriptorSet = descriptorSet,
-            .vkPipeline = vkPipeline,
-            .atlasSize = 1,
-            .atlasModified = 0,
+            .vtx_buffers = vtx_buffers,
+            .idx_buffers = idx_buffers,
+            .atlas_image = atlas_image,
+            .atlas_memory = atlas_memory,
+            .atlas_view = atlas_view,
+            .atlas_sampler = atlas_sampler,
+            .descriptor_pool = descriptor_pool,
+            .descriptor_set_layout = descriptor_set_layout,
+            .descriptor_set = descriptor_set,
+            .vk_pipeline = vk_pipeline,
+            .atlas_size = 1,
+            .atlas_modified = 0,
         };
     }
 
-    /// Records UI draw commands into vkCmd for the current frame.
+    /// Records UI draw commands into vk_cmd for the current frame.
     pub fn render(
         self: *ImGuiRenderer,
-        vkCtx: *const vk.ctx.VkCtx,
-        vkCmd: vk.cmd.VkCmdBuff,
+        vk_ctx: *const vk.ctx.VkCtx,
+        vk_cmd: vk.cmd.VkCmdBuff,
         imgui: *ui.ImGuiContext,
-        frameIndex: u8,
-        imageIndex: u32,
+        frame_index: u8,
+        image_index: u32,
         extent: vulkan.Extent2D,
     ) !void {
         if (imgui.indices.items.len == 0) return;
 
         // ---- Upload vertex + index data to current frame's buffers ----------
-        const vtxBuf = &self.vtxBuffers[frameIndex];
-        const idxBuf = &self.idxBuffers[frameIndex];
+        const vtx_buf = &self.vtx_buffers[frame_index];
+        const idx_buf = &self.idx_buffers[frame_index];
 
-        if (try vtxBuf.map(vkCtx)) |ptr| {
+        if (try vtx_buf.map(vk_ctx)) |ptr| {
             const dst: [*]ui.ImVertex = @ptrCast(@alignCast(ptr));
             @memcpy(dst[0..imgui.vertices.items.len], imgui.vertices.items);
-            vtxBuf.unMap(vkCtx);
+            vtx_buf.unMap(vk_ctx);
         }
-        if (try idxBuf.map(vkCtx)) |ptr| {
+        if (try idx_buf.map(vk_ctx)) |ptr| {
             const dst: [*]u16 = @ptrCast(@alignCast(ptr));
             @memcpy(dst[0..imgui.indices.items.len], imgui.indices.items);
-            idxBuf.unMap(vkCtx);
+            idx_buf.unMap(vk_ctx);
         }
 
         // ---- Begin dynamic rendering (load_op=load composites over scene) ---
-        const cmdHandle = vkCmd.cmdBuffProxy.handle;
-        const device = vkCtx.vkDevice.deviceProxy;
+        const cmd_handle = vk_cmd.cmd_buff_proxy.handle;
+        const device = vk_ctx.vk_device.device_proxy;
 
-        const renderAttInfo = vulkan.RenderingAttachmentInfo{
-            .image_view = vkCtx.vkSwapChain.imageViews[imageIndex].view,
+        const render_att_info = vulkan.RenderingAttachmentInfo{
+            .image_view = vk_ctx.vk_swap_chain.image_views[image_index].view,
             .image_layout = .attachment_optimal_khr,
             .load_op = .load,
             .store_op = .store,
@@ -381,38 +381,38 @@ pub const ImGuiRenderer = struct {
             .resolve_mode = .{},
             .resolve_image_layout = .attachment_optimal_khr,
         };
-        const renderInfo = vulkan.RenderingInfo{
+        const render_info = vulkan.RenderingInfo{
             .render_area = .{ .extent = extent, .offset = .{ .x = 0, .y = 0 } },
             .layer_count = 1,
             .color_attachment_count = 1,
-            .p_color_attachments = &[_]vulkan.RenderingAttachmentInfo{renderAttInfo},
+            .p_color_attachments = &[_]vulkan.RenderingAttachmentInfo{render_att_info},
             .view_mask = 0,
         };
-        device.cmdBeginRendering(cmdHandle, @ptrCast(&renderInfo));
+        device.cmdBeginRendering(cmd_handle, @ptrCast(&render_info));
 
         // ---- Bind pipeline --------------------------------------------------
-        device.cmdBindPipeline(cmdHandle, .graphics, self.vkPipeline.pipeline);
+        device.cmdBindPipeline(cmd_handle, .graphics, self.vk_pipeline.pipeline);
 
         // ---- Push scale constants -------------------------------------------
-        const pushConsts = GuiPushConstants{
+        const push_consts = GuiPushConstants{
             .scale = .{
                 2.0 / @as(f32, @floatFromInt(extent.width)),
                 2.0 / @as(f32, @floatFromInt(extent.height)),
             },
         };
         device.cmdPushConstants(
-            cmdHandle,
-            self.vkPipeline.pipelineLayout,
+            cmd_handle,
+            self.vk_pipeline.pipeline_layout,
             .{ .vertex_bit = true },
             0,
             @sizeOf(GuiPushConstants),
-            &pushConsts,
+            &push_consts,
         );
 
         // ---- Bind vertex + index buffers ------------------------------------
-        const vtxOffset = [_]vulkan.DeviceSize{0};
-        device.cmdBindVertexBuffers(cmdHandle, 0, 1, @ptrCast(&vtxBuf.buffer), &vtxOffset);
-        device.cmdBindIndexBuffer(cmdHandle, idxBuf.buffer, 0, .uint16);
+        const vtx_offset = [_]vulkan.DeviceSize{0};
+        device.cmdBindVertexBuffers(cmd_handle, 0, 1, @ptrCast(&vtx_buf.buffer), &vtx_offset);
+        device.cmdBindIndexBuffer(cmd_handle, idx_buf.buffer, 0, .uint16);
 
         // ---- Viewport -------------------------------------------------------
         const viewport = [_]vulkan.Viewport{.{
@@ -423,11 +423,11 @@ pub const ImGuiRenderer = struct {
             .min_depth = 0,
             .max_depth = 1,
         }};
-        device.cmdSetViewport(cmdHandle, 0, 1, &viewport);
+        device.cmdSetViewport(cmd_handle, 0, 1, &viewport);
 
         // ---- Draw commands (one per ImDrawCmd, each with its own scissor) ---
-        var vtxOffset_acc: i32 = 0;
-        var idxOffset_acc: u32 = 0;
+        var vtx_offset_acc: i32 = 0;
+        var idx_offset_acc: u32 = 0;
 
         for (imgui.draw_cmds.items) |cmd_entry| {
             const scissor = [_]vulkan.Rect2D{.{
@@ -440,43 +440,43 @@ pub const ImGuiRenderer = struct {
                     .height = @intFromFloat(cmd_entry.clip_rect[3]),
                 },
             }};
-            device.cmdSetScissor(cmdHandle, 0, 1, &scissor);
+            device.cmdSetScissor(cmd_handle, 0, 1, &scissor);
 
             device.cmdBindDescriptorSets(
-                cmdHandle,
+                cmd_handle,
                 .graphics,
-                self.vkPipeline.pipelineLayout,
+                self.vk_pipeline.pipeline_layout,
                 0,
                 1,
-                @ptrCast(&self.descriptorSet),
+                @ptrCast(&self.descriptor_set),
                 0,
                 null,
             );
 
-            device.cmdDrawIndexed(cmdHandle, cmd_entry.elem_count, 1, idxOffset_acc, vtxOffset_acc, 0);
+            device.cmdDrawIndexed(cmd_handle, cmd_entry.elem_count, 1, idx_offset_acc, vtx_offset_acc, 0);
 
-            idxOffset_acc += cmd_entry.elem_count;
-            vtxOffset_acc += 0; // TODO: track per-cmd vertex offset when split across cmds
+            idx_offset_acc += cmd_entry.elem_count;
+            vtx_offset_acc += 0; // TODO: track per-cmd vertex offset when split across cmds
         }
 
-        device.cmdEndRendering(cmdHandle);
+        device.cmdEndRendering(cmd_handle);
     }
 
     /// Destroys all Vulkan resources owned by this renderer.
-    pub fn cleanup(self: *ImGuiRenderer, vkCtx: *const vk.ctx.VkCtx) void {
-        self.vkPipeline.cleanup(vkCtx);
+    pub fn cleanup(self: *ImGuiRenderer, vk_ctx: *const vk.ctx.VkCtx) void {
+        self.vk_pipeline.cleanup(vk_ctx);
 
         for (0..com.common.FRAMES_IN_FLIGHT) |i| {
-            self.vtxBuffers[i].cleanup(vkCtx);
-            self.idxBuffers[i].cleanup(vkCtx);
+            self.vtx_buffers[i].cleanup(vk_ctx);
+            self.idx_buffers[i].cleanup(vk_ctx);
         }
 
-        vkCtx.vkDevice.deviceProxy.destroyDescriptorPool(self.descriptorPool, null);
-        vkCtx.vkDevice.deviceProxy.destroyDescriptorSetLayout(self.descriptorSetLayout, null);
-        vkCtx.vkDevice.deviceProxy.destroyImageView(self.atlasView, null);
-        vkCtx.vkDevice.deviceProxy.destroyImage(self.atlasImage, null);
-        vkCtx.vkDevice.deviceProxy.freeMemory(self.atlasMemory, null);
-        vkCtx.vkDevice.deviceProxy.destroySampler(self.atlasSampler, null);
+        vk_ctx.vk_device.device_proxy.destroyDescriptorPool(self.descriptor_pool, null);
+        vk_ctx.vk_device.device_proxy.destroyDescriptorSetLayout(self.descriptor_set_layout, null);
+        vk_ctx.vk_device.device_proxy.destroyImageView(self.atlas_view, null);
+        vk_ctx.vk_device.device_proxy.destroyImage(self.atlas_image, null);
+        vk_ctx.vk_device.device_proxy.freeMemory(self.atlas_memory, null);
+        vk_ctx.vk_device.device_proxy.destroySampler(self.atlas_sampler, null);
 
         log.debug("ImGuiRenderer destroyed", .{});
     }

@@ -3,66 +3,66 @@ const vulkan = @import("vulkan");
 const vk = @import("mod.zig");
 
 pub const VkCmdPool = struct {
-    commandPool: vulkan.CommandPool,
+    command_pool: vulkan.CommandPool,
 
-    pub fn create(vkCtx: *const vk.ctx.VkCtx, queueFamilyIndex: u32, resetSupport: bool) !VkCmdPool {
-        const createInfo: vulkan.CommandPoolCreateInfo = .{ .queue_family_index = queueFamilyIndex, .flags = .{ .reset_command_buffer_bit = resetSupport } };
-        const commandPool = try vkCtx.vkDevice.deviceProxy.createCommandPool(&createInfo, null);
-        return .{ .commandPool = commandPool };
+    pub fn create(vk_ctx: *const vk.ctx.VkCtx, queue_family_index: u32, reset_support: bool) !VkCmdPool {
+        const createInfo: vulkan.CommandPoolCreateInfo = .{ .queue_family_index = queue_family_index, .flags = .{ .reset_command_buffer_bit = reset_support } };
+        const command_pool = try vk_ctx.vk_device.device_proxy.createCommandPool(&createInfo, null);
+        return .{ .command_pool = command_pool };
     }
 
-    pub fn cleanup(self: *const VkCmdPool, vkCtx: *const vk.ctx.VkCtx) void {
-        vkCtx.vkDevice.deviceProxy.destroyCommandPool(self.commandPool, null);
+    pub fn cleanup(self: *const VkCmdPool, vk_ctx: *const vk.ctx.VkCtx) void {
+        vk_ctx.vk_device.device_proxy.destroyCommandPool(self.command_pool, null);
     }
 
-    pub fn reset(self: *const VkCmdPool, vkCtx: *const vk.ctx.VkCtx) !void {
-        try vkCtx.vkDevice.deviceProxy.resetCommandPool(self.commandPool, .{});
+    pub fn reset(self: *const VkCmdPool, vk_ctx: *const vk.ctx.VkCtx) !void {
+        try vk_ctx.vk_device.device_proxy.resetCommandPool(self.command_pool, .{});
     }
 };
 
 pub const VkCmdBuff = struct {
-    cmdBuffProxy: vulkan.CommandBufferProxy,
-    oneTime: bool,
+    cmd_buff_proxy: vulkan.CommandBufferProxy,
+    one_time: bool,
 
-    pub fn create(vkCtx: *const vk.ctx.VkCtx, vkCmdPool: *vk.cmd.VkCmdPool, oneTime: bool) !VkCmdBuff {
+    pub fn create(vk_ctx: *const vk.ctx.VkCtx, vk_cmd_pool: *vk.cmd.VkCmdPool, one_time: bool) !VkCmdBuff {
         const allocateInfo: vulkan.CommandBufferAllocateInfo = .{
             .command_buffer_count = 1,
-            .command_pool = vkCmdPool.commandPool,
+            .command_pool = vk_cmd_pool.command_pool,
             .level = vulkan.CommandBufferLevel.primary,
         };
         var cmds: [1]vulkan.CommandBuffer = undefined;
-        try vkCtx.vkDevice.deviceProxy.allocateCommandBuffers(&allocateInfo, &cmds);
-        const cmdBuffProxy = vulkan.CommandBufferProxy.init(cmds[0], vkCtx.vkDevice.deviceProxy.wrapper);
+        try vk_ctx.vk_device.device_proxy.allocateCommandBuffers(&allocateInfo, &cmds);
+        const cmd_buff_proxy = vulkan.CommandBufferProxy.init(cmds[0], vk_ctx.vk_device.device_proxy.wrapper);
 
-        return .{ .cmdBuffProxy = cmdBuffProxy, .oneTime = oneTime };
+        return .{ .cmd_buff_proxy = cmd_buff_proxy, .one_time = one_time };
     }
 
-    pub fn cleanup(self: *const VkCmdBuff, vkCtx: *const vk.ctx.VkCtx, vkCmdPool: *vk.cmd.VkCmdPool) void {
-        const cmds = [_]vulkan.CommandBuffer{self.cmdBuffProxy.handle};
-        vkCtx.vkDevice.deviceProxy.freeCommandBuffers(vkCmdPool.commandPool, cmds.len, &cmds);
+    pub fn cleanup(self: *const VkCmdBuff, vk_ctx: *const vk.ctx.VkCtx, vk_cmd_pool: *vk.cmd.VkCmdPool) void {
+        const cmds = [_]vulkan.CommandBuffer{self.cmd_buff_proxy.handle};
+        vk_ctx.vk_device.device_proxy.freeCommandBuffers(vk_cmd_pool.command_pool, cmds.len, &cmds);
     }
 
-    pub fn begin(self: *const VkCmdBuff, vkCtx: *const vk.ctx.VkCtx) !void {
-        const beginInfo: vulkan.CommandBufferBeginInfo = .{ .flags = .{ .one_time_submit_bit = self.oneTime } };
-        try vkCtx.vkDevice.deviceProxy.beginCommandBuffer(self.cmdBuffProxy.handle, &beginInfo);
+    pub fn begin(self: *const VkCmdBuff, vk_ctx: *const vk.ctx.VkCtx) !void {
+        const beginInfo: vulkan.CommandBufferBeginInfo = .{ .flags = .{ .one_time_submit_bit = self.one_time } };
+        try vk_ctx.vk_device.device_proxy.beginCommandBuffer(self.cmd_buff_proxy.handle, &beginInfo);
     }
 
-    pub fn end(self: *const VkCmdBuff, vkCtx: *const vk.ctx.VkCtx) !void {
-        try vkCtx.vkDevice.deviceProxy.endCommandBuffer(self.cmdBuffProxy.handle);
+    pub fn end(self: *const VkCmdBuff, vk_ctx: *const vk.ctx.VkCtx) !void {
+        try vk_ctx.vk_device.device_proxy.endCommandBuffer(self.cmd_buff_proxy.handle);
     }
 
-    pub fn submitAndWait(self: *const VkCmdBuff, vkCtx: *const vk.ctx.VkCtx, vkQueue: vk.queue.VkQueue) !void {
-        const vkFence = try vk.sync.VkFence.create(vkCtx);
-        defer vkFence.cleanup(vkCtx);
+    pub fn submitAndWait(self: *const VkCmdBuff, vk_ctx: *const vk.ctx.VkCtx, vk_queue: vk.queue.VkQueue) !void {
+        const vk_fence = try vk.sync.VkFence.create(vk_ctx);
+        defer vk_fence.cleanup(vk_ctx);
 
-        const cmdBufferSubmitInfo = [_]vulkan.CommandBufferSubmitInfo{.{
+        const cmd_buffer_submit_info = [_]vulkan.CommandBufferSubmitInfo{.{
             .device_mask = 0,
-            .command_buffer = self.cmdBuffProxy.handle,
+            .command_buffer = self.cmd_buff_proxy.handle,
         }};
 
-        const emptySemphs = [_]vulkan.SemaphoreSubmitInfo{};
+        const empty_semphs = [_]vulkan.SemaphoreSubmitInfo{};
 
-        try vkQueue.submit(vkCtx, &cmdBufferSubmitInfo, &emptySemphs, &emptySemphs, vkFence);
-        try vkFence.wait(vkCtx);
+        try vk_queue.submit(vk_ctx, &cmd_buffer_submit_info, &empty_semphs, &empty_semphs, vk_fence);
+        try vk_fence.wait(vk_ctx);
     }
 };
