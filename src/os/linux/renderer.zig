@@ -121,13 +121,13 @@ pub const Render = struct {
     }
 
     /// Uploads initial scene geometry to the GPU via the models cache.
-    pub fn init(self: *Render, allocator: std.mem.Allocator, init_data: *const com.mdata.InitData) !void {
+    pub fn init(self: *Render, allocator: std.mem.Allocator, init_data: *const com.mdata.Init) !void {
         try self.models_cache.init(allocator, &self.vk_ctx, &self.cmd_pools[0], self.queue_graphics, init_data);
     }
 
     /// Renders one frame: acquires a swapchain image, records and submits draw
     /// commands, then presents. Skips the frame if the window was just resized.
-    pub fn render(self: *Render, window: *wnd.Wnd, imgui_ctx: *ui.ImGuiContext) !void {
+    pub fn render(self: *Render, window: *wnd.Wnd, imgui_ctx: *ui.ImGui) !void {
         // Check resize Before acquiring to avoid leaving semaphore signaled
         if (window.resized) {
             return;

@@ -59,7 +59,7 @@ const FontEntry = struct {
 
 /// Main immediate-mode GUI context
 /// Manages dynamic vertex/index buffers and UI state
-pub const ImGuiContext = struct {
+pub const ImGui = struct {
     allocator: std.mem.Allocator,
 
     // CPU-side buffers (rebuilt each frame)
@@ -87,7 +87,7 @@ pub const ImGuiContext = struct {
     atlas_modified: usize,
 
     /// Initialize the IMGUI context with triple-buffered GPU resources
-    pub fn init(allocator: std.mem.Allocator) !ImGuiContext {
+    pub fn init(allocator: std.mem.Allocator) !ImGui {
 
         // Initialize font system
         const font_name: [:0]const u8 = "IBM Plex Mono";
@@ -111,7 +111,7 @@ pub const ImGuiContext = struct {
         var atlas = try Atlas.init(allocator, atlas_size, .grayscale);
         errdefer atlas.deinit(allocator);
 
-        var ctx = ImGuiContext{
+        var ctx = ImGui{
             .allocator = allocator,
             .vertices = std.ArrayList(ImVertex).empty,
             .indices = std.ArrayList(u16).empty,
@@ -140,7 +140,7 @@ pub const ImGuiContext = struct {
     }
 
     /// Clean up GPU resources
-    pub fn deinit(self: *ImGuiContext) void {
+    pub fn deinit(self: *ImGui) void {
         // Clean up font system
         var iter = self.font_entries.iterator();
         while (iter.next()) |kv| {
@@ -157,7 +157,7 @@ pub const ImGuiContext = struct {
 
     /// Call at the start of each frame to reset buffers
     /// Retains capacity to avoid reallocation
-    pub fn newFrame(self: *ImGuiContext) void {
+    pub fn newFrame(self: *ImGui) void {
         self.vertices.clearRetainingCapacity();
         self.indices.clearRetainingCapacity();
         self.draw_cmds.clearRetainingCapacity();
@@ -166,7 +166,7 @@ pub const ImGuiContext = struct {
 
     /// Call after buildUI() to finalise the frame's draw command.
     /// Creates one draw cmd covering all accumulated geometry with a full-screen scissor.
-    pub fn endFrame(self: *ImGuiContext) !void {
+    pub fn endFrame(self: *ImGui) !void {
         if (self.indices.items.len == 0) return;
         try self.draw_cmds.append(self.allocator, .{
             .elem_count = @intCast(self.indices.items.len),
@@ -178,7 +178,7 @@ pub const ImGuiContext = struct {
     // INFO: Removed fn render in favour of ui_renderder.zig
 
     /// Add a filled triangle to the current frame's geometry, xy is first point, other points followed are relative.
-    pub fn addTriangle(self: *ImGuiContext, x: f32, y: f32, xb: f32, yb: f32, xc: f32, yc: f32, color: u32) !void {
+    pub fn addTriangle(self: *ImGui, x: f32, y: f32, xb: f32, yb: f32, xc: f32, yc: f32, color: u32) !void {
         const base = @as(u16, @intCast(self.vertices.items.len));
 
         // Add 3 vertices (clockwise from top-left)
@@ -194,7 +194,7 @@ pub const ImGuiContext = struct {
 
     /// Add a filled rectangle to the current frame's geometry
     /// Uses indexed triangles (4 vertices, 6 indices)
-    pub fn addRect(self: *ImGuiContext, x: f32, y: f32, w: f32, h: f32, color: u32) !void {
+    pub fn addRect(self: *ImGui, x: f32, y: f32, w: f32, h: f32, color: u32) !void {
         const base = @as(u16, @intCast(self.vertices.items.len));
 
         // Coordinates in points (shader will convert to clip space using display size)
@@ -213,7 +213,7 @@ pub const ImGuiContext = struct {
 
     /// Add a filled circle to the current frame's geometry
     /// Uses indexed triangles to make a circle... ()
-    pub fn addCircle(self: *ImGuiContext, x: f32, y: f32, r: f32, subdivisions: usize, color: u32) !void {
+    pub fn addCircle(self: *ImGui, x: f32, y: f32, r: f32, subdivisions: usize, color: u32) !void {
         const radien: f32 = ((2.0 * std.math.pi) / @as(f32, @floatFromInt(subdivisions)));
         const center = @as(u16, @intCast(self.vertices.items.len));
 
@@ -251,7 +251,7 @@ pub const ImGuiContext = struct {
 
     /// Add a line to the current frame's geometry
     /// Note: For proper line rendering, you may need a separate pipeline with line primitives
-    pub fn addLine(self: *ImGuiContext, x0: f32, y0: f32, x1: f32, y1: f32, color: u32, thickness: f32) !void {
+    pub fn addLine(self: *ImGui, x0: f32, y0: f32, x1: f32, y1: f32, color: u32, thickness: f32) !void {
         // Calculate perpendicular offset for line thickness
         const dx = x1 - x0;
         const dy = y1 - y0;
@@ -300,14 +300,14 @@ pub const ImGuiContext = struct {
     }
 
     /// Check if mouse cursor is within rectangle bounds
-    fn isInRect(self: *ImGuiContext, x: f32, y: f32, w: f32, h: f32) bool {
+    fn isInRect(self: *ImGui, x: f32, y: f32, w: f32, h: f32) bool {
         return self.mouse_x >= x and self.mouse_x < x + w and
             self.mouse_y >= y and self.mouse_y < y + h;
     }
 
     /// Immediate-mode button widget
     /// Returns true if button was clicked this frame
-    pub fn button(self: *ImGuiContext, id: u32, x: f32, y: f32, w: f32, h: f32, label: []const u8) !bool {
+    pub fn button(self: *ImGui, id: u32, x: f32, y: f32, w: f32, h: f32, label: []const u8) !bool {
         const is_hot = self.isInRect(x, y, w, h);
         const is_active = self.active_id == id;
 
@@ -343,7 +343,7 @@ pub const ImGuiContext = struct {
 
     /// Immediate-mode slider widget
     /// Returns new value, updates value_ptr
-    pub fn slider(self: *ImGuiContext, id: u32, x: f32, y: f32, w: f32, h: f32, value_ptr: *f32, min_val: f32, max_val: f32) !void {
+    pub fn slider(self: *ImGui, id: u32, x: f32, y: f32, w: f32, h: f32, value_ptr: *f32, min_val: f32, max_val: f32) !void {
         // Hit-test uses the full height for easy clicking
         const is_hot = self.isInRect(x, y, w, h);
         const is_active = self.active_id == id;
@@ -384,7 +384,7 @@ pub const ImGuiContext = struct {
     }
 
     /// Get the number of indices to render
-    pub fn getIndexCount(self: *ImGuiContext) u32 {
+    pub fn getIndexCount(self: *ImGui) u32 {
         return @intCast(self.indices.items.len);
     }
 
@@ -393,7 +393,7 @@ pub const ImGuiContext = struct {
     // ========================================================================
 
     /// Get or create font entry for a given size
-    fn getOrCreateFontEntry(self: *ImGuiContext, font_size: f32) !*FontEntry {
+    fn getOrCreateFontEntry(self: *ImGui, font_size: f32) !*FontEntry {
         const size_key: u32 = @intFromFloat(font_size);
 
         // Check if we already have this size
@@ -412,7 +412,7 @@ pub const ImGuiContext = struct {
     }
 
     /// Get glyph from cache or render and cache it
-    fn getOrRenderGlyph(self: *ImGuiContext, entry: *FontEntry, glyph_id: u16) !Glyph {
+    fn getOrRenderGlyph(self: *ImGui, entry: *FontEntry, glyph_id: u16) !Glyph {
         // Check cache first
         if (entry.glyph_cache.get(glyph_id)) |cached| {
             return cached;
@@ -465,7 +465,7 @@ pub const ImGuiContext = struct {
     //     center_x: f32,
     //
     //     pub fn addTextLabel(
-    //         ui: *ImGuiContext,
+    //         ui: *ImGui,
     //         // parent: null,
     //         text: []const u8,
     //         x: f32,
@@ -499,7 +499,7 @@ pub const ImGuiContext = struct {
         /// Add text to the rendering batch (generates quads, integrated with shapes)
         /// Text will be drawn in the order it's added relative to shapes
         pub fn addText(
-            ui: *ImGuiContext,
+            ui: *ImGui,
             text: []const u8,
             x: f32,
             y: f32,

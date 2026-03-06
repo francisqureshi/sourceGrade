@@ -8,7 +8,7 @@ const ui = @import("../../gui/ui.zig");
 const DisplayLink = @import("window.zig").DisplayLink;
 const ImGuiRenderer = @import("ui_renderer.zig").ImGuiRenderer;
 const MetalRenderer = @import("renderer.zig").MetalRenderer;
-const RenderState = @import("render_state.zig").RenderState;
+const Render = @import("render_state.zig").Render;
 const Window = @import("window.zig").Window;
 const window_c = @import("window.zig");
 
@@ -29,7 +29,7 @@ pub const Platform = struct {
     /// CVDisplayLink for vsync-synchronized rendering.
     displaylink: DisplayLink,
     /// IMGUI context for immediate-mode UI rendering (heap-allocated).
-    imgui_ctx: *ui.ImGuiContext,
+    imgui_ctx: *ui.ImGui,
     /// ui renderer
     ui_renderer: ImGuiRenderer,
     /// Render configuration (pixel format, color space settings).
@@ -37,7 +37,7 @@ pub const Platform = struct {
     /// Render State
     /// Lazily initialized on first frame.
     /// Holds video source, decoder state, and textures.
-    render_state: ?*RenderState,
+    render_state: ?*Render,
     /// Timestamp when the platform was initialized (for elapsed time).
     start_time: std.Io.Clock.Timestamp,
 
@@ -67,8 +67,8 @@ pub const Platform = struct {
         var renderer = try MetalRenderer.init(pixel_format);
 
         // Initialize ImGui context on heap so pointer stays valid
-        const imgui_ctx = try app.allocator.create(ui.ImGuiContext);
-        imgui_ctx.* = try ui.ImGuiContext.init(app.allocator);
+        const imgui_ctx = try app.allocator.create(ui.ImGui);
+        imgui_ctx.* = try ui.ImGui.init(app.allocator);
 
         imgui_ctx.display_width = 1600;
         imgui_ctx.display_height = 900;
@@ -162,8 +162,8 @@ fn renderUiFrame(self: *Platform) void {
 
     // Get or init Render State
     if (self.render_state == null) {
-        const state = self.app.allocator.create(RenderState) catch return;
-        state.* = RenderState.init(self) catch |err| {
+        const state = self.app.allocator.create(Render) catch return;
+        state.* = Render.init(self) catch |err| {
             std.debug.print("Error: Failed to init render state ({})\n", .{err});
             self.app.allocator.destroy(state);
             return;
@@ -215,7 +215,7 @@ fn renderUiFrame(self: *Platform) void {
     var mouse_x: f32 = 0;
     var mouse_y: f32 = 0;
     var mouse_down: bool = false;
-    self.window.getMouseState(&mouse_x, &mouse_y, &mouse_down);
+    self.window.getMouse(&mouse_x, &mouse_y, &mouse_down);
 
     self.imgui_ctx.mouse_x = mouse_x;
     self.imgui_ctx.mouse_y = mouse_y;
@@ -286,7 +286,7 @@ fn renderUiFrame(self: *Platform) void {
     window_c.releaseTexture(texture_ptr);
 }
 
-fn decodeVideoFrame(state: *RenderState) !void {
+fn decodeVideoFrame(state: *Render) !void {
 
     // Video monitor - decode and manage playback
     const result = state.video_monitor.monitor();

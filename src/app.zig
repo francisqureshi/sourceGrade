@@ -15,7 +15,7 @@ const TestingConfig = struct {
     video_path: []const u8,
 };
 
-pub const PlaybackState = struct {
+pub const Playback = struct {
     playing: f32,
     speed: f32,
     current_frame: u64,
@@ -29,7 +29,7 @@ pub const App = struct {
     test_args: TestingConfig,
 
     // App owns playback *intent*
-    playback_state: PlaybackState, // playing, paused, speed, position
+    playback_state: Playback, // playing, paused, speed, position
 
     test_slider_value: f32,
 
@@ -58,7 +58,7 @@ pub const App = struct {
             // .video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov",
         };
 
-        const playback_state: PlaybackState = .{
+        const playback_state: Playback = .{
             .playing = 0.0,
             .speed = 1.0,
             .current_frame = 0,
@@ -86,10 +86,10 @@ pub const App = struct {
         _ = dt;
     }
 
-    pub fn vkDemo(arena_alloc: std.mem.Allocator) !com.mdata.InitData {
-        const left_quad_model = com.mdata.ModelData{
+    pub fn vkDemo(arena_alloc: std.mem.Allocator) !com.mdata.Init {
+        const left_quad_model = com.mdata.Model{
             .id = "LeftQuadModel",
-            .meshes = &[_]com.mdata.MeshData{
+            .meshes = &[_]com.mdata.Mesh{
                 .{
                     .id = "LeftQuadMesh",
                     .vertices = &[_]f32{
@@ -118,9 +118,9 @@ pub const App = struct {
             },
         };
 
-        const right_quad_model = com.mdata.ModelData{
+        const right_quad_model = com.mdata.Model{
             .id = "RightQuadModel",
-            .meshes = &[_]com.mdata.MeshData{
+            .meshes = &[_]com.mdata.Mesh{
                 .{
                     .id = "RightQuadMesh",
                     .vertices = &[_]f32{
@@ -149,19 +149,19 @@ pub const App = struct {
             },
         };
 
-        const models = try arena_alloc.alloc(com.mdata.ModelData, 2);
+        const models = try arena_alloc.alloc(com.mdata.Model, 2);
         models[0] = left_quad_model;
         models[1] = right_quad_model;
 
         return .{ .models = models };
     }
 
-    pub fn buildUI(self: *App, imgui: *ui.ImGuiContext) void {
+    pub fn buildUI(self: *App, imgui: *ui.ImGui) void {
 
         // Test slider and rects
         imgui.slider(1, 1400, 300, 100, 50, &self.test_slider_value, 0, 1) catch {};
-        imgui.addRect(1400, 50, 100, 100, ui.ImGuiContext.packColor(self.test_slider_value, 1, 0, 1.0)) catch {};
-        imgui.addRect(1450, 100, 100, 100, ui.ImGuiContext.packColor(0, 0, 1, 1.0)) catch {};
+        imgui.addRect(1400, 50, 100, 100, ui.ImGui.packColor(self.test_slider_value, 1, 0, 1.0)) catch {};
+        imgui.addRect(1450, 100, 100, 100, ui.ImGui.packColor(0, 0, 1, 1.0)) catch {};
 
         // ============ Video Controls
         imgui.slider(2, 600, 800, 400, 10, &self.playback_state.speed, 0, 32) catch {};
@@ -187,7 +187,7 @@ pub const App = struct {
             "Frame: {d} Playback Speed: {d:.2}",
             .{ self.playback_state.current_frame, self.playback_state.speed },
         ) catch "CantGetFrame";
-        _ = ui.ImGuiContext.TextWidget.addText(imgui, disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};
+        _ = ui.ImGui.TextWidget.addText(imgui, disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};
 
         // ============ LAYOUT DEMO
         var row = ui.layout.HStack.init(100, 200, 700, 50, 50);
@@ -203,14 +203,14 @@ pub const App = struct {
         const tc_rect = row.get(2);
         const second_fill_rect = row.get(3);
 
-        imgui.addRect(row.x, row.y, row.w, row.h, ui.ImGuiContext.packColor(1, 0, 0, 1)) catch {};
+        imgui.addRect(row.x, row.y, row.w, row.h, ui.ImGui.packColor(1, 0, 0, 1)) catch {};
 
         _ = imgui.button(5, btn1_rect.x, btn1_rect.y, btn1_rect.w, btn1_rect.h, "|>") catch false;
         _ = imgui.button(6, scrub_rect.x, scrub_rect.y, scrub_rect.w, scrub_rect.h, "------------|-------") catch false;
         _ = imgui.button(7, tc_rect.x, tc_rect.y, tc_rect.w, tc_rect.h, "TC 00:00:00:00") catch false;
         _ = imgui.button(8, second_fill_rect.x, second_fill_rect.y, second_fill_rect.w, second_fill_rect.h, "Second fill") catch false;
 
-        imgui.addCircle(900, 450, 100, 120, ui.ImGuiContext.packColor(0, 0, 1, 1)) catch {};
+        imgui.addCircle(900, 450, 100, 120, ui.ImGui.packColor(0, 0, 1, 1)) catch {};
 
         var col = ui.layout.VStack.init(300, 50, 50, 500, 3);
         const vert_bar_width: ui.layout.SizePolicy = .{ .percent = 0.66 };
@@ -221,7 +221,7 @@ pub const App = struct {
         }
         col.solve();
 
-        imgui.addRect(col.x, col.y, col.w, col.h, ui.ImGuiContext.packColor(0, 0, 0, 1.0)) catch {};
+        imgui.addRect(col.x, col.y, col.w, col.h, ui.ImGui.packColor(0, 0, 0, 1.0)) catch {};
 
         for (0..col.child_count) |i| {
             const elem = col.get(i);
@@ -230,7 +230,7 @@ pub const App = struct {
                 elem.y,
                 elem.w,
                 elem.h,
-                ui.ImGuiContext.packColor(1, 1, 1, (1 / @as(f32, @floatFromInt(i + 1)))),
+                ui.ImGui.packColor(1, 1, 1, (1 / @as(f32, @floatFromInt(i + 1)))),
             ) catch {};
         }
     }

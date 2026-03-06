@@ -138,7 +138,7 @@ pub const TimecodeFlags = packed struct {
     _reserved: u28,
 };
 
-pub const TrackData = struct {
+pub const Track = struct {
     sizes: ?[]const u32 = null,
     chunk_offsets: ?[]const u64 = null, // Note: might be u64 from co64!
     stsc_entries: ?[]const StscEntry = null,
@@ -151,7 +151,7 @@ pub const TrackData = struct {
     timecode_info: ?TimecodeInfo = null,
 
     /// Return f32 framte rate - maybe switch to Rational
-    pub fn getFrameRate(self: TrackData) ?f32 {
+    pub fn getFrameRate(self: Track) ?f32 {
         const mdhd = self.media_header orelse return null;
         const stts = self.stts_entries orelse return null;
 
@@ -163,7 +163,7 @@ pub const TrackData = struct {
         return @as(f32, @floatFromInt(mdhd.timescale)) / @as(f32, @floatFromInt(frame_duration));
     }
 
-    pub fn deinit(self: *TrackData, allocator: Allocator) void {
+    pub fn deinit(self: *Track, allocator: Allocator) void {
         if (self.sizes) |s| allocator.free(s);
         if (self.chunk_offsets) |c| allocator.free(c);
         if (self.stsc_entries) |s| allocator.free(s);
@@ -593,8 +593,8 @@ const WalkContext = struct {
     on_co64: ?*const fn ([]const u64) void = null,
     on_stsc: ?*const fn ([]const StscEntry) void = null,
     on_stts: ?*const fn ([]const SttsEntry) void = null,
-    track_data: *TrackData,
-    all_tracks: *std.ArrayList(TrackData),
+    track_data: *Track,
+    all_tracks: *std.ArrayList(Track),
 };
 
 /// Walk through atoms, calling handlers for specific types
@@ -772,7 +772,7 @@ fn walkAtoms(
             // Special handling for trak atoms
             if (std.mem.eql(u8, &header.type, "trak")) {
                 //Recursively walk children
-                var new_track = TrackData{};
+                var new_track = Track{};
                 var child_ctx = ctx;
 
                 child_ctx.depth += 1;
@@ -935,7 +935,7 @@ fn printIndented(depth: u32, comptime fmt: []const u8, args: anytype) void {
 //     io: Io,
 //     allocator: Allocator,
 //     filepath: []const u8,
-// ) ![]TrackData {
+// ) ![]Track {
 //     return parseMovFileVerbose(io, allocator, filepath, false);
 // }
 
@@ -945,7 +945,7 @@ pub fn parseMovFile(
     allocator: Allocator,
     file: std.Io.File,
     verbose: bool,
-) ![]TrackData {
+) ![]Track {
     const stat = try file.stat(io);
     const file_size = stat.size;
 
@@ -958,7 +958,7 @@ pub fn parseMovFile(
     var file_reader = file.reader(io, &buffer);
     const reader = &file_reader.interface;
 
-    var all_tracks: std.ArrayList(TrackData) = .{};
+    var all_tracks: std.ArrayList(Track) = .{};
     errdefer {
         for (all_tracks.items) |*track| {
             track.deinit(allocator);
@@ -966,7 +966,7 @@ pub fn parseMovFile(
         all_tracks.deinit(allocator);
     }
 
-    var dummy_track = TrackData{}; // Won't be used, but needed for ctx
+    var dummy_track = Track{}; // Won't be used, but needed for ctx
     defer dummy_track.deinit(allocator);
 
     // Set up handlers (only in verbose mode)

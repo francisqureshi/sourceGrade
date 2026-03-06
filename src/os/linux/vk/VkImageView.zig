@@ -1,7 +1,7 @@
 const vk = @import("mod.zig");
 const vulkan = @import("vulkan");
 
-pub const VkImageViewData = struct {
+pub const VkImageViewConfig = struct {
     aspect_mask: vulkan.ImageAspectFlags = vulkan.ImageAspectFlags{ .color_bit = true },
     base_array_layer: u32 = 0,
     base_mip_level: u32 = 0,
@@ -15,9 +15,9 @@ pub const VkImageView = struct {
     image: vulkan.Image,
     view: vulkan.ImageView,
 
-    /// Creates a VkImageView for the given image. VkImageViewData configures format,
+    /// Creates a VkImageView for the given image. VkImageViewConfig configures format,
     /// aspect mask, mip/layer ranges, and view type (defaults to 2D color).
-    pub fn create(vk_device: vk.dev.VkDevice, image: vulkan.Image, image_view_data: VkImageViewData) !VkImageView {
+    pub fn create(vk_device: vk.dev.VkDevice, image: vulkan.Image, image_view_data: VkImageViewConfig) !VkImageView {
         const createInfo = vulkan.ImageViewCreateInfo{
             .image = image,
             .view_type = image_view_data.view_type,

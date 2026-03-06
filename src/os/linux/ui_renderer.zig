@@ -29,7 +29,7 @@ const GuiPushConstants = extern struct {
     scale: [2]f32,
 };
 
-/// Owns the Vulkan resources needed to render one frame of ImGuiContext output.
+/// Owns the Vulkan resources needed to render one frame of ImGui output.
 pub const ImGuiRenderer = struct {
     /// Per-frame-in-flight host-visible vertex buffers.
     vtx_buffers: [com.common.FRAMES_IN_FLIGHT]vk.buf.VkBuffer,
@@ -346,7 +346,7 @@ pub const ImGuiRenderer = struct {
         self: *ImGuiRenderer,
         vk_ctx: *const vk.ctx.VkCtx,
         vk_cmd: vk.cmd.VkCmdBuff,
-        imgui: *ui.ImGuiContext,
+        imgui: *ui.ImGui,
         frame_index: u8,
         image_index: u32,
         extent: vulkan.Extent2D,

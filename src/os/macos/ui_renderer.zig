@@ -45,7 +45,7 @@ pub const ImGuiRenderer = struct {
         return ui_rndr;
     }
 
-    pub fn upload(self: *ImGuiRenderer, ctx: *ui.ImGuiContext) void {
+    pub fn upload(self: *ImGuiRenderer, ctx: *ui.ImGui) void {
 
         // Did atlas GROW? (need new texture)
         if (ctx.atlas.size != self.atlas_size) {

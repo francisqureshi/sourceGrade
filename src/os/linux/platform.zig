@@ -18,7 +18,7 @@ pub const Platform = struct {
     app: *App,
     wnd: wnd.Wnd,
     /// IMGUI context for immediate-mode UI rendering (heap-allocated).
-    imgui_ctx: *ui.ImGuiContext,
+    imgui_ctx: *ui.ImGui,
     render: rend.Render,
     constants: com.common.Constants,
 
@@ -41,8 +41,8 @@ pub const Platform = struct {
         const window = try wnd.Wnd.create(wnd_title, app.wnd_config);
 
         // Initialize ImGui context on heap so pointer stays valid
-        const imgui_ctx = try app.allocator.create(ui.ImGuiContext);
-        imgui_ctx.* = try ui.ImGuiContext.init(app.allocator);
+        const imgui_ctx = try app.allocator.create(ui.ImGui);
+        imgui_ctx.* = try ui.ImGui.init(app.allocator);
 
         const constants = try com.common.Constants.load(app.io, app.allocator);
         var render = try rend.Render.create(app.allocator, app.io, constants, window.window);

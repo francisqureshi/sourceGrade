@@ -7,7 +7,7 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 
-pub const MediaContext = struct {
+pub const Media = struct {
     file: Io.File,
     io: Io,
     allocator: Allocator,
@@ -49,7 +49,7 @@ pub const Rational = struct {
 };
 
 pub const SourceMedia = struct {
-    mctx: MediaContext,
+    mctx: Media,
     file_path: []const u8,
     db_uuid: ?[16]u8,
     file_name: []const u8,
@@ -76,7 +76,7 @@ pub const SourceMedia = struct {
         errdefer file.close(io);
 
         // Create media context
-        const mctx = MediaContext{ .file = file, .io = io, .allocator = allocator };
+        const mctx = Media{ .file = file, .io = io, .allocator = allocator };
 
         const file_path = try mctx.allocator.dupe(u8, fp);
         errdefer mctx.allocator.free(file_path);
@@ -93,8 +93,8 @@ pub const SourceMedia = struct {
         }
 
         // Single pass through tracks to extract all metadata
-        var video_track: ?mov.TrackData = null;
-        var timecode_track: ?mov.TrackData = null;
+        var video_track: ?mov.Track = null;
+        var timecode_track: ?mov.Track = null;
 
         for (tracks) |track| {
             if (track.video_info != null) video_track = track;
@@ -157,7 +157,7 @@ pub const SourceMedia = struct {
             std.debug.print("   sizes: {}\n", .{vt.sizes != null});
             std.debug.print("   chunk_offsets: {}\n", .{vt.chunk_offsets != null});
             std.debug.print("   stsc_entries: {}\n", .{vt.stsc_entries != null});
-            return error.InsufficientTrackData;
+            return error.InsufficientTrack;
         };
 
         const duration_in_frames = @as(i64, @intCast(frames.len));

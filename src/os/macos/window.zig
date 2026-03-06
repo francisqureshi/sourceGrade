@@ -56,7 +56,7 @@ pub const Window = struct {
     /// Gets the current mouse position and button state.
     /// Coordinates are in window-local points (not pixels).
     /// `out_down` is true if the primary mouse button is pressed.
-    pub fn getMouseState(self: *Window, out_x: *f32, out_y: *f32, out_down: *bool) void {
+    pub fn getMouse(self: *Window, out_x: *f32, out_y: *f32, out_down: *bool) void {
         c.metal_window_get_mouse_state(self.handle, out_x, out_y, out_down);
     }
 

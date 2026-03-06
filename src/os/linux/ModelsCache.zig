@@ -63,7 +63,7 @@ pub const ModelsCache = struct {
         vk_ctx: *const vk.ctx.VkCtx,
         cmd_pool: *vk.cmd.VkCmdPool,
         vk_queue: vk.queue.VkQueue,
-        init_data: *const com.mdata.InitData,
+        init_data: *const com.mdata.Init,
     ) !void {
         log.debug("Loading {d} model(s)", .{init_data.models.len});
 

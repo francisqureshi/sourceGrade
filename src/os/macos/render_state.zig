@@ -12,7 +12,7 @@ const vm = @import("../../gpu/video_monitor.zig");
 
 /// State that persists across render frames.
 /// Heap-allocated on first frame and reused for the lifetime of the app.
-pub const RenderState = struct {
+pub const Render = struct {
     /// The loaded video source (file handle, decoder, metadata).
     source_media: *media.SourceMedia,
 
@@ -29,7 +29,7 @@ pub const RenderState = struct {
     decoded_frame_buffer: ?DecodedFrame,
     texture_set_holder: ?videotoolbox.MetalTextureSet,
 
-    pub fn init(platform: *Platform) !RenderState {
+    pub fn init(platform: *Platform) !Render {
         const video_path = platform.app.test_args.video_path;
 
         const sm = try media.SourceMedia.init(
@@ -75,7 +75,7 @@ pub const RenderState = struct {
         };
     }
 
-    pub fn deinit(self: *RenderState) void {
+    pub fn deinit(self: *Render) void {
 
         // Clean up frame holders if present
         if (self.decoded_frame_buffer) |*df| df.deinit();

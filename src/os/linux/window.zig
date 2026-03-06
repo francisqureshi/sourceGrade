@@ -4,7 +4,7 @@ const sdl3 = @import("sdl3");
 const log = std.log.scoped(.window);
 
 /// Per-frame mouse position, button flags, and motion deltas.
-pub const MouseState = struct {
+pub const Mouse = struct {
     flags: sdl3.mouse.ButtonFlags,
     x: f32 = 0.0,
     y: f32 = 0.0,
@@ -22,7 +22,7 @@ const Size = struct {
 pub const Wnd = struct {
     window: sdl3.video.Window,
     closed: bool,
-    mouse_state: MouseState,
+    mouse_state: Mouse,
     resized: bool,
 
     /// Initialises SDL3, loads the Vulkan library, and creates a resizable window

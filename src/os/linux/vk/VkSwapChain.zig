@@ -190,7 +190,7 @@ pub const VkSwapChain = struct {
 
         const views = try allocator.alloc(vk.imv.VkImageView, images.len);
 
-        const iv_data = vk.imv.VkImageViewData{ .format = format };
+        const iv_data = vk.imv.VkImageViewConfig{ .format = format };
 
         var i: usize = 0;
         for (images) |img| {
