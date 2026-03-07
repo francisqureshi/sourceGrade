@@ -66,8 +66,6 @@ pub const Platform = struct {
     /// Runs the main loop: polls events, calls `App.update`, and renders each
     /// frame until the window is closed.
     pub fn run(self: *Platform) !void {
-        // var timer = try std.time.Timer.start();
-        // var timer = try std.Io.Clock.boot.now(self.app.io);
         var last_time = std.Io.Clock.boot.now(self.app.io);
         var update_time = last_time;
         var delta_update: f32 = 0.0;
@@ -76,7 +74,6 @@ pub const Platform = struct {
         while (!self.wnd.closed) {
             const now = std.Io.Clock.boot.now(self.app.io);
             const delta_ns = std.Io.Timestamp.durationTo(last_time, now);
-            // const stamp = std.Io.Timestamp.addDuration(from: Timestamp, duration: Duration)
             const delta_sec = @as(f32, @floatFromInt(delta_ns.nanoseconds)) / 1_000_000_000.0;
             delta_update += delta_sec / time_u;
 
