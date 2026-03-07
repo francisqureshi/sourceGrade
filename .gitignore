@@ -2,6 +2,11 @@
 zig-out/
 zig-cache/
 .zig-cache/
+zig-pkg/
+
+# Nix/direnv
+.direnv/
+flake.lock
 
 # IDE files
 .vscode/

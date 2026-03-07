@@ -43,7 +43,8 @@
             .hash = "smpte-0.0.0-P_FX_J8xAABoQ09xSq5BqEcCZP48tUbgQV4vEEpyBs9u",
         },
         .sdl3 = .{
-            .path = "../zig-sdl3",
+            .url = "git+https://codeberg.org/7Games/zig-sdl3?ref=v0.1.9#45ffa097ad183a72f81d42f9f8c0df0398663814",
+            .hash = "sdl3-0.1.9-NmT1Q2k0JwAtPRns9E3OO6qpqpvy8mn80guJ8L209AtI",
         },
         .vulkan = .{
             .url = "git+https://github.com/Snektron/vulkan-zig#30c3a9d582ae39dd7bfd8b44995e0864a442c7af",
