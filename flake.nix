@@ -34,11 +34,21 @@
         pkgs.vulkan-tools            # vulkaninfo
         pkgs.shaderc                 # glslc - GLSL/HLSL -> SPIR-V compiler
         pkgs.spirv-tools             # SPIR-V utilities
+
+        # we need to link all the 'graphical' dependencies so sdl can actually initialize
+        pkgs.libGL
+        pkgs.wayland
+        pkgs.libxkbcommon
+        pkgs.libdecor
+        pkgs.xorg.libX11
+        pkgs.xorg.libXcursor
+        pkgs.xorg.libXrandr
+        pkgs.xorg.libXi
       ];
 
       shellHook = ''
         export VK_LAYER_PATH="${pkgs.vulkan-validation-layers}/share/vulkan/explicit_layer.d"
-        export LD_LIBRARY_PATH="${pkgs.vulkan-loader}/lib:$LD_LIBRARY_PATH"
+        export LD_LIBRARY_PATH="${pkgs.vulkan-loader}/lib:${pkgs.libGL}/lib:${pkgs.wayland}/lib:${pkgs.libxkbcommon}/lib:${pkgs.libdecor}/lib:${pkgs.xorg.libX11}/lib:${pkgs.xorg.libXcursor}/lib:${pkgs.xorg.libXrandr}/lib:${pkgs.xorg.libXi}/lib:$LD_LIBRARY_PATH"
       '';
     };
   };

@@ -287,17 +287,17 @@ pub const ImGuiRenderer = struct {
         defer arena.deinit();
         const arena_alloc = arena.allocator();
 
-        const vert_code align(@alignOf(u32)) = try com.utils.loadFile(arena_alloc, io, "res/shaders/gui_vtx.glsl.spv");
+        const vert_code = try std.Io.Dir.cwd().readFileAllocOptions(io, "res/shaders/gui_vtx.glsl.spv", arena_alloc, .unlimited, .of(u32), null);
         const vert = try vk_ctx.vk_device.device_proxy.createShaderModule(&.{
             .code_size = vert_code.len,
-            .p_code = @ptrCast(@alignCast(vert_code)),
+            .p_code = @ptrCast(vert_code),
         }, null);
         defer vk_ctx.vk_device.device_proxy.destroyShaderModule(vert, null);
 
-        const frag_code align(@alignOf(u32)) = try com.utils.loadFile(arena_alloc, io, "res/shaders/gui_frg.glsl.spv");
+        const frag_code = try std.Io.Dir.cwd().readFileAllocOptions(io, "res/shaders/gui_frg.glsl.spv", arena_alloc, .unlimited, .of(u32), null);
         const frag = try vk_ctx.vk_device.device_proxy.createShaderModule(&.{
             .code_size = frag_code.len,
-            .p_code = @ptrCast(@alignCast(frag_code)),
+            .p_code = @ptrCast(frag_code),
         }, null);
         defer vk_ctx.vk_device.device_proxy.destroyShaderModule(frag, null);
 

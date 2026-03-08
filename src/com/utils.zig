@@ -3,6 +3,3 @@ const std = @import("std");
 
 const log = std.log.scoped(.utils);
 
-pub fn loadFile(allocator: std.mem.Allocator, io: std.Io, filePath: []const u8) ![]u8 {
-    return std.Io.Dir.cwd().readFileAlloc(io, filePath, allocator, .unlimited);
-}
