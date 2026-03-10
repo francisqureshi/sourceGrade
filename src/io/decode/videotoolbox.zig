@@ -55,14 +55,8 @@ pub const Decoder = struct {
         source_media: *const media.SourceMedia,
         metal_device: c.MTLDeviceRef,
     ) !Decoder {
-        // Register professional video workflow decoders (ProRes, etc.)
-        // This ensures we get native ProRes output formats without conversion
-        const register_status = c.VTRegisterProfessionalVideoWorkflowVideoDecoders();
-        if (register_status == c.noErr) {
-            std.debug.print("✓ Registered professional video decoders\n", .{});
-        } else {
-            std.debug.print("⚠ Failed to register professional decoders: {}\n", .{register_status});
-        }
+        // FIXME: Register professional video workflow decoders (ProRes, etc.  - still down know wtf this is or if we need it...)
+        _ = c.VTRegisterProfessionalVideoWorkflowVideoDecoders();
 
         const format_desc = try createFormatDescription(source_media);
 

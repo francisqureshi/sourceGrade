@@ -109,7 +109,9 @@ pub const VideoMonitor = struct {
                 else
                     self.current_frame_index - 1;
             }
-            self.last_frame_time_ns = self.playback_time_ns;
+
+            //INFO: new accurate timing
+            self.last_frame_time_ns += frame_duration_ns;
         }
 
         const frame_changed = self.last_decoded_frame_index == null or self.last_decoded_frame_index.? != self.current_frame_index;
