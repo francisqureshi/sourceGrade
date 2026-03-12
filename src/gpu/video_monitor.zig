@@ -33,6 +33,12 @@ pub const VideoMonitor = struct {
 
     monitor_stats: MonitorStats,
 
+    //  debug fields:
+    debug: bool,
+    playback_started_at: ?std.Io.Clock.Timestamp, // When did playback start?
+    total_frames_advanced: u64, // How many frames have we shown?
+    last_drift_check_ns: u64, // When did we last print stats?
+
     /// Initialize with IO (for timestamps)
     pub fn init(
         source_media: *media.SourceMedia,
@@ -58,6 +64,12 @@ pub const VideoMonitor = struct {
             .current_frame_index = 0,
             .last_decoded_frame_index = null,
             .monitor_stats = .{},
+
+            // debug
+            .debug = true,
+            .playback_started_at = null,
+            .total_frames_advanced = 0,
+            .last_drift_check_ns = 0,
         };
     }
 
@@ -77,6 +89,12 @@ pub const VideoMonitor = struct {
         // std.debug.print("frame delta: {}ns\n", .{ui_frame_delta_ns});
 
         if (self.ctrl_playback != 0.0) {
+            // debug start drift tracking on first playback
+            if (self.playback_started_at == null) {
+                self.playback_started_at = now;
+                self.last_drift_check_ns = 0;
+            }
+
             // Accumulate frame_delta_ns
             self.playback_time_ns += @as(
                 u64,
@@ -110,8 +128,36 @@ pub const VideoMonitor = struct {
                     self.current_frame_index - 1;
             }
 
-            //INFO: new accurate timing
+            // debug measuerment
+            self.total_frames_advanced += 1;
+
+            //INFO: new accurate timing - carry vsync quantizion error forward
             self.last_frame_time_ns += frame_duration_ns;
+        }
+
+        if (self.debug) {
+            if (self.playback_started_at) |start_time| {
+                const wall_elapsed_ns: u64 = @intCast(@max(0, start_time.durationTo(now).raw.nanoseconds));
+                const check_interval_ns: u64 = 2 * std.time.ns_per_s; // Check every 2 seconds
+
+                if (wall_elapsed_ns >= self.last_drift_check_ns + check_interval_ns) {
+                    // Calculate expected vs actual frames
+                    const wall_elapsed_s = @as(f64, @floatFromInt(wall_elapsed_ns)) / @as(f64, std.time.ns_per_s);
+                    const expected_frames = wall_elapsed_s * self.source_media.frame_rate_float;
+                    const actual_frames = @as(f64, @floatFromInt(self.total_frames_advanced));
+                    const drift_frames = actual_frames - expected_frames;
+                    const drift_ms = (drift_frames / self.source_media.frame_rate_float) * 1000.0;
+
+                    std.debug.print("\n DRIFT CHECK @ {d:.1}s:\n", .{wall_elapsed_s});
+                    std.debug.print("   Expected frames: {d:.1}\n", .{expected_frames});
+                    std.debug.print("   Actual frames:   {}\n", .{self.total_frames_advanced});
+                    std.debug.print("   Drift:           {d:.2} frames ({d:.1}ms)\n", .{ drift_frames, drift_ms });
+                    std.debug.print("   Actual FPS:      {d:.2}\n\n", .{actual_frames / wall_elapsed_s});
+
+                    // Update last check time
+                    self.last_drift_check_ns = wall_elapsed_ns;
+                }
+            }
         }
 
         const frame_changed = self.last_decoded_frame_index == null or self.last_decoded_frame_index.? != self.current_frame_index;

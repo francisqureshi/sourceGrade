@@ -130,7 +130,7 @@ pub const Decoder = struct {
         // std.debug.print("\nFirst frame size: {d} bytes\n", .{frame_size});
 
         // Use scratch instead of self.source_media.mctx.allocator
-        std.debug.print("Requesting: {d} bytes\n", .{frame_size});
+        // std.debug.print("Requesting: {d} bytes\n", .{frame_size});
         const encoded_frame_buffer = try scratch_allocator.alloc(u8, frame_size);
 
         const compressed_frame_size = try self.source_media.readFrame(frame_index, encoded_frame_buffer);
