@@ -73,6 +73,8 @@ pub const VideoMonitor = struct {
         };
     }
 
+    /// This, along with most things run every UI frame / Vsync
+    /// if playing, monitor() checks to see if we need to advance a frame with playback speed in mind
     pub fn monitor(self: *VideoMonitor) MonitorResult {
         const now = std.Io.Clock.Timestamp.now(self.io, .awake);
         const elapsed_duration = self.last_timestamp.durationTo(now);
