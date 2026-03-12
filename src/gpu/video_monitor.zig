@@ -73,7 +73,7 @@ pub const VideoMonitor = struct {
         };
     }
 
-    /// This, along with most things run every UI frame / Vsync
+    /// Called every  Vsync
     /// if playing, monitor() checks to see if we need to advance a frame with playback speed in mind
     pub fn monitor(self: *VideoMonitor) MonitorResult {
         const now = std.Io.Clock.Timestamp.now(self.io, .awake);
@@ -145,7 +145,7 @@ pub const VideoMonitor = struct {
                 if (wall_elapsed_ns >= self.last_drift_check_ns + check_interval_ns) {
                     // Calculate expected vs actual frames
                     const wall_elapsed_s = @as(f64, @floatFromInt(wall_elapsed_ns)) / @as(f64, std.time.ns_per_s);
-                    const expected_frames = wall_elapsed_s * self.source_media.frame_rate_float;
+                    const expected_frames = wall_elapsed_s * self.source_media.frame_rate_float * self.ctrl_playback_speed;
                     const actual_frames = @as(f64, @floatFromInt(self.total_frames_advanced));
                     const drift_frames = actual_frames - expected_frames;
                     const drift_ms = (drift_frames / self.source_media.frame_rate_float) * 1000.0;
