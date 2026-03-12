@@ -97,11 +97,8 @@ pub const VideoMonitor = struct {
                 self.last_drift_check_ns = 0;
             }
 
-            // Accumulate frame_delta_ns
-            self.playback_time_ns += @as(
-                u64,
-                @intFromFloat(@as(f64, @floatFromInt(ui_frame_delta_ns)) * self.ctrl_playback_speed),
-            );
+            // Accumulate real wall time (playback speed affects frame_duration_ns, not time accumulation)
+            self.playback_time_ns += ui_frame_delta_ns;
         }
 
         const time_since_last_frame_ns = self.playback_time_ns - self.last_frame_time_ns;
@@ -112,29 +109,26 @@ pub const VideoMonitor = struct {
         else
             self.base_frame_duration_ns;
 
-        // Should we decode? Yes if:
-        // - Frame index changed (first frame, seek, or playback advanced)
-        // - OR we're playing and enough time has passed
-        const advance = self.ctrl_playback != 0.0 and frame_duration_ns > 0 and time_since_last_frame_ns >= frame_duration_ns;
+        // Calculate how many frames to advance (handles high-speed playback)
+        // At high speeds (e.g., 4x), a single vsync might accumulate enough time for multiple frames
+        if (self.ctrl_playback != 0.0 and frame_duration_ns > 0 and time_since_last_frame_ns >= frame_duration_ns) {
+            // Integer division: how many complete frames fit in accumulated time?
+            const frames_to_advance = time_since_last_frame_ns / frame_duration_ns;
+            const duration = @as(usize, @intCast(self.source_media.duration_in_frames));
 
-        // Advance to next frame only if playing and time elapsed
-        if (advance) {
             if (self.ctrl_playback > 0.0) {
-                // Advance Forward
-                self.current_frame_index = (self.current_frame_index + 1) % @as(usize, @intCast(self.source_media.duration_in_frames));
+                // Forward: jump multiple frames with wraparound
+                self.current_frame_index = (self.current_frame_index + frames_to_advance) % duration;
             } else if (self.ctrl_playback < 0.0) {
-                // Advance Backward (wrap at 0)
-                self.current_frame_index = if (self.current_frame_index == 0)
-                    @as(usize, @intCast(self.source_media.duration_in_frames - 1))
-                else
-                    self.current_frame_index - 1;
+                // Backward: add duration to ensure positive before modulo
+                self.current_frame_index = (self.current_frame_index + duration - (frames_to_advance % duration)) % duration;
             }
 
-            // debug measuerment
-            self.total_frames_advanced += 1;
+            // Update timing state: consume the time for all advanced frames
+            self.last_frame_time_ns += frames_to_advance * frame_duration_ns;
 
-            //INFO: new accurate timing - carry vsync quantizion error forward
-            self.last_frame_time_ns += frame_duration_ns;
+            // Track total frames advanced (for drift checking)
+            self.total_frames_advanced += frames_to_advance;
         }
 
         if (self.debug) {
