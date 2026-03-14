@@ -172,9 +172,9 @@ fn renderUiFrame(self: *Platform) void {
         };
         self.render = state;
     }
-    const state = self.render orelse return;
+    const render = self.render orelse return;
 
-    state.ui_frame += 1;
+    render.ui_frame += 1;
 
     // ============ Get drawable and render
     const drawable_ptr = self.window.getNextDrawable() orelse return;
@@ -225,16 +225,16 @@ fn renderUiFrame(self: *Platform) void {
 
     self.app.buildUI(self.imgui_ctx);
 
-    state.video_monitor.ctrl_playback = self.app.playback_state.playing;
-    state.video_monitor.ctrl_playback_speed = self.app.playback_state.speed;
+    render.video_monitor.ctrl_playback = self.app.playback_state.playing;
+    render.video_monitor.ctrl_playback_speed = self.app.playback_state.speed;
 
     // Decode the frame with Metal
-    decodeVideoFrame(state) catch {};
+    decodeVideoFrame(render) catch {};
 
-    self.app.playback_state.current_frame = state.video_monitor.current_frame_index;
+    self.app.playback_state.current_frame = render.video_monitor.current_frame_index;
 
     // Layer 1: Video
-    if (state.packed_metal_texture) |*texture| {
+    if (render.packed_metal_texture) |*texture| {
         const VideoUniforms = extern struct {
             video_size: [2]f32,
             viewport_size: [2]f32,
@@ -242,8 +242,8 @@ fn renderUiFrame(self: *Platform) void {
 
         const video_uniforms = VideoUniforms{
             .video_size = .{
-                @floatFromInt(state.source_media.resolution.width),
-                @floatFromInt(state.source_media.resolution.height),
+                @floatFromInt(render.source_media.resolution.width),
+                @floatFromInt(render.source_media.resolution.height),
             },
             .viewport_size = .{ display_width_pts, display_height_pts },
         };
