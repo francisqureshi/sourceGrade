@@ -169,6 +169,25 @@ public func metal_window_show(_ windowPtr: UnsafeMutableRawPointer) {
     window.makeKeyAndOrderFront(nil)
 }
 
+// MARK: - Application Delegate
+
+/// Application delegate to handle quit events gracefully
+class AppDelegate: NSObject, NSApplicationDelegate {
+    var shouldKeepRunning = true
+
+    /// Called when user requests quit (Cmd+Q, menu Quit, or terminate())
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Don't actually terminate - just signal we should stop
+        shouldKeepRunning = false
+
+        // Tell NSApplication to NOT terminate (we'll exit cleanly instead)
+        return .terminateCancel
+    }
+}
+
+/// Shared application delegate instance
+private var appDelegate: AppDelegate?
+
 /// Initialize NSApplication with menu bar and activation policy.
 /// Call before showing windows or running the event loop.
 @_cdecl("metal_window_init_app")
@@ -177,6 +196,12 @@ public func metal_window_init_app() {
     let _ = NSApplication.shared
     NSApplication.shared.setActivationPolicy(.regular)
     NSApplication.shared.activate(ignoringOtherApps: true)
+
+    // Set up our delegate to intercept quit
+    if appDelegate == nil {
+        appDelegate = AppDelegate()
+        NSApplication.shared.delegate = appDelegate
+    }
 
     // Create main menu with Quit item (Cmd+Q)
     let mainMenu = NSMenu()
@@ -188,7 +213,7 @@ public func metal_window_init_app() {
     let appMenu = NSMenu()
     appMenuItem.submenu = appMenu
 
-    // Quit menu item
+    // Quit menu item - still uses terminate(), but delegate will intercept it
     let quitItem = NSMenuItem(
         title: "Quit",
         action: #selector(NSApplication.terminate(_:)),
@@ -199,15 +224,43 @@ public func metal_window_init_app() {
     NSApplication.shared.mainMenu = mainMenu
 }
 
-/// Run the NSApplication event loop (blocks forever).
-/// This is the main run loop for macOS apps.
+/// Run the NSApplication event loop with clean exit support.
+/// Returns when the delegate signals shutdown (doesn't block forever).
 @_cdecl("metal_window_run_app")
 public func metal_window_run_app() {
     // Initialize NSApplication if needed
     let _ = NSApplication.shared
     NSApplication.shared.setActivationPolicy(.regular)
     NSApplication.shared.activate(ignoringOtherApps: true)
-    NSApplication.shared.run()
+
+    // Create and set our delegate if not already set
+    if appDelegate == nil {
+        appDelegate = AppDelegate()
+        NSApplication.shared.delegate = appDelegate
+    }
+
+    // Manual event loop - processes events while delegate says to keep running
+    while appDelegate?.shouldKeepRunning ?? false {
+        // Process next event with a short timeout to allow checking shouldKeepRunning
+        // Use 100ms timeout as a compromise between responsiveness and CPU usage
+        if let event = NSApplication.shared.nextEvent(
+            matching: .any,
+            until: Date(timeIntervalSinceNow: 0.1),  // 100ms timeout
+            inMode: .default,
+            dequeue: true
+        ) {
+            NSApplication.shared.sendEvent(event)
+
+            // Check flag after processing event (in case it was terminate())
+            if !(appDelegate?.shouldKeepRunning ?? false) {
+                break
+            }
+        }
+        // If no event (timeout), loop continues and checks shouldKeepRunning again
+    }
+
+    // Clean exit - event loop stopped, will return to Zig
+    print("Swift: Event loop exiting cleanly")
 }
 
 /// Check if the window is still visible and the app is running.

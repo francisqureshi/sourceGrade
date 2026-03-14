@@ -133,7 +133,7 @@ pub const Platform = struct {
         self.renderer.deinit();
         self.window.deinit();
 
-        std.debug.print("bye!", .{});
+        std.debug.print("bye!\n", .{});
     }
 
     /// Runs the macOS event loop. Blocks forever until the app terminates.

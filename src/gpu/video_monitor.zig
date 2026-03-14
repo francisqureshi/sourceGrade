@@ -1,5 +1,8 @@
 const std = @import("std");
 const media = @import("../io/media.zig");
+const async_learning = @import("../async.zig");
+
+const Io = std.Io;
 
 pub const MonitorResult = union(enum) {
     ok,
@@ -16,13 +19,13 @@ pub const MonitorStats = struct {
 
 pub const VideoMonitor = struct {
     source_media: *media.SourceMedia,
-    io: std.Io,
+    io: Io,
     decode_arena: std.heap.ArenaAllocator,
 
     ctrl_playback: f32,
     ctrl_playback_speed: f32, // 1.0 = normal speed, 0.5 = half speed, 2.0 = double speed
 
-    last_timestamp: std.Io.Clock.Timestamp,
+    last_timestamp: Io.Clock.Timestamp,
     playback_time_ns: u64,
     base_frame_duration_ns: u64,
     last_frame_time_ns: u64,
@@ -33,17 +36,17 @@ pub const VideoMonitor = struct {
 
     //  debug fields:
     debug: bool,
-    playback_started_at: ?std.Io.Clock.Timestamp, // When did playback start?
+    playback_started_at: ?Io.Clock.Timestamp, // When did playback start?
     total_frames_advanced: u64, // How many frames have we shown?
     last_drift_check_ns: u64, // When did we last print stats?
 
     /// Initialize with IO (for timestamps)
     pub fn init(
         source_media: *media.SourceMedia,
-        io: std.Io,
+        io: Io,
         allocator: std.mem.Allocator,
     ) !VideoMonitor {
-        const last_timestamp = std.Io.Clock.Timestamp.now(io, .awake);
+        const last_timestamp = Io.Clock.Timestamp.now(io, .awake);
         const base_frame_duration_ns: u64 = @intFromFloat(std.time.ns_per_s / source_media.frame_rate_float);
 
         return .{
@@ -71,10 +74,18 @@ pub const VideoMonitor = struct {
         };
     }
 
-    /// Called every  Vsync
+    pub fn pushMontior(self: *VideoMonitor) void {
+
+        //Async / Conncurrent test
+        const timing_rate_ms: i64 = 40;
+        var clock_task = try self.io.concurrent(async_learning.clockA, .{ self.io, timing_rate_ms });
+        defer clock_task.cancel(self.io);
+    }
+
+    /// Called every Vsync
     /// if playing, monitor() checks to see if we need to advance a frame with playback speed in mind
     pub fn monitor(self: *VideoMonitor) MonitorResult {
-        const now = std.Io.Clock.Timestamp.now(self.io, .awake);
+        const now = Io.Clock.Timestamp.now(self.io, .awake);
         const elapsed_duration = self.last_timestamp.durationTo(now);
         const ui_frame_delta_ns: u64 = @intCast(@max(0, elapsed_duration.raw.nanoseconds));
         self.last_timestamp = now;

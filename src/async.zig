@@ -19,7 +19,8 @@ pub fn clockA(io: Io, timing: i64) void {
         const sleep_duration_ns: i64 = @as(i64, @intCast(next_tick_ns)) - @as(i64, @intCast(elapsed_ns));
 
         if (sleep_duration_ns > 0) {
-            io.sleep(.fromNanoseconds(@intCast(sleep_duration_ns)), .awake) catch {};
+            // Check if sleep was cancelled (task.cancel was called)
+            io.sleep(.fromNanoseconds(@intCast(sleep_duration_ns)), .awake) catch break;
         }
 
         tick += 1;
