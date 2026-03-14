@@ -29,10 +29,5 @@ pub fn main(init: std.process.Init.Minimal) !void {
     var platform = try Platform.init(&app);
     defer platform.deinit();
 
-    switch (builtin.os.tag) {
-        .macos => platform.startDisplayLink(),
-        else => {},
-    }
-
     try platform.run();
 }

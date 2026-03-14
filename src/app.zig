@@ -24,7 +24,7 @@ pub const Playback = struct {
 pub const App = struct {
     allocator: Allocator,
     io: Io,
-    rndr_config: renderer.RenderConfig,
+    rndr_config: renderer.RenderConfig, //FIXME: this is just cfg now, migrate to toml cfg?
     wnd_config: WindowConfig,
     test_args: TestingConfig,
 
@@ -35,6 +35,8 @@ pub const App = struct {
 
     pub fn init(allocator: Allocator, io: Io) App {
 
+        // FIXME: Implement for macos too!! / via toml
+        //
         // Window config
         const wnd_config = WindowConfig.maximised;
 
@@ -57,6 +59,8 @@ pub const App = struct {
             .video_path = "/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov",
             // .video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov",
         };
+
+        //FIXME: cfg
 
         const playback_state: Playback = .{
             .playing = 0.0,

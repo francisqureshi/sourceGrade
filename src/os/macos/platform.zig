@@ -37,7 +37,7 @@ pub const Platform = struct {
     /// Render State
     /// Lazily initialized on first frame.
     /// Holds video source, decoder state, and textures.
-    render_state: ?*Render,
+    render: ?*Render,
     /// Timestamp when the platform was initialized (for elapsed time).
     start_time: std.Io.Clock.Timestamp,
 
@@ -70,6 +70,7 @@ pub const Platform = struct {
         const imgui_ctx = try app.allocator.create(ui.ImGui);
         imgui_ctx.* = try ui.ImGui.init(app.allocator);
 
+        // FIXME:: use cfg
         imgui_ctx.display_width = 1600;
         imgui_ctx.display_height = 900;
         std.debug.print("✓ Created IMGUI context (triple-buffered)\n\n", .{});
@@ -101,7 +102,7 @@ pub const Platform = struct {
             .imgui_ctx = imgui_ctx,
             .ui_renderer = imgui_renderer,
             .config = app.rndr_config,
-            .render_state = null,
+            .render = null,
             .start_time = start_time,
         };
     }
@@ -122,7 +123,7 @@ pub const Platform = struct {
         self.imgui_ctx.deinit();
         self.ui_renderer.deinit();
 
-        if (self.render_state) |state| {
+        if (self.render) |state| {
             state.deinit();
             self.app.allocator.destroy(state.source_media);
             self.app.allocator.destroy(state);
@@ -136,10 +137,11 @@ pub const Platform = struct {
     }
 
     /// Runs the macOS event loop. Blocks forever until the app terminates.
-    /// All rendering happens via CVDisplayLink callbacks while this runs.
-    /// The display link must be started before calling this.
+    /// Starts the CVDisplayLink and runs the NSApplication event loop.
+    /// All rendering happens via CVDisplayLink callbacks.
     pub fn run(self: *Platform) !void {
-        _ = self;
+        self.startDisplayLink();
+
         // Run NSApplication event loop (blocks forever)
         Window.runEventLoop();
     }
@@ -161,16 +163,16 @@ fn displayLinkCallback(userdata: ?*anyopaque) callconv(.c) void {
 fn renderUiFrame(self: *Platform) void {
 
     // Get or init Render State
-    if (self.render_state == null) {
+    if (self.render == null) {
         const state = self.app.allocator.create(Render) catch return;
         state.* = Render.init(self) catch |err| {
             std.debug.print("Error: Failed to init render state ({})\n", .{err});
             self.app.allocator.destroy(state);
             return;
         };
-        self.render_state = state;
+        self.render = state;
     }
-    const state = self.render_state orelse return;
+    const state = self.render orelse return;
 
     state.ui_frame += 1;
 
