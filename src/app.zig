@@ -17,7 +17,8 @@ const TestingConfig = struct {
 
 pub const Playback = struct {
     playing: f32,
-    speed: f32,
+    speed: std.atomic.Value(f32),
+    // speed: f32,
     current_frame: u64,
 };
 
@@ -64,7 +65,8 @@ pub const App = struct {
 
         const playback_state: Playback = .{
             .playing = 0.0,
-            .speed = 1.0,
+            .speed = std.atomic.Value(f32).init(1.0),
+            // .speed = 1.0,
             .current_frame = 0,
         };
 
@@ -160,15 +162,18 @@ pub const App = struct {
         return .{ .models = models };
     }
 
-    pub fn buildUI(self: *App, imgui: *ui.ImGui) void {
+    pub fn buildUI(self: *App, imgui: *ui.ImGui) !void {
 
         // Test slider and rects
-        imgui.slider(1, 1400, 300, 100, 50, &self.test_slider_value, 0, 1) catch {};
+        _ = try imgui.slider(1, 1400, 300, 100, 50, &self.test_slider_value, 0, 1);
         imgui.addRect(1400, 50, 100, 100, ui.ImGui.packColor(self.test_slider_value, 1, 0, 1.0)) catch {};
         imgui.addRect(1450, 100, 100, 100, ui.ImGui.packColor(0, 0, 1, 1.0)) catch {};
 
         // ============ Video Controls
-        imgui.slider(2, 600, 800, 400, 10, &self.playback_state.speed, 0, 32) catch {};
+        var ctrl_slider: f32 = self.playback_state.speed.load(.acquire);
+        if (try imgui.slider(2, 600, 800, 400, 10, &ctrl_slider, 0, 32)) {
+            self.playback_state.speed.store(ctrl_slider, .release);
+        }
 
         const fwd_button_text: []const u8 = if (self.playback_state.playing != 0.0) "pause" else "play >";
         const rev_button_text: []const u8 = if (self.playback_state.playing != 0.0) "pause" else "< play";
@@ -178,6 +183,7 @@ pub const App = struct {
 
         if (fwd_clicked) {
             if (self.playback_state.playing == 0.0) self.playback_state.playing = 1.0 else self.playback_state.playing = 0.0;
+            //try self.video_monitor.startMonitor(self.io);
         }
 
         if (rev_clicked) {
@@ -189,7 +195,7 @@ pub const App = struct {
         const disp_frame_num = std.fmt.bufPrint(
             &disp_frame_buf,
             "Frame: {d} Playback Speed: {d:.2}",
-            .{ self.playback_state.current_frame, self.playback_state.speed },
+            .{ self.playback_state.current_frame, self.playback_state.speed.load(.acquire) },
         ) catch "CantGetFrame";
         _ = ui.ImGui.TextWidget.addText(imgui, disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};
 

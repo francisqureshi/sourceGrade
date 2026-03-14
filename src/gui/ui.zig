@@ -342,11 +342,12 @@ pub const ImGui = struct {
     }
 
     /// Immediate-mode slider widget
-    /// Returns new value, updates value_ptr
-    pub fn slider(self: *ImGui, id: u32, x: f32, y: f32, w: f32, h: f32, value_ptr: *f32, min_val: f32, max_val: f32) !void {
+    /// Returns true if value_ptr updates, and updates *f32 value_ptr
+    pub fn slider(self: *ImGui, id: u32, x: f32, y: f32, w: f32, h: f32, value_ptr: *f32, min_val: f32, max_val: f32) !bool {
         // Hit-test uses the full height for easy clicking
         const is_hot = self.isInRect(x, y, w, h);
         const is_active = self.active_id == id;
+        var val_changed: bool = false;
 
         if (is_hot) self.hot_id = id;
 
@@ -356,6 +357,7 @@ pub const ImGui = struct {
                 // Update value based on mouse position
                 const t = std.math.clamp((self.mouse_x - x) / w, 0.0, 1.0);
                 value_ptr.* = min_val + t * (max_val - min_val);
+                val_changed = true;
             } else {
                 self.active_id = 0;
             }
@@ -381,6 +383,8 @@ pub const ImGui = struct {
         const thumb_x = x + t * w - thumb_width / 2;
         const thumb_color = packColor(1.0, 1.0, 1.0, 1.0);
         try self.addRect(thumb_x, y, thumb_width, h, thumb_color);
+
+        return val_changed;
     }
 
     /// Get the number of indices to render

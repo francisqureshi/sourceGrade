@@ -23,7 +23,7 @@ pub const VideoMonitor = struct {
     decode_arena: std.heap.ArenaAllocator,
 
     ctrl_playback: f32,
-    ctrl_playback_speed: f32, // 1.0 = normal speed, 0.5 = half speed, 2.0 = double speed
+    playback_speed: *std.atomic.Value(f32), // 1.0 = normal speed, 0.5 = half speed, 2.0 = double speed
 
     last_timestamp: Io.Clock.Timestamp,
     playback_time_ns: u64,
@@ -45,6 +45,7 @@ pub const VideoMonitor = struct {
         source_media: *media.SourceMedia,
         io: Io,
         allocator: std.mem.Allocator,
+        playback_speed: *std.atomic.Value(f32),
     ) !VideoMonitor {
         const last_timestamp = Io.Clock.Timestamp.now(io, .awake);
         const base_frame_duration_ns: u64 = @intFromFloat(std.time.ns_per_s / source_media.frame_rate_float);
@@ -55,7 +56,7 @@ pub const VideoMonitor = struct {
             .decode_arena = std.heap.ArenaAllocator.init(allocator),
 
             .ctrl_playback = 0.0,
-            .ctrl_playback_speed = 1.0,
+            .playback_speed = playback_speed,
             .last_timestamp = last_timestamp,
 
             .base_frame_duration_ns = base_frame_duration_ns,
@@ -74,6 +75,7 @@ pub const VideoMonitor = struct {
         };
     }
 
+    //FIXME: WIP WIP
     pub fn pushMontior(self: *VideoMonitor) void {
 
         //Async / Conncurrent test
@@ -113,8 +115,8 @@ pub const VideoMonitor = struct {
         const time_since_last_frame_ns = self.playback_time_ns - self.last_frame_time_ns;
 
         // Adjust frame duration by playback speed
-        const frame_duration_ns = if (self.ctrl_playback_speed > 0.0)
-            @as(u64, @intFromFloat(@as(f64, @floatFromInt(self.base_frame_duration_ns)) / self.ctrl_playback_speed))
+        const frame_duration_ns = if (self.playback_speed.load(.acquire) > 0.0)
+            @as(u64, @intFromFloat(@as(f64, @floatFromInt(self.base_frame_duration_ns)) / self.playback_speed.load(.acquire)))
         else
             self.base_frame_duration_ns;
 
@@ -148,7 +150,7 @@ pub const VideoMonitor = struct {
                 if (wall_elapsed_ns >= self.last_drift_check_ns + check_interval_ns) {
                     // Calculate expected vs actual frames
                     const wall_elapsed_s = @as(f64, @floatFromInt(wall_elapsed_ns)) / @as(f64, std.time.ns_per_s);
-                    const expected_frames = wall_elapsed_s * self.source_media.frame_rate_float * self.ctrl_playback_speed;
+                    const expected_frames = wall_elapsed_s * self.source_media.frame_rate_float * self.playback_speed.load(.acquire);
                     const actual_frames = @as(f64, @floatFromInt(self.total_frames_advanced));
                     const drift_frames = actual_frames - expected_frames;
                     const drift_ms = (drift_frames / self.source_media.frame_rate_float) * 1000.0;

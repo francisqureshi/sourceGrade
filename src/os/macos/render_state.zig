@@ -55,6 +55,7 @@ pub const Render = struct {
             source_media,
             platform.app.io,
             platform.app.allocator,
+            &platform.app.playback_state.speed,
         );
 
         std.debug.print("✓ Loaded video: {d}x{d} @ {d:.2}fps, {d} frames\n\n", .{
