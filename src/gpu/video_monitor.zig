@@ -23,13 +23,19 @@ pub const VideoMonitor = struct {
     decode_arena: std.heap.ArenaAllocator,
 
     ctrl_playback: f32,
-    playback_speed: *std.atomic.Value(f32), // 1.0 = normal speed, 0.5 = half speed, 2.0 = double speed
+    playback_speed: *std.atomic.Value(f32),
+
+    // Thread-safe shared state (read by vsync, written by monitor)
+    current_frame_index: std.atomic.Value(usize),
+    running: std.atomic.Value(bool), // Monitor thread stop signal
+
+    // Monitor thread handle
+    monitor_task: ?*std.Io.Future(void) = null,
 
     last_timestamp: Io.Clock.Timestamp,
     playback_time_ns: u64,
     base_frame_duration_ns: u64,
     last_frame_time_ns: u64,
-    current_frame_index: usize,
     last_decoded_frame_index: ?usize,
 
     monitor_stats: MonitorStats,
@@ -63,7 +69,10 @@ pub const VideoMonitor = struct {
             .playback_time_ns = 0,
             .last_frame_time_ns = 0,
 
-            .current_frame_index = 0,
+            //WARN: Maybe one day this is set UI/ App / higher pwrs?
+            .current_frame_index = std.atomic.Value(usize).init(0),
+            .running = std.atomic.Value(bool).init(false),
+
             .last_decoded_frame_index = null,
             .monitor_stats = .{},
 
@@ -82,6 +91,59 @@ pub const VideoMonitor = struct {
         const timing_rate_ms: i64 = 40;
         var clock_task = try self.io.concurrent(async_learning.clockA, .{ self.io, timing_rate_ms });
         defer clock_task.cancel(self.io);
+    }
+
+    fn monitorLoop(self: *VideoMonitor, io: Io) void {
+        const start_time = std.Io.Clock.Timestamp.now(io, .awake);
+        var next_tick_ns: u64 = 0;
+
+        while (self.running.load(.acquire)) {
+            // 1. Calculate when NEXT frame should happen
+            const speed = self.playback_speed.load(.acquire);
+            const frame_duration_ns = if (speed > 0.0)
+                @as(u64, @intFromFloat(@as(f64, @floatFromInt(self.base_frame_duration_ns)) / speed))
+            else
+                self.base_frame_duration_ns;
+
+            next_tick_ns += frame_duration_ns;
+
+            // 2. Sleep until then (error compensation!)
+            const now = std.Io.Clock.Timestamp.now(io, .awake);
+            const elapsed_ns: u64 = @intCast(@max(0, start_time.durationTo(now).nanoseconds));
+            const sleep_duration_ns: i64 = @as(i64, @intCast(next_tick_ns)) - @as(i64, @intCast(elapsed_ns));
+
+            if (sleep_duration_ns > 0) {
+                io.sleep(.fromNanoseconds(@intCast(sleep_duration_ns)), .awake) catch break;
+            }
+
+            // 3. Advance frame atomically
+            const old_idx = self.current_frame_index.load(.acquire);
+            const new_idx = (old_idx + 1) % self.source_media.duration_in_frames;
+            self.current_frame_index.store(new_idx, .release);
+        }
+    }
+
+    pub fn startMonitor(self: *VideoMonitor, io: Io) !void {
+        // Already running? Ignore (idempotent)
+        if (self.monitor_task != null) return;
+
+        // Set running flag
+        self.running.store(true, .release);
+
+        // Spawn concurrent task
+        self.monitor_task = try io.concurrent(monitorLoop, .{ self, io });
+    }
+
+    pub fn stopMonitor(self: *VideoMonitor, io: Io) void {
+        // Not running? Nothing to do
+        if (self.monitor_task == null) return;
+
+        // Signal thread to stop
+        self.running.store(false, .release);
+
+        // Cancel the task (interrupts sleep)
+        self.monitor_task.?.cancel(io);
+        self.monitor_task = null;
     }
 
     /// Called every Vsync
@@ -129,10 +191,13 @@ pub const VideoMonitor = struct {
 
             if (self.ctrl_playback > 0.0) {
                 // Forward: jump multiple frames with wraparound
-                self.current_frame_index = (self.current_frame_index + frames_to_advance) % duration;
+                const fwd = (self.current_frame_index.load(.acquire) + frames_to_advance) % duration;
+                self.current_frame_index.store(fwd, .release);
             } else if (self.ctrl_playback < 0.0) {
                 // Backward: add duration to ensure positive before modulo
-                self.current_frame_index = (self.current_frame_index + duration - (frames_to_advance % duration)) % duration;
+                const bkwd = (self.current_frame_index.load(.acquire) + duration - (frames_to_advance % duration)) % duration;
+
+                self.current_frame_index.store(bkwd, .release);
             }
 
             // Update timing state: consume the time for all advanced frames
@@ -167,7 +232,7 @@ pub const VideoMonitor = struct {
             }
         }
 
-        const frame_changed = self.last_decoded_frame_index == null or self.last_decoded_frame_index.? != self.current_frame_index;
+        const frame_changed = self.last_decoded_frame_index == null or self.last_decoded_frame_index.? != self.current_frame_index.load(.acquire);
 
         // Write Stats
         self.monitor_stats.frame_duration_ns = frame_duration_ns;
@@ -177,11 +242,11 @@ pub const VideoMonitor = struct {
         if (frame_changed) {
 
             // Mark this frame as decoded
-            self.last_decoded_frame_index = self.current_frame_index;
+            self.last_decoded_frame_index = self.current_frame_index.load(.acquire);
 
             return .{
                 .needs_decode = .{
-                    .frame_idx = self.current_frame_index,
+                    .frame_idx = self.current_frame_index.load(.acquire),
                 },
             };
         }

@@ -231,7 +231,7 @@ fn renderUiFrame(self: *Platform) !void {
     // Decode the frame with Metal
     decodeVideoFrame(render) catch {};
 
-    self.app.playback_state.current_frame = render.video_monitor.current_frame_index;
+    self.app.playback_state.current_frame = render.video_monitor.current_frame_index.load(.acquire);
 
     // Layer 1: Video
     if (render.packed_metal_texture) |*texture| {
