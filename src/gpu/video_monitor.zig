@@ -88,29 +88,50 @@ pub const VideoMonitor = struct {
     fn monitorLoop(self: *VideoMonitor, io: Io) void {
         const start_time = std.Io.Clock.Timestamp.now(io, .awake);
         var next_tick_ns: u64 = 0;
+        var last_frame_ns: u64 = 0; // Track when we last advanced a frame
+        const duration = self.source_media.duration_in_frames;
 
         while (self.running.load(.acquire)) {
-            // 1. Calculate when NEXT frame should happen
+            // 1. Read playback state
+            const direction = self.ctrl_playback.load(.acquire);
             const speed = self.playback_speed.load(.acquire);
+
+            // Break if paused
+            if (direction == 0.0) break;
+
+            // Break if speed is 0 (can't calculate frame duration)
             const frame_duration_ns = if (speed > 0.0)
                 @as(u64, @intFromFloat(@as(f64, @floatFromInt(self.base_frame_duration_ns)) / speed))
             else
-                self.base_frame_duration_ns;
+                break; //WARN: how does this effect the button lol? maybe 0.0001 slider minimun is the solution..
 
             next_tick_ns += frame_duration_ns;
 
-            // 2. Sleep until then (error compensation!)
+            // 2. Sleep until next frame (error compensation)
             const now = std.Io.Clock.Timestamp.now(io, .awake);
-            const elapsed_ns: u64 = @intCast(@max(0, start_time.durationTo(now).nanoseconds));
+            const elapsed_ns: u64 = @intCast(@max(0, start_time.durationTo(now).raw.nanoseconds));
             const sleep_duration_ns: i64 = @as(i64, @intCast(next_tick_ns)) - @as(i64, @intCast(elapsed_ns));
 
             if (sleep_duration_ns > 0) {
                 io.sleep(.fromNanoseconds(@intCast(sleep_duration_ns)), .awake) catch break;
             }
 
-            // 3. Advance frame atomically
+            // 3. Calculate how many frames to advance (handles high-speed playback)
+            const now_after = std.Io.Clock.Timestamp.now(io, .awake);
+            const total_elapsed: u64 = @intCast(@max(0, start_time.durationTo(now_after).raw.nanoseconds));
+            const time_since_last_frame = total_elapsed - last_frame_ns;
+            const frames_to_advance = time_since_last_frame / frame_duration_ns;
+
+            // Update last frame time (consume the time for frames advanced)
+            last_frame_ns += frames_to_advance * frame_duration_ns;
+
+            // 4. Advance frame atomically (forward or backward)
             const old_idx = self.current_frame_index.load(.acquire);
-            const new_idx = (old_idx + 1) % self.source_media.duration_in_frames;
+            const new_idx = if (direction > 0.0)
+                (old_idx + frames_to_advance) % duration // Forward
+            else
+                (old_idx + duration - (frames_to_advance % duration)) % duration; // Backward
+
             self.current_frame_index.store(new_idx, .release);
         }
     }
