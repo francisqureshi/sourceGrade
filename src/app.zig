@@ -16,9 +16,8 @@ const TestingConfig = struct {
 };
 
 pub const Playback = struct {
-    playing: f32,
+    playing: std.atomic.Value(f32),
     speed: std.atomic.Value(f32),
-    // speed: f32,
     current_frame: u64,
 };
 
@@ -64,7 +63,7 @@ pub const App = struct {
         //FIXME: cfg
 
         const playback_state: Playback = .{
-            .playing = 0.0,
+            .playing = std.atomic.Value(f32).init(0.0),
             .speed = std.atomic.Value(f32).init(1.0),
             // .speed = 1.0,
             .current_frame = 0,
@@ -175,19 +174,23 @@ pub const App = struct {
             self.playback_state.speed.store(ctrl_slider, .release);
         }
 
-        const fwd_button_text: []const u8 = if (self.playback_state.playing != 0.0) "pause" else "play >";
-        const rev_button_text: []const u8 = if (self.playback_state.playing != 0.0) "pause" else "< play";
+        const fwd_button_text: []const u8 = if (self.playback_state.playing.load(.acquire) != 0.0) "pause" else "play >";
+        const rev_button_text: []const u8 = if (self.playback_state.playing.load(.acquire) != 0.0) "pause" else "< play";
 
         const rev_clicked = imgui.button(3, 445, 450, 150, 50, rev_button_text) catch false;
         const fwd_clicked = imgui.button(4, 605, 450, 150, 50, fwd_button_text) catch false;
 
         if (fwd_clicked) {
-            if (self.playback_state.playing == 0.0) self.playback_state.playing = 1.0 else self.playback_state.playing = 0.0;
+            const current = self.playback_state.playing.load(.acquire);
+            const new_state: f32 = if (current == 0.0) 1.0 else 0.0;
+            self.playback_state.playing.store(new_state, .release);
             //try self.video_monitor.startMonitor(self.io);
         }
 
         if (rev_clicked) {
-            if (self.playback_state.playing == 0.0) self.playback_state.playing = -1.0 else self.playback_state.playing = 0.0;
+            const current = self.playback_state.playing.load(.acquire);
+            const new_state: f32 = if (current == 0.0) -1.0 else 0.0;
+            self.playback_state.playing.store(new_state, .release);
         }
 
         // Frame counter display

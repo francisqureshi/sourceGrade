@@ -55,6 +55,7 @@ pub const Render = struct {
             source_media,
             platform.app.io,
             platform.app.allocator,
+            &platform.app.playback_state.playing,
             &platform.app.playback_state.speed,
         );
 

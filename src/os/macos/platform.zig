@@ -225,7 +225,7 @@ fn renderUiFrame(self: *Platform) !void {
 
     try self.app.buildUI(self.imgui_ctx);
 
-    render.video_monitor.ctrl_playback = self.app.playback_state.playing;
+    // render.video_monitor.ctrl_playback = self.app.playback_state.playing;
     // render.video_monitor.ctrl_playback_speed = self.app.playback_state.speed.load(.acquire);
 
     // Decode the frame with Metal

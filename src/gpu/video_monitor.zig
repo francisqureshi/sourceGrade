@@ -22,7 +22,7 @@ pub const VideoMonitor = struct {
     io: Io,
     decode_arena: std.heap.ArenaAllocator,
 
-    ctrl_playback: f32,
+    ctrl_playback: *std.atomic.Value(f32),
     playback_speed: *std.atomic.Value(f32),
 
     // Thread-safe shared state (read by vsync, written by monitor)
@@ -51,6 +51,7 @@ pub const VideoMonitor = struct {
         source_media: *media.SourceMedia,
         io: Io,
         allocator: std.mem.Allocator,
+        ctrl_playback: *std.atomic.Value(f32),
         playback_speed: *std.atomic.Value(f32),
     ) !VideoMonitor {
         const last_timestamp = Io.Clock.Timestamp.now(io, .awake);
@@ -61,7 +62,7 @@ pub const VideoMonitor = struct {
             .io = io,
             .decode_arena = std.heap.ArenaAllocator.init(allocator),
 
-            .ctrl_playback = 0.0,
+            .ctrl_playback = ctrl_playback,
             .playback_speed = playback_speed,
             .last_timestamp = last_timestamp,
 
@@ -69,7 +70,7 @@ pub const VideoMonitor = struct {
             .playback_time_ns = 0,
             .last_frame_time_ns = 0,
 
-            //WARN: Maybe one day this is set UI/ App / higher pwrs?
+            //WARN: Maybe one day this is set by UI/ App / higher pwrs?
             .current_frame_index = std.atomic.Value(usize).init(0),
             .running = std.atomic.Value(bool).init(false),
 
@@ -82,15 +83,6 @@ pub const VideoMonitor = struct {
             .total_frames_advanced = 0,
             .last_drift_check_ns = 0,
         };
-    }
-
-    //FIXME: WIP WIP
-    pub fn pushMontior(self: *VideoMonitor) void {
-
-        //Async / Conncurrent test
-        const timing_rate_ms: i64 = 40;
-        var clock_task = try self.io.concurrent(async_learning.clockA, .{ self.io, timing_rate_ms });
-        defer clock_task.cancel(self.io);
     }
 
     fn monitorLoop(self: *VideoMonitor, io: Io) void {
@@ -163,7 +155,7 @@ pub const VideoMonitor = struct {
         //  means 40ms is every 4.8 vsyncs..
         // std.debug.print("frame delta: {}ns\n", .{ui_frame_delta_ns});
 
-        if (self.ctrl_playback != 0.0) {
+        if (self.ctrl_playback.load(.acquire) != 0.0) {
             // debug start drift tracking on first playback
             if (self.playback_started_at == null) {
                 self.playback_started_at = now;
@@ -184,16 +176,16 @@ pub const VideoMonitor = struct {
 
         // Calculate how many frames to advance (handles high-speed playback)
         // At high speeds (e.g., 4x), a single vsync might accumulate enough time for multiple frames
-        if (self.ctrl_playback != 0.0 and frame_duration_ns > 0 and time_since_last_frame_ns >= frame_duration_ns) {
+        if (self.ctrl_playback.load(.acquire) != 0.0 and frame_duration_ns > 0 and time_since_last_frame_ns >= frame_duration_ns) {
             // Integer division: how many complete frames fit in accumulated time?
             const frames_to_advance = time_since_last_frame_ns / frame_duration_ns;
             const duration = @as(usize, @intCast(self.source_media.duration_in_frames));
 
-            if (self.ctrl_playback > 0.0) {
+            if (self.ctrl_playback.load(.acquire) > 0.0) {
                 // Forward: jump multiple frames with wraparound
                 const fwd = (self.current_frame_index.load(.acquire) + frames_to_advance) % duration;
                 self.current_frame_index.store(fwd, .release);
-            } else if (self.ctrl_playback < 0.0) {
+            } else if (self.ctrl_playback.load(.acquire) < 0.0) {
                 // Backward: add duration to ensure positive before modulo
                 const bkwd = (self.current_frame_index.load(.acquire) + duration - (frames_to_advance % duration)) % duration;
 
