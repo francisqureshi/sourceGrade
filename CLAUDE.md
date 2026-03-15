@@ -46,7 +46,7 @@ Teaching Style Summary
 
   What I Avoid
 
-  - Writing code directly unless absolutely necessary (complex C interop patterns)
+  - Writing code directly unless absolutely necessary or for menial boilerplate tasks (C wrapper interop patterns)
   - Giving answers without explanation
   - Moving forward without confirming understanding
   - Overwhelming with unnecessary details
