@@ -163,116 +163,117 @@ pub const VideoMonitor = struct {
         self.monitor_task = null;
     }
 
-    /// Called every Vsync
-    /// if playing, monitor() checks to see if we need to advance a frame with playback speed in mind
-    pub fn monitor(self: *VideoMonitor) MonitorResult {
-        const now = Io.Clock.Timestamp.now(self.io, .awake);
-        const elapsed_duration = self.last_timestamp.durationTo(now);
-        const ui_frame_delta_ns: u64 = @intCast(@max(0, elapsed_duration.raw.nanoseconds));
-        self.last_timestamp = now;
-        // on macbook pro with 120 hz this is
-        // - ~3ms
-        // - ~8.5ms
-        // - ~8.5ms
-        // - ~10ms
-        // - ~11-12ms
-        //  About 40ms for 25fps playback but with triple buffered ui vsync of 8.3ms
-        //  means 40ms is every 4.8 vsyncs..
-        // std.debug.print("frame delta: {}ns\n", .{ui_frame_delta_ns});
-
-        if (self.ctrl_playback.load(.acquire) != 0.0) {
-            // debug start drift tracking on first playback
-            if (self.playback_started_at == null) {
-                self.playback_started_at = now;
-                self.last_drift_check_ns = 0;
-            }
-
-            // Accumulate real wall time (playback speed affects frame_duration_ns, not time accumulation)
-            self.playback_time_ns += ui_frame_delta_ns;
-        }
-
-        const time_since_last_frame_ns = self.playback_time_ns - self.last_frame_time_ns;
-
-        // Adjust frame duration by playback speed
-        const frame_duration_ns = if (self.playback_speed.load(.acquire) > 0.0)
-            @as(u64, @intFromFloat(@as(f64, @floatFromInt(self.base_frame_duration_ns)) / self.playback_speed.load(.acquire)))
-        else
-            self.base_frame_duration_ns;
-
-        // Calculate how many frames to advance (handles high-speed playback)
-        // At high speeds (e.g., 4x), a single vsync might accumulate enough time for multiple frames
-        if (self.ctrl_playback.load(.acquire) != 0.0 and frame_duration_ns > 0 and time_since_last_frame_ns >= frame_duration_ns) {
-            // Integer division: how many complete frames fit in accumulated time?
-            const frames_to_advance = time_since_last_frame_ns / frame_duration_ns;
-            const duration = @as(usize, @intCast(self.source_media.duration_in_frames));
-
-            if (self.ctrl_playback.load(.acquire) > 0.0) {
-                // Forward: jump multiple frames with wraparound
-                const fwd = (self.current_frame_index.load(.acquire) + frames_to_advance) % duration;
-                self.current_frame_index.store(fwd, .release);
-            } else if (self.ctrl_playback.load(.acquire) < 0.0) {
-                // Backward: add duration to ensure positive before modulo
-                const bkwd = (self.current_frame_index.load(.acquire) + duration - (frames_to_advance % duration)) % duration;
-
-                self.current_frame_index.store(bkwd, .release);
-            }
-
-            // Update timing state: consume the time for all advanced frames
-            self.last_frame_time_ns += frames_to_advance * frame_duration_ns;
-
-            // Track total frames advanced (for drift checking)
-            self.total_frames_advanced += frames_to_advance;
-        }
-
-        if (self.debug) {
-            if (self.playback_started_at) |start_time| {
-                const wall_elapsed_ns: u64 = @intCast(@max(0, start_time.durationTo(now).raw.nanoseconds));
-                const check_interval_ns: u64 = 2 * std.time.ns_per_s; // Check every 2 seconds
-
-                if (wall_elapsed_ns >= self.last_drift_check_ns + check_interval_ns) {
-                    // Calculate expected vs actual frames
-                    const wall_elapsed_s = @as(f64, @floatFromInt(wall_elapsed_ns)) / @as(f64, std.time.ns_per_s);
-                    const expected_frames = wall_elapsed_s * self.source_media.frame_rate_float * self.playback_speed.load(.acquire);
-                    const actual_frames = @as(f64, @floatFromInt(self.total_frames_advanced));
-                    const drift_frames = actual_frames - expected_frames;
-                    const drift_ms = (drift_frames / self.source_media.frame_rate_float) * 1000.0;
-
-                    std.debug.print("\n DRIFT CHECK @ {d:.1}s:\n", .{wall_elapsed_s});
-                    std.debug.print("   Expected frames: {d:.1}\n", .{expected_frames});
-                    std.debug.print("   Actual frames:   {}\n", .{self.total_frames_advanced});
-                    std.debug.print("   Drift:           {d:.2} frames ({d:.1}ms)\n", .{ drift_frames, drift_ms });
-                    std.debug.print("   Actual FPS:      {d:.2}\n\n", .{actual_frames / wall_elapsed_s});
-
-                    // Update last check time
-                    self.last_drift_check_ns = wall_elapsed_ns;
-                }
-            }
-        }
-
-        const frame_changed = self.last_decoded_frame_index == null or self.last_decoded_frame_index.? != self.current_frame_index.load(.acquire);
-
-        // Write Stats
-        self.monitor_stats.frame_duration_ns = frame_duration_ns;
-        self.monitor_stats.wall_clock_delta_ns = ui_frame_delta_ns;
-        self.monitor_stats.time_since_last_frame_ns = time_since_last_frame_ns;
-
-        if (frame_changed) {
-
-            // Mark this frame as decoded
-            self.last_decoded_frame_index = self.current_frame_index.load(.acquire);
-
-            return .{
-                .needs_decode = .{
-                    .frame_idx = self.current_frame_index.load(.acquire),
-                },
-            };
-        }
-
-        return .ok;
-    }
-
     pub fn deinit(self: *VideoMonitor) void {
         self.stopMonitor(self.io);
         self.decode_arena.deinit();
     }
+
+    // WARN: Previous PULL model that called every Vsync
+
+    // if playing, monitor() checks to see if we need to advance a frame with playback speed in mind
+    // pub fn monitor(self: *VideoMonitor) MonitorResult {
+    //     const now = Io.Clock.Timestamp.now(self.io, .awake);
+    //     const elapsed_duration = self.last_timestamp.durationTo(now);
+    //     const ui_frame_delta_ns: u64 = @intCast(@max(0, elapsed_duration.raw.nanoseconds));
+    //     self.last_timestamp = now;
+    //     // on macbook pro with 120 hz this is
+    //     // - ~3ms
+    //     // - ~8.5ms
+    //     // - ~8.5ms
+    //     // - ~10ms
+    //     // - ~11-12ms
+    //     //  About 40ms for 25fps playback but with triple buffered ui vsync of 8.3ms
+    //     //  means 40ms is every 4.8 vsyncs..
+    //     // std.debug.print("frame delta: {}ns\n", .{ui_frame_delta_ns});
+    //
+    //     if (self.ctrl_playback.load(.acquire) != 0.0) {
+    //         // debug start drift tracking on first playback
+    //         if (self.playback_started_at == null) {
+    //             self.playback_started_at = now;
+    //             self.last_drift_check_ns = 0;
+    //         }
+    //
+    //         // Accumulate real wall time (playback speed affects frame_duration_ns, not time accumulation)
+    //         self.playback_time_ns += ui_frame_delta_ns;
+    //     }
+    //
+    //     const time_since_last_frame_ns = self.playback_time_ns - self.last_frame_time_ns;
+    //
+    //     // Adjust frame duration by playback speed
+    //     const frame_duration_ns = if (self.playback_speed.load(.acquire) > 0.0)
+    //         @as(u64, @intFromFloat(@as(f64, @floatFromInt(self.base_frame_duration_ns)) / self.playback_speed.load(.acquire)))
+    //     else
+    //         self.base_frame_duration_ns;
+    //
+    //     // Calculate how many frames to advance (handles high-speed playback)
+    //     // At high speeds (e.g., 4x), a single vsync might accumulate enough time for multiple frames
+    //     if (self.ctrl_playback.load(.acquire) != 0.0 and frame_duration_ns > 0 and time_since_last_frame_ns >= frame_duration_ns) {
+    //         // Integer division: how many complete frames fit in accumulated time?
+    //         const frames_to_advance = time_since_last_frame_ns / frame_duration_ns;
+    //         const duration = @as(usize, @intCast(self.source_media.duration_in_frames));
+    //
+    //         if (self.ctrl_playback.load(.acquire) > 0.0) {
+    //             // Forward: jump multiple frames with wraparound
+    //             const fwd = (self.current_frame_index.load(.acquire) + frames_to_advance) % duration;
+    //             self.current_frame_index.store(fwd, .release);
+    //         } else if (self.ctrl_playback.load(.acquire) < 0.0) {
+    //             // Backward: add duration to ensure positive before modulo
+    //             const bkwd = (self.current_frame_index.load(.acquire) + duration - (frames_to_advance % duration)) % duration;
+    //
+    //             self.current_frame_index.store(bkwd, .release);
+    //         }
+    //
+    //         // Update timing state: consume the time for all advanced frames
+    //         self.last_frame_time_ns += frames_to_advance * frame_duration_ns;
+    //
+    //         // Track total frames advanced (for drift checking)
+    //         self.total_frames_advanced += frames_to_advance;
+    //     }
+    //
+    //     if (self.debug) {
+    //         if (self.playback_started_at) |start_time| {
+    //             const wall_elapsed_ns: u64 = @intCast(@max(0, start_time.durationTo(now).raw.nanoseconds));
+    //             const check_interval_ns: u64 = 2 * std.time.ns_per_s; // Check every 2 seconds
+    //
+    //             if (wall_elapsed_ns >= self.last_drift_check_ns + check_interval_ns) {
+    //                 // Calculate expected vs actual frames
+    //                 const wall_elapsed_s = @as(f64, @floatFromInt(wall_elapsed_ns)) / @as(f64, std.time.ns_per_s);
+    //                 const expected_frames = wall_elapsed_s * self.source_media.frame_rate_float * self.playback_speed.load(.acquire);
+    //                 const actual_frames = @as(f64, @floatFromInt(self.total_frames_advanced));
+    //                 const drift_frames = actual_frames - expected_frames;
+    //                 const drift_ms = (drift_frames / self.source_media.frame_rate_float) * 1000.0;
+    //
+    //                 std.debug.print("\n DRIFT CHECK @ {d:.1}s:\n", .{wall_elapsed_s});
+    //                 std.debug.print("   Expected frames: {d:.1}\n", .{expected_frames});
+    //                 std.debug.print("   Actual frames:   {}\n", .{self.total_frames_advanced});
+    //                 std.debug.print("   Drift:           {d:.2} frames ({d:.1}ms)\n", .{ drift_frames, drift_ms });
+    //                 std.debug.print("   Actual FPS:      {d:.2}\n\n", .{actual_frames / wall_elapsed_s});
+    //
+    //                 // Update last check time
+    //                 self.last_drift_check_ns = wall_elapsed_ns;
+    //             }
+    //         }
+    //     }
+    //
+    //     const frame_changed = self.last_decoded_frame_index == null or self.last_decoded_frame_index.? != self.current_frame_index.load(.acquire);
+    //
+    //     // Write Stats
+    //     self.monitor_stats.frame_duration_ns = frame_duration_ns;
+    //     self.monitor_stats.wall_clock_delta_ns = ui_frame_delta_ns;
+    //     self.monitor_stats.time_since_last_frame_ns = time_since_last_frame_ns;
+    //
+    //     if (frame_changed) {
+    //
+    //         // Mark this frame as decoded
+    //         self.last_decoded_frame_index = self.current_frame_index.load(.acquire);
+    //
+    //         return .{
+    //             .needs_decode = .{
+    //                 .frame_idx = self.current_frame_index.load(.acquire),
+    //             },
+    //         };
+    //     }
+    //
+    //     return .ok;
+    // }
 };
