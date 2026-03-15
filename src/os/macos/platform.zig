@@ -223,11 +223,7 @@ fn renderUiFrame(self: *Platform) !void {
     self.imgui_ctx.mouse_y = mouse_y;
     self.imgui_ctx.mouse_down = mouse_down;
 
-    try self.app.buildUI(self.imgui_ctx);
-
-    // FIXME: old PULL Monitor
-    // render.video_monitor.ctrl_playback = self.app.playback_state.playing;
-    // render.video_monitor.ctrl_playback_speed = self.app.playback_state.speed.load(.acquire);
+    try self.app.buildUI(self.imgui_ctx, &self.render.?.video_monitor);
 
     // Decode the frame with Metal
     decodeVideoFrame(render) catch {};
@@ -291,66 +287,69 @@ fn renderUiFrame(self: *Platform) !void {
 
 fn decodeVideoFrame(render: *Render) !void {
 
-    // Video monitor - decode and manage playback
-    const result = render.video_monitor.monitor();
-    switch (result) {
-        .needs_decode => |frame_info| {
+    // Read current frame from monitor thread
+    const frame_idx = render.video_monitor.current_frame_index.load(.acquire);
 
-            // Reset scratch arena before decode
-            _ = render.video_monitor.decode_arena.reset(.free_all);
+    // Only decode if frame changed
+    if (render.video_monitor.last_decoded_frame_index == null or
+        render.video_monitor.last_decoded_frame_index.? != frame_idx)
+    {
+        // Reset scratch arena before decode
+        _ = render.video_monitor.decode_arena.reset(.free_all);
 
-            // Clean up previous frame resources before next decode
-            if (render.decoded_frame_buffer) |*df| {
-                df.deinit();
-                render.decoded_frame_buffer = null;
-            }
-            if (render.texture_set_holder) |*ts| {
-                ts.deinit();
-                render.texture_set_holder = null;
-            }
+        // Clean up previous frame resources before next decode
+        if (render.decoded_frame_buffer) |*df| {
+            df.deinit();
+            render.decoded_frame_buffer = null;
+        }
+        if (render.texture_set_holder) |*ts| {
+            ts.deinit();
+            render.texture_set_holder = null;
+        }
 
-            // std.debug.print("Decoding frame {} (last={?})\nLast Frame Time: {d}\n", .{
-            //     frame_info.frame_idx,
-            //     state.video_monitor.last_decoded_frame_index,
-            //     state.video_monitor.monitor_stats.time_since_last_frame_ns,
-            // });
+        const decoded_frame = render.decoder.decodeFrame(
+            frame_idx,
+            render.video_monitor.decode_arena.allocator(),
+        ) catch |err| {
+            std.debug.print("Failed to decode frame: {}\n", .{err});
+            return error.DecodeFrameFailed;
+        };
+        render.decoded_frame_buffer = decoded_frame; // Keep alive until end of loop
 
-            // std.debug.print("Frame Time: #{} | wall: {d:.1}ms | playback delta: {d:.1}ms (expected: {d:.1}ms)\n", .{
-            //     frame_info.frame_idx,
-            //     @as(f64, @floatFromInt(state.video_monitor.monitor_stats.wall_clock_delta_ns)) /
-            //         std.time.ns_per_ms,
-            //     @as(f64, @floatFromInt(state.video_monitor.monitor_stats.time_since_last_frame_ns)) /
-            //         std.time.ns_per_ms,
-            //     @as(f64, @floatFromInt(state.video_monitor.monitor_stats.frame_duration_ns)) / std.time.ns_per_ms,
-            // });
+        // Create Metal texture from packed AYUV buffer (y416 format)
+        var texture_set = render.decoder.createMetalTextures(
+            @ptrCast(decoded_frame.platform_handle),
+        ) catch |err| {
+            std.debug.print("Failed to create Metal textures: {}\n", .{err});
+            return error.TextureCreationFailed;
+        };
+        render.texture_set_holder = texture_set; // Keep alive until end of loop
 
-            const decoded_frame = render.decoder.decodeFrame(
-                frame_info.frame_idx,
-                render.video_monitor.decode_arena.allocator(),
-            ) catch |err| {
-                std.debug.print("Failed to decode frame: {}\n", .{err});
-                return error.DecodeFrameFailed;
-            };
-            render.decoded_frame_buffer = decoded_frame; // Keep alive until end of loop
+        // Extract MTLTexture handle (single packed texture for y416)
+        const mtl_tex = texture_set.getMetalTexture();
+        render.packed_metal_texture = metal.MetalTexture.initFromPtr(mtl_tex);
 
-            // std.debug.print("\nFrame info: \nCompressed Size:{d} \nDecompressed Size: {d}\n", .{
-            //     decoded_frame.compressed_size,
-            //     decoded_frame.decoded_size,
-            // });
-
-            // Create Metal texture from packed AYUV buffer (y416 format)
-            var texture_set = render.decoder.createMetalTextures(
-                @ptrCast(decoded_frame.platform_handle),
-            ) catch |err| {
-                std.debug.print("Failed to create Metal textures: {}\n", .{err});
-                return error.TextureCreationFailed;
-            };
-            render.texture_set_holder = texture_set; // Keep alive until end of loop
-
-            // Extract MTLTexture handle (single packed texture for y416)
-            const mtl_tex = texture_set.getMetalTexture();
-            render.packed_metal_texture = metal.MetalTexture.initFromPtr(mtl_tex);
-        },
-        .ok => {},
+        // Mark as decoded WARN: here, not start.
+        render.video_monitor.last_decoded_frame_index = frame_idx;
     }
 }
+
+// std.debug.print("Decoding frame {} (last={?})\nLast Frame Time: {d}\n", .{
+//     frame_info.frame_idx,
+//     state.video_monitor.last_decoded_frame_index,
+//     state.video_monitor.monitor_stats.time_since_last_frame_ns,
+// });
+
+// std.debug.print("Frame Time: #{} | wall: {d:.1}ms | playback delta: {d:.1}ms (expected: {d:.1}ms)\n", .{
+//     frame_info.frame_idx,
+//     @as(f64, @floatFromInt(state.video_monitor.monitor_stats.wall_clock_delta_ns)) /
+//         std.time.ns_per_ms,
+//     @as(f64, @floatFromInt(state.video_monitor.monitor_stats.time_since_last_frame_ns)) /
+//         std.time.ns_per_ms,
+//     @as(f64, @floatFromInt(state.video_monitor.monitor_stats.frame_duration_ns)) / std.time.ns_per_ms,
+// });
+
+// std.debug.print("\nFrame info: \nCompressed Size:{d} \nDecompressed Size: {d}\n", .{
+//     decoded_frame.compressed_size,
+//     decoded_frame.decoded_size,
+// });

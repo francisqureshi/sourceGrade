@@ -30,7 +30,7 @@ pub const VideoMonitor = struct {
     running: std.atomic.Value(bool), // Monitor thread stop signal
 
     // Monitor thread handle
-    monitor_task: ?*std.Io.Future(void) = null,
+    monitor_task: ?std.Io.Future(void) = null,
 
     last_timestamp: Io.Clock.Timestamp,
     playback_time_ns: u64,
@@ -89,7 +89,7 @@ pub const VideoMonitor = struct {
         const start_time = std.Io.Clock.Timestamp.now(io, .awake);
         var next_tick_ns: u64 = 0;
         var last_frame_ns: u64 = 0; // Track when we last advanced a frame
-        const duration = self.source_media.duration_in_frames;
+        const duration: usize = @intCast(self.source_media.duration_in_frames);
 
         while (self.running.load(.acquire)) {
             // 1. Read playback state
@@ -122,6 +122,10 @@ pub const VideoMonitor = struct {
             const time_since_last_frame = total_elapsed - last_frame_ns;
             const frames_to_advance = time_since_last_frame / frame_duration_ns;
 
+            if (frames_to_advance > 1) {
+                std.debug.print("MULTI-FRAME ADVANCE: {d} frames\n", .{frames_to_advance});
+            }
+
             // Update last frame time (consume the time for frames advanced)
             last_frame_ns += frames_to_advance * frame_duration_ns;
 
@@ -148,7 +152,7 @@ pub const VideoMonitor = struct {
     }
 
     pub fn stopMonitor(self: *VideoMonitor, io: Io) void {
-        // Not running? Nothing to do
+        // Not running? Nothing to do :)
         if (self.monitor_task == null) return;
 
         // Signal thread to stop
@@ -268,6 +272,7 @@ pub const VideoMonitor = struct {
     }
 
     pub fn deinit(self: *VideoMonitor) void {
+        self.stopMonitor(self.io);
         self.decode_arena.deinit();
     }
 };

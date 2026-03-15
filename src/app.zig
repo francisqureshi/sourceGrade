@@ -5,6 +5,7 @@ const Io = std.Io;
 const com = @import("com");
 const renderer = @import("gpu/renderer.zig");
 const ui = @import("gui/ui.zig");
+const VideoMonitor = @import("gpu/video_monitor.zig").VideoMonitor;
 
 pub const WindowConfig = union(enum) {
     maximised,
@@ -161,7 +162,7 @@ pub const App = struct {
         return .{ .models = models };
     }
 
-    pub fn buildUI(self: *App, imgui: *ui.ImGui) !void {
+    pub fn buildUI(self: *App, imgui: *ui.ImGui, video_monitor: *VideoMonitor) !void {
 
         // Test slider and rects
         _ = try imgui.slider(1, 1400, 300, 100, 50, &self.test_slider_value, 0, 1);
@@ -170,7 +171,7 @@ pub const App = struct {
 
         // ============ Video Controls
         var ctrl_slider: f32 = self.playback_state.speed.load(.acquire);
-        if (try imgui.slider(2, 600, 800, 400, 10, &ctrl_slider, 0, 32)) {
+        if (try imgui.slider(2, 600, 800, 400, 10, &ctrl_slider, 0.01, 1024)) {
             self.playback_state.speed.store(ctrl_slider, .release);
         }
 
@@ -184,20 +185,31 @@ pub const App = struct {
             const current = self.playback_state.playing.load(.acquire);
             const new_state: f32 = if (current == 0.0) 1.0 else 0.0;
             self.playback_state.playing.store(new_state, .release);
-            //try self.video_monitor.startMonitor(self.io);
+
+            if (new_state != 0.0) {
+                try video_monitor.startMonitor(self.io);
+            } else {
+                video_monitor.stopMonitor(self.io);
+            }
         }
 
         if (rev_clicked) {
             const current = self.playback_state.playing.load(.acquire);
             const new_state: f32 = if (current == 0.0) -1.0 else 0.0;
             self.playback_state.playing.store(new_state, .release);
+
+            if (new_state != 0.0) {
+                try video_monitor.startMonitor(self.io);
+            } else {
+                video_monitor.stopMonitor(self.io);
+            }
         }
 
         // Frame counter display
         var disp_frame_buf: [1024]u8 = undefined;
         const disp_frame_num = std.fmt.bufPrint(
             &disp_frame_buf,
-            "Frame: {d} Playback Speed: {d:.2}",
+            "Frame: {d} Playback Speed: {d:.3}",
             .{ self.playback_state.current_frame, self.playback_state.speed.load(.acquire) },
         ) catch "CantGetFrame";
         _ = ui.ImGui.TextWidget.addText(imgui, disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};

@@ -25,11 +25,6 @@ pub fn main(init: std.process.Init.Minimal) !void {
     var app = App.init(allocator, io);
     defer app.deinit();
 
-    //Async / Conncurrent test
-    const timing_rate_ms: i64 = 40;
-    var clock_task = try io.concurrent(async_learning.clockA, .{ io, timing_rate_ms });
-    defer clock_task.cancel(io);
-
     // Platform
     var platform = try Platform.init(&app);
     defer platform.deinit();
