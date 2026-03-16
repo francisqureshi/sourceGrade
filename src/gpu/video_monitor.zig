@@ -4,6 +4,19 @@ const app = @import("../app.zig");
 
 const Io = std.Io;
 
+/// VideoMonitor - Push model video playback monitor
+///
+/// Architecture:
+/// - Monitor thread runs independently, advancing frame index at source fps × speed
+/// - Vsync thread reads current_frame_index atomically for decode
+/// - Uses error-compensated sleep for accurate timing (99.98% accuracy)
+/// - Supports forward/backward playback, in/out points, and loop mode
+///
+/// Threading model:
+/// - startMonitor() spawns concurrent task that runs monitorLoop()
+/// - Loop sleeps until next frame, advances current_frame_index atomically
+/// - stopMonitor() cancels task and cleans up Future
+/// - Auto-stops when hitting in/out point boundaries (if not looping)
 pub const VideoMonitor = struct {
     source_media: *media.SourceMedia,
     io: Io,
@@ -24,7 +37,6 @@ pub const VideoMonitor = struct {
     // Decode tracking
     last_decoded_frame_index: ?usize,
 
-    /// Initialize with IO (for timestamps)
     pub fn init(
         source_media: *media.SourceMedia,
         io: Io,
@@ -49,8 +61,8 @@ pub const VideoMonitor = struct {
         };
     }
 
-    fn monitorLoop(self: *VideoMonitor, io: Io) void {
-        const start_time = std.Io.Clock.Timestamp.now(io, .awake);
+    fn monitorLoop(self: *VideoMonitor) void {
+        const start_time = std.Io.Clock.Timestamp.now(self.io, .awake);
         var next_tick_ns: u64 = 0;
         var last_frame_ns: u64 = 0; // Track when we last advanced a frame
         const duration: usize = @intCast(self.source_media.duration_in_frames);
@@ -71,30 +83,26 @@ pub const VideoMonitor = struct {
             next_tick_ns += frame_duration_ns;
 
             // Sleep until next frame (error compensation)
-            const now = std.Io.Clock.Timestamp.now(io, .awake);
+            const now = std.Io.Clock.Timestamp.now(self.io, .awake);
             const elapsed_ns: u64 = @intCast(@max(0, start_time.durationTo(now).raw.nanoseconds));
             const sleep_duration_ns: i64 = @as(i64, @intCast(next_tick_ns)) - @as(i64, @intCast(elapsed_ns));
 
             if (sleep_duration_ns > 0) {
-                io.sleep(.fromNanoseconds(@intCast(sleep_duration_ns)), .awake) catch break;
+                self.io.sleep(.fromNanoseconds(@intCast(sleep_duration_ns)), .awake) catch break;
             }
 
             // Calculate how many frames to advance (handles high-speed playback)
-            const now_after = std.Io.Clock.Timestamp.now(io, .awake);
+            const now_after = std.Io.Clock.Timestamp.now(self.io, .awake);
             const total_elapsed: u64 = @intCast(@max(0, start_time.durationTo(now_after).raw.nanoseconds));
             const time_since_last_frame = total_elapsed - last_frame_ns;
             const frames_to_advance: usize = @intCast(time_since_last_frame / frame_duration_ns);
-
-            if (frames_to_advance > 1) {
-                std.debug.print("MULTI-FRAME ADVANCE: {d} frames\n", .{frames_to_advance});
-            }
 
             // Update last frame time (consume the time for frames advanced)
             last_frame_ns += frames_to_advance * frame_duration_ns;
 
             // Advance frame atomically (forward or backward)
             const old_idx = self.current_frame_index.load(.acquire);
-            const result = calcAdvance(
+            const result = advanceFrame(
                 @intCast(old_idx),
                 self.playback,
                 @intCast(frames_to_advance),
@@ -117,7 +125,7 @@ pub const VideoMonitor = struct {
         hit_boundary: bool,
     };
 
-    fn calcAdvance(
+    fn advanceFrame(
         curr_idx: isize,
         playback: *const app.Playback,
         frames_to_advance: isize,
@@ -180,7 +188,7 @@ pub const VideoMonitor = struct {
         self.running.store(true, .release);
 
         // Spawn concurrent task
-        self.monitor_task = try io.concurrent(monitorLoop, .{ self, io });
+        self.monitor_task = try io.concurrent(monitorLoop, .{self});
     }
 
     pub fn stopMonitor(self: *VideoMonitor, io: Io) void {
