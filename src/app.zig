@@ -20,7 +20,6 @@ pub const Playback = struct {
     playing: std.atomic.Value(f32),
     speed: std.atomic.Value(f32),
     loop: std.atomic.Value(bool),
-    current_frame: u64,
     in_point: isize,
     out_point: isize,
 };
@@ -73,7 +72,6 @@ pub const App = struct {
             .speed = std.atomic.Value(f32).init(1.0),
             .loop = std.atomic.Value(bool).init(false),
             .in_point = in_point,
-            .current_frame = 0 + in_point,
             .out_point = out_point,
         };
 
@@ -220,12 +218,13 @@ pub const App = struct {
             self.playback.loop.store(!current, .release);
         }
 
-        // Frame counter display
+        // Frame counter display (read directly from VideoMonitor)
+        const current_frame = video_monitor.current_frame_index.load(.acquire);
         var disp_frame_buf: [1024]u8 = undefined;
         const disp_frame_num = std.fmt.bufPrint(
             &disp_frame_buf,
             "Frame: {d} Playback Speed: {d:.3}",
-            .{ self.playback.current_frame, self.playback.speed.load(.acquire) },
+            .{ current_frame, self.playback.speed.load(.acquire) },
         ) catch "CantGetFrame";
         _ = ui.ImGui.TextWidget.addText(imgui, disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};
 
@@ -245,10 +244,10 @@ pub const App = struct {
 
         imgui.addRect(row.x, row.y, row.w, row.h, ui.ImGui.packColor(1, 0, 0, 1)) catch {};
 
-        _ = imgui.button(5, btn1_rect.x, btn1_rect.y, btn1_rect.w, btn1_rect.h, "|>") catch false;
-        _ = imgui.button(6, scrub_rect.x, scrub_rect.y, scrub_rect.w, scrub_rect.h, "------------|-------") catch false;
-        _ = imgui.button(7, tc_rect.x, tc_rect.y, tc_rect.w, tc_rect.h, "TC 00:00:00:00") catch false;
-        _ = imgui.button(8, second_fill_rect.x, second_fill_rect.y, second_fill_rect.w, second_fill_rect.h, "Second fill") catch false;
+        _ = imgui.button(6, btn1_rect.x, btn1_rect.y, btn1_rect.w, btn1_rect.h, "|>") catch false;
+        _ = imgui.button(7, scrub_rect.x, scrub_rect.y, scrub_rect.w, scrub_rect.h, "------------|-------") catch false;
+        _ = imgui.button(8, tc_rect.x, tc_rect.y, tc_rect.w, tc_rect.h, "TC 00:00:00:00") catch false;
+        _ = imgui.button(9, second_fill_rect.x, second_fill_rect.y, second_fill_rect.w, second_fill_rect.h, "Second fill") catch false;
 
         imgui.addCircle(900, 450, 100, 120, ui.ImGui.packColor(0, 0, 1, 1)) catch {};
 

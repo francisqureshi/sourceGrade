@@ -228,8 +228,6 @@ fn renderUiFrame(self: *Platform) !void {
     // Decode the frame with Metal
     decodeVideoFrame(render) catch {};
 
-    self.app.playback.current_frame = render.video_monitor.current_frame_index.load(.acquire);
-
     // Layer 1: Video
     if (render.packed_metal_texture) |*texture| {
         const VideoUniforms = extern struct {
@@ -329,27 +327,7 @@ fn decodeVideoFrame(render: *Render) !void {
         const mtl_tex = texture_set.getMetalTexture();
         render.packed_metal_texture = metal.MetalTexture.initFromPtr(mtl_tex);
 
-        // Mark as decoded WARN: here, not start.
+        // Mark as decoded
         render.video_monitor.last_decoded_frame_index = frame_idx;
     }
 }
-
-// std.debug.print("Decoding frame {} (last={?})\nLast Frame Time: {d}\n", .{
-//     frame_info.frame_idx,
-//     state.video_monitor.last_decoded_frame_index,
-//     state.video_monitor.monitor_stats.time_since_last_frame_ns,
-// });
-
-// std.debug.print("Frame Time: #{} | wall: {d:.1}ms | playback delta: {d:.1}ms (expected: {d:.1}ms)\n", .{
-//     frame_info.frame_idx,
-//     @as(f64, @floatFromInt(state.video_monitor.monitor_stats.wall_clock_delta_ns)) /
-//         std.time.ns_per_ms,
-//     @as(f64, @floatFromInt(state.video_monitor.monitor_stats.time_since_last_frame_ns)) /
-//         std.time.ns_per_ms,
-//     @as(f64, @floatFromInt(state.video_monitor.monitor_stats.frame_duration_ns)) / std.time.ns_per_ms,
-// });
-
-// std.debug.print("\nFrame info: \nCompressed Size:{d} \nDecompressed Size: {d}\n", .{
-//     decoded_frame.compressed_size,
-//     decoded_frame.decoded_size,
-// });

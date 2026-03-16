@@ -4,29 +4,12 @@ const app = @import("../app.zig");
 
 const Io = std.Io;
 
-pub const MonitorResult = union(enum) {
-    ok,
-    needs_decode: struct {
-        frame_idx: usize,
-    },
-};
-
-pub const MonitorStats = struct {
-    time_since_last_frame_ns: u64 = 0,
-    wall_clock_delta_ns: u64 = 0,
-    frame_duration_ns: u64 = 0,
-};
-
 pub const VideoMonitor = struct {
     source_media: *media.SourceMedia,
     io: Io,
     decode_arena: std.heap.ArenaAllocator,
 
-    playing: *std.atomic.Value(f32),
-    playback_speed: *std.atomic.Value(f32),
-    loop: *std.atomic.Value(bool),
-    in_point: *isize,
-    out_point: *isize,
+    playback: *app.Playback, // Reference to all playback state
 
     // Thread-safe shared state (read by vsync, written by monitor)
     current_frame_index: std.atomic.Value(usize),
@@ -35,19 +18,11 @@ pub const VideoMonitor = struct {
     // Monitor thread handle
     monitor_task: ?std.Io.Future(void) = null,
 
-    last_timestamp: Io.Clock.Timestamp,
-    playback_time_ns: u64,
+    // Push model timing
     base_frame_duration_ns: u64,
-    last_frame_time_ns: u64,
+
+    // Decode tracking
     last_decoded_frame_index: ?usize,
-
-    monitor_stats: MonitorStats,
-
-    //  debug fields:
-    debug: bool,
-    playback_started_at: ?Io.Clock.Timestamp, // When did playback start?
-    total_frames_advanced: u64, // How many frames have we shown?
-    last_drift_check_ns: u64, // When did we last print stats?
 
     /// Initialize with IO (for timestamps)
     pub fn init(
@@ -56,38 +31,21 @@ pub const VideoMonitor = struct {
         allocator: std.mem.Allocator,
         playback: *app.Playback,
     ) !VideoMonitor {
-        const last_timestamp = Io.Clock.Timestamp.now(io, .awake);
         const base_frame_duration_ns: u64 = std.time.ns_per_s / (source_media.frame_rate.get().num / source_media.frame_rate.get().den);
 
         return .{
             .source_media = source_media,
             .io = io,
             .decode_arena = std.heap.ArenaAllocator.init(allocator),
-
-            .playing = &playback.playing,
-            .playback_speed = &playback.speed,
-            .loop = &playback.loop,
-            .in_point = &playback.in_point,
-            .out_point = &playback.out_point,
-
-            .last_timestamp = last_timestamp,
+            .playback = playback,
 
             .base_frame_duration_ns = base_frame_duration_ns,
-            .playback_time_ns = 0,
-            .last_frame_time_ns = 0,
 
-            //WARN: Maybe one day this is set by UI/ App / higher pwrs?
-            .current_frame_index = std.atomic.Value(usize).init(playback.current_frame),
+            // Start at in_point
+            .current_frame_index = std.atomic.Value(usize).init(@intCast(playback.in_point)),
             .running = std.atomic.Value(bool).init(false),
 
             .last_decoded_frame_index = null,
-            .monitor_stats = .{},
-
-            // debug
-            .debug = true,
-            .playback_started_at = null,
-            .total_frames_advanced = 0,
-            .last_drift_check_ns = 0,
         };
     }
 
@@ -99,18 +57,16 @@ pub const VideoMonitor = struct {
 
         while (self.running.load(.acquire)) {
             // Read playback state
-            const direction = self.playing.load(.acquire);
-            const speed = self.playback_speed.load(.acquire);
-            const loop = self.loop.load(.acquire);
+            const direction = self.playback.playing.load(.acquire);
+            const speed = self.playback.speed.load(.acquire);
+            const loop = self.playback.loop.load(.acquire);
 
             // Break if paused
             if (direction == 0.0) break;
 
-            // Break if speed is 0 (can't calculate frame duration)
-            const frame_duration_ns = if (speed > 0.0)
-                @as(u64, @intFromFloat(@as(f64, @floatFromInt(self.base_frame_duration_ns)) / speed))
-            else
-                break; //WARN: poss error with requiement for 0.0001 slider minimun is the solution..
+            // Clamp speed to minimum to prevent division by zero
+            const clamped_speed = @max(speed, 0.01);
+            const frame_duration_ns = @as(u64, @intFromFloat(@as(f64, @floatFromInt(self.base_frame_duration_ns)) / clamped_speed));
 
             next_tick_ns += frame_duration_ns;
 
@@ -140,10 +96,7 @@ pub const VideoMonitor = struct {
             const old_idx = self.current_frame_index.load(.acquire);
             const result = calcAdvance(
                 @intCast(old_idx),
-                direction,
-                loop,
-                self.in_point.*,
-                self.out_point.*,
+                self.playback,
                 @intCast(frames_to_advance),
                 @intCast(duration),
             );
@@ -152,9 +105,9 @@ pub const VideoMonitor = struct {
 
             // If we hit a boundary and not looping, stop playback
             if (result.hit_boundary and !loop) {
-                self.playing.store(0.0, .release); // Set to paused
+                self.playback.playing.store(0.0, .release); // Set to paused
                 self.running.store(false, .release); // Signal task is done
-                break; //
+                break; // Exit monitor loop
             }
         }
     }
@@ -166,13 +119,16 @@ pub const VideoMonitor = struct {
 
     fn calcAdvance(
         curr_idx: isize,
-        direction: f32,
-        loop: bool,
-        in_point: isize,
-        out_point: isize,
+        playback: *const app.Playback,
         frames_to_advance: isize,
         duration: isize,
     ) AdvanceResult {
+        // Read playback state
+        const direction = playback.playing.load(.acquire);
+        const loop = playback.loop.load(.acquire);
+        const in_point = playback.in_point;
+        const out_point = playback.out_point;
+
         const range = duration - in_point - out_point;
 
         // Calculate raw new position
