@@ -101,9 +101,9 @@ pub const VideoMonitor = struct {
             last_frame_ns += frames_to_advance * frame_duration_ns;
 
             // Advance frame atomically (forward or backward)
-            const old_idx = self.current_frame_index.load(.acquire);
+            const curr_idx = self.current_frame_index.load(.acquire);
             const result = advanceFrame(
-                @intCast(old_idx),
+                @intCast(curr_idx),
                 self.playback,
                 @intCast(frames_to_advance),
                 @intCast(duration),
