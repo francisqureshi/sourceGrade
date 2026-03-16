@@ -52,7 +52,7 @@ pub const Render = struct {
         errdefer decoder.deinit();
 
         const video_monitor = try vm.VideoMonitor.init(
-            source_media,
+            &source_media.frame_rate.get(),
             platform.app.io,
             platform.app.allocator,
             &platform.app.playback,

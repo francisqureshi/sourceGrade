@@ -1,5 +1,5 @@
 const std = @import("std");
-const media = @import("../io/media.zig");
+const Rational = @import("../io/media.zig").Rational;
 const app = @import("../app.zig");
 
 const Io = std.Io;
@@ -18,7 +18,7 @@ const Io = std.Io;
 /// - stopMonitor() cancels task and cleans up Future
 /// - Auto-stops when hitting in/out point boundaries (if not looping)
 pub const VideoMonitor = struct {
-    source_media: *media.SourceMedia,
+    frame_rate: *const Rational,
     io: Io,
     decode_arena: std.heap.ArenaAllocator,
 
@@ -38,15 +38,15 @@ pub const VideoMonitor = struct {
     last_decoded_frame_index: ?usize,
 
     pub fn init(
-        source_media: *media.SourceMedia,
+        frame_rate: *const Rational,
         io: Io,
         allocator: std.mem.Allocator,
         playback: *app.Playback,
     ) !VideoMonitor {
-        const base_frame_duration_ns: u64 = std.time.ns_per_s / (source_media.frame_rate.get().num / source_media.frame_rate.get().den);
+        const base_frame_duration_ns: u64 = std.time.ns_per_s / (frame_rate.num / frame_rate.den);
 
         return .{
-            .source_media = source_media,
+            .frame_rate = frame_rate,
             .io = io,
             .decode_arena = std.heap.ArenaAllocator.init(allocator),
             .playback = playback,
@@ -65,7 +65,6 @@ pub const VideoMonitor = struct {
         const start_time = std.Io.Clock.Timestamp.now(self.io, .awake);
         var next_tick_ns: u64 = 0;
         var last_frame_ns: u64 = 0; // Track when we last advanced a frame
-        const duration: usize = @intCast(self.source_media.duration_in_frames);
 
         while (self.running.load(.acquire)) {
             // Read playback state
@@ -106,7 +105,6 @@ pub const VideoMonitor = struct {
                 @intCast(curr_idx),
                 self.playback,
                 @intCast(frames_to_advance),
-                @intCast(duration),
             );
 
             self.current_frame_index.store(result.frame_idx, .release);
@@ -129,7 +127,6 @@ pub const VideoMonitor = struct {
         curr_idx: isize,
         playback: *const app.Playback,
         frames_to_advance: isize,
-        duration: isize,
     ) AdvanceResult {
         // Read playback state
         const direction = playback.playing.load(.acquire);
@@ -137,7 +134,7 @@ pub const VideoMonitor = struct {
         const in_point = playback.in_point;
         const out_point = playback.out_point;
 
-        const range = duration - in_point - out_point;
+        const range = out_point - in_point;
 
         // Calculate raw new position
         const new_pos: isize = if (direction > 0.0)
