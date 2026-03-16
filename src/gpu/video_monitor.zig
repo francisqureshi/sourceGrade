@@ -98,7 +98,7 @@ pub const VideoMonitor = struct {
         const duration: usize = @intCast(self.source_media.duration_in_frames);
 
         while (self.running.load(.acquire)) {
-            //  Read playback state
+            // Read playback state
             const direction = self.playing.load(.acquire);
             const speed = self.playback_speed.load(.acquire);
             const loop = self.loop.load(.acquire);
@@ -114,7 +114,7 @@ pub const VideoMonitor = struct {
 
             next_tick_ns += frame_duration_ns;
 
-            //  Sleep until next frame (error compensation)
+            // Sleep until next frame (error compensation)
             const now = std.Io.Clock.Timestamp.now(io, .awake);
             const elapsed_ns: u64 = @intCast(@max(0, start_time.durationTo(now).raw.nanoseconds));
             const sleep_duration_ns: i64 = @as(i64, @intCast(next_tick_ns)) - @as(i64, @intCast(elapsed_ns));
@@ -123,7 +123,7 @@ pub const VideoMonitor = struct {
                 io.sleep(.fromNanoseconds(@intCast(sleep_duration_ns)), .awake) catch break;
             }
 
-            //  Calculate how many frames to advance (handles high-speed playback)
+            // Calculate how many frames to advance (handles high-speed playback)
             const now_after = std.Io.Clock.Timestamp.now(io, .awake);
             const total_elapsed: u64 = @intCast(@max(0, start_time.durationTo(now_after).raw.nanoseconds));
             const time_since_last_frame = total_elapsed - last_frame_ns;
