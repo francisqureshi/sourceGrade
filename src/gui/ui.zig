@@ -553,7 +553,7 @@ pub const ImGui = struct {
                 const x2 = x1 + width_pts;
                 const y2 = y1 + height_pts; // Bottom of glyph
 
-                // // Debug: draw glyph bounds
+                // // INFO:Debug: draw glyph bounds
                 // try ui.addRect(x1, y1, width_pts, height_pts, packColor(0.6, 0.6, 0.6, 0.6));
 
                 // Calculate atlas UVs (no flip needed - CTFontDrawGlyphs renders correctly)
@@ -589,7 +589,8 @@ pub const ImGui = struct {
                 is_first_char = false;
             }
 
-            try ui.addRect(x, y, x_width, font_size, packColor(0.0, 1, 0.3, 0.4));
+            // INFO: DEBUG: draw bounds of text
+            // try ui.addRect(x, y, x_width, font_size, packColor(0.0, 1, 0.3, 0.4));
 
             return .{
                 .parent = null, // parent is .... @fieldParentPtr() ??

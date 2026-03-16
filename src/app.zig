@@ -19,7 +19,10 @@ const TestingConfig = struct {
 pub const Playback = struct {
     playing: std.atomic.Value(f32),
     speed: std.atomic.Value(f32),
+    loop: std.atomic.Value(bool),
     current_frame: u64,
+    in_point: isize,
+    out_point: isize,
 };
 
 pub const App = struct {
@@ -30,7 +33,7 @@ pub const App = struct {
     test_args: TestingConfig,
 
     // App owns playback *intent*
-    playback_state: Playback, // playing, paused, speed, position
+    playback: Playback, // playing, paused, speed, position
 
     test_slider_value: f32,
 
@@ -63,11 +66,15 @@ pub const App = struct {
 
         //FIXME: cfg
 
+        const in_point = 15;
+        const out_point = 45;
         const playback_state: Playback = .{
             .playing = std.atomic.Value(f32).init(0.0),
             .speed = std.atomic.Value(f32).init(1.0),
-            // .speed = 1.0,
-            .current_frame = 0,
+            .loop = std.atomic.Value(bool).init(false),
+            .in_point = in_point,
+            .current_frame = 0 + in_point,
+            .out_point = out_point,
         };
 
         return .{
@@ -76,7 +83,7 @@ pub const App = struct {
             .wnd_config = wnd_config,
             .rndr_config = config,
             .test_args = test_args,
-            .playback_state = playback_state,
+            .playback = playback_state,
             .test_slider_value = 0.5,
         };
     }
@@ -170,21 +177,24 @@ pub const App = struct {
         imgui.addRect(1450, 100, 100, 100, ui.ImGui.packColor(0, 0, 1, 1.0)) catch {};
 
         // ============ Video Controls
-        var ctrl_slider: f32 = self.playback_state.speed.load(.acquire);
-        if (try imgui.slider(2, 600, 800, 400, 10, &ctrl_slider, 0.01, 1024)) {
-            self.playback_state.speed.store(ctrl_slider, .release);
+        var ctrl_slider: f32 = self.playback.speed.load(.acquire);
+        if (try imgui.slider(2, 600, 800, 400, 10, &ctrl_slider, 0.01, 8.0)) {
+            self.playback.speed.store(ctrl_slider, .release);
         }
 
-        const fwd_button_text: []const u8 = if (self.playback_state.playing.load(.acquire) != 0.0) "pause" else "play >";
-        const rev_button_text: []const u8 = if (self.playback_state.playing.load(.acquire) != 0.0) "pause" else "< play";
+        const fwd_button_text: []const u8 = if (self.playback.playing.load(.acquire) != 0.0) "pause" else "play >";
+        const rev_button_text: []const u8 = if (self.playback.playing.load(.acquire) != 0.0) "pause" else "< play";
+
+        const loop_button_text: []const u8 = if (self.playback.loop.load(.acquire)) "loop ON" else "loop OFF";
 
         const rev_clicked = imgui.button(3, 445, 450, 150, 50, rev_button_text) catch false;
         const fwd_clicked = imgui.button(4, 605, 450, 150, 50, fwd_button_text) catch false;
+        const loop_clicked = imgui.button(5, 445 + 75, 550, 150, 50, loop_button_text) catch false;
 
         if (fwd_clicked) {
-            const current = self.playback_state.playing.load(.acquire);
+            const current = self.playback.playing.load(.acquire);
             const new_state: f32 = if (current == 0.0) 1.0 else 0.0;
-            self.playback_state.playing.store(new_state, .release);
+            self.playback.playing.store(new_state, .release);
 
             if (new_state != 0.0) {
                 try video_monitor.startMonitor(self.io);
@@ -194,9 +204,9 @@ pub const App = struct {
         }
 
         if (rev_clicked) {
-            const current = self.playback_state.playing.load(.acquire);
+            const current = self.playback.playing.load(.acquire);
             const new_state: f32 = if (current == 0.0) -1.0 else 0.0;
-            self.playback_state.playing.store(new_state, .release);
+            self.playback.playing.store(new_state, .release);
 
             if (new_state != 0.0) {
                 try video_monitor.startMonitor(self.io);
@@ -205,12 +215,17 @@ pub const App = struct {
             }
         }
 
+        if (loop_clicked) {
+            const current = self.playback.loop.load(.acquire);
+            self.playback.loop.store(!current, .release);
+        }
+
         // Frame counter display
         var disp_frame_buf: [1024]u8 = undefined;
         const disp_frame_num = std.fmt.bufPrint(
             &disp_frame_buf,
             "Frame: {d} Playback Speed: {d:.3}",
-            .{ self.playback_state.current_frame, self.playback_state.speed.load(.acquire) },
+            .{ self.playback.current_frame, self.playback.speed.load(.acquire) },
         ) catch "CantGetFrame";
         _ = ui.ImGui.TextWidget.addText(imgui, disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};
 
