@@ -134,6 +134,7 @@ pub const VideoMonitor = struct {
         const in_point = playback.in_point;
         const out_point = playback.out_point;
 
+        // Range == Duration
         const range = out_point - in_point;
 
         // Calculate raw new position
