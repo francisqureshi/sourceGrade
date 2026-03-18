@@ -958,7 +958,7 @@ pub fn parseMovFile(
     var file_reader = file.reader(io, &buffer);
     const reader = &file_reader.interface;
 
-    var all_tracks: std.ArrayList(Track) = .{};
+    var all_tracks: std.ArrayList(Track) = .{ .items = &.{}, .capacity = 0 };
     errdefer {
         for (all_tracks.items) |*track| {
             track.deinit(allocator);
