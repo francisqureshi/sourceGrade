@@ -3,6 +3,7 @@ const Allocator = std.mem.Allocator;
 const Io = std.Io;
 
 const com = @import("com");
+const config = @import("config.zig");
 const renderer = @import("gpu/renderer.zig");
 const ui = @import("gui/ui.zig");
 const VideoMonitor = @import("gpu/video_monitor.zig").VideoMonitor;
@@ -10,10 +11,6 @@ const VideoMonitor = @import("gpu/video_monitor.zig").VideoMonitor;
 pub const WindowConfig = union(enum) {
     maximised,
     specific_size: struct { width: u32, height: u32 },
-};
-
-const TestingConfig = struct {
-    video_path: []const u8,
 };
 
 pub const Playback = struct {
@@ -27,81 +24,37 @@ pub const Playback = struct {
 pub const App = struct {
     allocator: Allocator,
     io: Io,
-    config: com.common.Constants, // Config from TOML (vsync, window size, etc.)
-    rndr_config: renderer.RenderConfig, //FIXME: this is just cfg now, migrate to toml cfg?
-    wnd_config: WindowConfig,
-    test_args: TestingConfig,
+    cfg: config.AppConfig,
 
     // App owns playback *intent*
-    playback: Playback, // playing, paused, speed, position
+    playback: Playback,
 
     test_slider_value: f32,
 
     pub fn init(allocator: Allocator, io: Io) !App {
-        // Load config from TOML
-        const config = try com.common.Constants.load(io, allocator);
+        // Load and parse all configuration
+        const cfg = try config.AppConfig.load(io, allocator);
 
-        // Parse window config from string
-        const wnd_config = parseWndCfg(config.window_config);
-
-        // GPU/rendering config
-        const rndr_config = renderer.RenderConfig{
-            .use_display_p3 = true,
-            .use_10bit = true,
-        };
-
-        // Test setup args
-        const test_args = TestingConfig{
-            .video_path = "/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov",
-            // .video_path = "/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov",
-        };
-
-        const in_point = 15;
-        const out_point = 45;
+        // Initialize playback state with test in/out points
         const playback_state: Playback = .{
             .playing = std.atomic.Value(f32).init(0.0),
             .speed = std.atomic.Value(f32).init(1.0),
             .loop = std.atomic.Value(bool).init(false),
-            .in_point = in_point,
-            .out_point = out_point,
+            .in_point = cfg.testing.in_point,
+            .out_point = cfg.testing.out_point,
         };
 
         return .{
             .allocator = allocator,
             .io = io,
-            .config = config,
-            .rndr_config = rndr_config,
-            .wnd_config = wnd_config,
-            .test_args = test_args,
+            .cfg = cfg,
             .playback = playback_state,
             .test_slider_value = 0.5,
         };
     }
 
-    /// Parse window config string from TOML ("1600x900" or "maximised")
-    fn parseWndCfg(cfg: []const u8) WindowConfig {
-        if (std.mem.eql(u8, cfg, "maximised")) {
-            return .maximised;
-        } else {
-            // Parse "1600x900" format
-            var split = std.mem.splitScalar(u8, cfg, 'x');
-            const width_str = split.first();
-            const height_str = split.next() orelse "900"; // Fallback
-
-            const width = std.fmt.parseInt(u32, width_str, 10) catch 1600;
-            const height = std.fmt.parseInt(u32, height_str, 10) catch 900;
-
-            return .{
-                .specific_size = .{
-                    .width = width,
-                    .height = height,
-                },
-            };
-        }
-    }
-
     pub fn deinit(self: *App) void {
-        self.config.cleanup(self.allocator);
+        self.cfg.deinit(self.allocator);
     }
 
     pub fn update(self: *App, dt: f32) void {

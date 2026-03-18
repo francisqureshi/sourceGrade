@@ -1,0 +1,68 @@
+const std = @import("std");
+const com = @import("com");
+const renderer = @import("gpu/renderer.zig");
+const app = @import("app.zig");
+
+const Allocator = std.mem.Allocator;
+const Io = std.Io;
+
+/// Application configuration, parsed from TOML and command-line args
+pub const AppConfig = struct {
+    constants: com.common.Constants,
+    window: app.WindowConfig,
+    renderer: renderer.RenderConfig,
+    testing: TestingConfig,
+
+    pub fn load(io: Io, allocator: Allocator) !AppConfig {
+        const constants = try com.common.Constants.load(io, allocator);
+        errdefer constants.cleanup(allocator);
+
+        return .{
+            .constants = constants,
+            .window = parseWndCfg(constants.window_config),
+            .renderer = .{
+                .use_display_p3 = constants.use_display_p3,
+                .use_10bit = constants.use_10bit,
+            },
+            .testing = .{
+                .video_path = constants.video_path,
+                .in_point = 15, // Hard coded debug vals
+                .out_point = 45,
+            },
+        };
+    }
+
+    pub fn deinit(self: *AppConfig, allocator: Allocator) void {
+        self.constants.cleanup(allocator);
+    }
+
+    /// Parse window config string from TOML ("1600x900" or "maximised")
+    fn parseWndCfg(cfg: []const u8) app.WindowConfig {
+        if (std.mem.eql(u8, cfg, "maximised")) {
+            return .maximised;
+        } else {
+            // Parse "1600x900" format
+            var split = std.mem.splitScalar(u8, cfg, 'x');
+            const width_str = split.first();
+            const height_str = split.next() orelse "900"; // Fallback
+
+            const width = std.fmt.parseInt(u32, width_str, 10) catch 1600;
+            const height = std.fmt.parseInt(u32, height_str, 10) catch 900;
+
+            return .{
+                .specific_size = .{
+                    .width = width,
+                    .height = height,
+                },
+            };
+        }
+    }
+};
+
+/// Temporary testing configuration
+/// TODO: Remove when proper media loading is implemented
+pub const TestingConfig = struct {
+    video_path: []const u8,
+    in_point: isize,
+    out_point: isize,
+};

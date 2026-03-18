@@ -41,13 +41,13 @@ pub const Platform = struct {
     /// the initial scene data returned by `App.vkDemo`.
     pub fn init(app: *App) !Platform {
         const wnd_title = " zvk x sourceGrade";
-        const window = try wnd.Wnd.create(wnd_title, app.wnd_config);
+        const window = try wnd.Wnd.create(wnd_title, app.cfg.window);
 
         // Initialize ImGui context on heap so pointer stays valid
         const imgui_ctx = try app.allocator.create(ui.ImGui);
         imgui_ctx.* = try ui.ImGui.init(app.allocator);
 
-        var render = try rend.Render.create(app.allocator, app.io, app.config, window.window);
+        var render = try rend.Render.create(app.allocator, app.io, app.cfg.constants, window.window);
 
         var arena = std.heap.ArenaAllocator.init(app.allocator);
         const arena_alloc = arena.allocator();
@@ -83,7 +83,7 @@ pub const Platform = struct {
         var last_time = std.Io.Clock.boot.now(self.app.io);
         var update_time = last_time;
         var delta_update: f32 = 0.0;
-        const time_u: f32 = 1.0 / self.app.config.ups;
+        const time_u: f32 = 1.0 / self.app.cfg.constants.ups;
 
         while (!self.wnd.closed) {
             const now = std.Io.Clock.boot.now(self.app.io);

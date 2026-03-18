@@ -1,7 +1,17 @@
-# gpu="NVIDIA GeForce RTX 4090" # GPU name key to query against
-gpu=""
+# General
+window_config="1600x600"
+video_path="/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov"
+# video_path="/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov",
+
+# Metal
+use_display_p3=true
+use_10bit=true
+
+# Vulkan
+gpu="NVIDIA GeForce RTX 4090"
 ups=40
 validation=true
 swap_chain_images=3
 vsync=true
-window_config="1600x900"
+
+

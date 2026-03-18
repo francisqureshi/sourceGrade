@@ -30,7 +30,7 @@ pub const Render = struct {
     texture_set_holder: ?videotoolbox.MetalTextureSet,
 
     pub fn init(platform: *Platform) !Render {
-        const video_path = platform.app.test_args.video_path;
+        const video_path = platform.app.cfg.testing.video_path;
 
         const sm = try media.SourceMedia.init(
             video_path,

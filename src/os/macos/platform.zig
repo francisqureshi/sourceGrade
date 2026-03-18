@@ -54,17 +54,17 @@ pub const Platform = struct {
         }
 
         // Determine pixel format based on configuration
-        const pixel_format: metal.PixelFormat = if (app.rndr_config.use_10bit)
+        const pixel_format: metal.PixelFormat = if (app.cfg.renderer.use_10bit)
             .rgb10a2_unorm // 10-bit RGB + 2-bit alpha
         else
             .bgra8_unorm; // Standard 8-bit
 
         // Parse window dimensions from config
-        const width: u32 = switch (app.wnd_config) {
+        const width: u32 = switch (app.cfg.window) {
             .maximised => 1920, // Fallback for maximised
             .specific_size => |size| size.width,
         };
-        const height: u32 = switch (app.wnd_config) {
+        const height: u32 = switch (app.cfg.window) {
             .maximised => 1080,
             .specific_size => |size| size.height,
         };
@@ -113,7 +113,7 @@ pub const Platform = struct {
             .displaylink = displaylink,
             .imgui_ctx = imgui_ctx,
             .ui_renderer = imgui_renderer,
-            .config = app.rndr_config,
+            .config = app.cfg.renderer,
             .render = null,
             .start_time = start_time,
         };
