@@ -7,6 +7,8 @@ const ui = @import("../../gui/ui.zig");
 const ImGuiRenderer = @import("ui_renderer.zig").ImGuiRenderer;
 const rend = @import("renderer.zig");
 const wnd = @import("window.zig");
+const VideoMonitor = @import("../../gpu/video_monitor.zig").VideoMonitor;
+const Rational = @import("../../io/media.zig").Rational;
 
 // ============================================================================
 // Platform - Linux and Vulkan
@@ -20,21 +22,22 @@ pub const Platform = struct {
     /// IMGUI context for immediate-mode UI rendering (heap-allocated).
     imgui_ctx: *ui.ImGui,
     render: rend.Render,
-    constants: com.common.Constants,
+    video_monitor: VideoMonitor,
+    dummy_frame_rate: Rational, // Dummy for Linux (no video yet)
 
-    /// Destroys the renderer, window, and config in reverse creation order.
+    /// Destroys the renderer, window in reverse creation order.
     pub fn deinit(self: *Platform) void {
+        self.video_monitor.deinit();
         self.imgui_ctx.deinit();
         self.render.cleanup(self.app.allocator) catch return;
         try self.wnd.cleanup();
 
         self.app.allocator.destroy(self.imgui_ctx);
-        self.constants.cleanup(self.app.allocator);
 
         std.debug.print("bye! from Platform.deinit()\n", .{});
     }
 
-    /// Creates the window, loads config, initialises the renderer, and uploads
+    /// Creates the window, initialises the renderer, and uploads
     /// the initial scene data returned by `App.vkDemo`.
     pub fn init(app: *App) !Platform {
         const wnd_title = " zvk x sourceGrade";
@@ -44,8 +47,7 @@ pub const Platform = struct {
         const imgui_ctx = try app.allocator.create(ui.ImGui);
         imgui_ctx.* = try ui.ImGui.init(app.allocator);
 
-        const constants = try com.common.Constants.load(app.io, app.allocator);
-        var render = try rend.Render.create(app.allocator, app.io, constants, window.window);
+        var render = try rend.Render.create(app.allocator, app.io, app.config, window.window);
 
         var arena = std.heap.ArenaAllocator.init(app.allocator);
         const arena_alloc = arena.allocator();
@@ -54,13 +56,25 @@ pub const Platform = struct {
         const init_data = try App.vkDemo(arena_alloc);
         try render.init(app.allocator, &init_data);
 
-        return .{
+        // Create platform with dummy frame rate (Linux has no video yet)
+        var platform = Platform{
             .app = app,
             .wnd = window,
             .imgui_ctx = imgui_ctx,
-            .constants = constants,
             .render = render,
+            .video_monitor = undefined, // Set below
+            .dummy_frame_rate = .{ .num = 24, .den = 1 }, // 24fps placeholder
         };
+
+        // Initialize video monitor with stable frame_rate pointer
+        platform.video_monitor = try VideoMonitor.init(
+            &platform.dummy_frame_rate,
+            app.io,
+            app.allocator,
+            &app.playback,
+        );
+
+        return platform;
     }
 
     /// Runs the main loop: polls events, calls `App.update`, and renders each
@@ -69,7 +83,7 @@ pub const Platform = struct {
         var last_time = std.Io.Clock.boot.now(self.app.io);
         var update_time = last_time;
         var delta_update: f32 = 0.0;
-        const time_u: f32 = 1.0 / self.constants.ups;
+        const time_u: f32 = 1.0 / self.app.config.ups;
 
         while (!self.wnd.closed) {
             const now = std.Io.Clock.boot.now(self.app.io);
@@ -87,7 +101,7 @@ pub const Platform = struct {
             self.imgui_ctx.mouse_down = self.wnd.mouse_state.flags.left;
             self.imgui_ctx.mouse_two_down = self.wnd.mouse_state.flags.right;
 
-            try self.app.buildUI(self.imgui_ctx);
+            try self.app.buildUI(self.imgui_ctx, &self.video_monitor);
             try self.imgui_ctx.endFrame();
 
             self.app.update(delta_sec);

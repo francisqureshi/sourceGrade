@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const com = @import("com");
 const metal = @import("metal");
 
 const App = @import("../../app.zig").App;
@@ -45,6 +46,7 @@ pub const Platform = struct {
     /// Does NOT start the display link - call `startDisplayLink()` after init when
     /// the Platform struct is in its final memory location.
     pub fn init(app: *App) !Platform {
+
         // Check if Metal is available
         if (!metal.isAvailable()) {
             std.debug.print("Error: Metal is not available on this system\n", .{});
@@ -57,8 +59,18 @@ pub const Platform = struct {
         else
             .bgra8_unorm; // Standard 8-bit
 
+        // Parse window dimensions from config
+        const width: u32 = switch (app.wnd_config) {
+            .maximised => 1920, // Fallback for maximised
+            .specific_size => |size| size.width,
+        };
+        const height: u32 = switch (app.wnd_config) {
+            .maximised => 1080,
+            .specific_size => |size| size.height,
+        };
+
         // Create window
-        var window = try Window.init(1600, 900, false);
+        var window = try Window.init(@intCast(width), @intCast(height), false);
 
         // Set the layer's pixel format to match our pipelines
         window.setLayerPixelFormat(@intFromEnum(pixel_format));
@@ -70,9 +82,9 @@ pub const Platform = struct {
         const imgui_ctx = try app.allocator.create(ui.ImGui);
         imgui_ctx.* = try ui.ImGui.init(app.allocator);
 
-        // FIXME:: use cfg
-        imgui_ctx.display_width = 1600;
-        imgui_ctx.display_height = 900;
+        // Set ImGui display size from config
+        imgui_ctx.display_width = @floatFromInt(width);
+        imgui_ctx.display_height = @floatFromInt(height);
         std.debug.print("✓ Created IMGUI context (triple-buffered)\n\n", .{});
 
         // Initialize ImGuiRenderer

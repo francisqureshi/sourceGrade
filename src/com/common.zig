@@ -12,7 +12,7 @@ pub const Constants = struct {
     ups: f32,
     validation: bool,
     vsync: bool,
-    // windowConfig: bool,
+    window_config: []const u8,
 
     pub fn load(io: std.Io, allocator: std.mem.Allocator) !Constants {
         var parser = toml.Parser(Constants).init(allocator);
@@ -29,7 +29,7 @@ pub const Constants = struct {
             .ups = tmp.ups,
             .validation = tmp.validation,
             .vsync = tmp.vsync,
-            // .windowConfig = tmp.windowConfig,
+            .window_config = try allocator.dupe(u8, tmp.window_config),
         };
 
         return constants;
@@ -37,5 +37,6 @@ pub const Constants = struct {
 
     pub fn cleanup(self: *Constants, allocator: std.mem.Allocator) void {
         allocator.free(self.gpu);
+        allocator.free(self.window_config);
     }
 };

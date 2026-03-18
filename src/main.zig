@@ -22,7 +22,7 @@ pub fn main(init: std.process.Init.Minimal) !void {
     const io = threaded.io();
 
     // App
-    var app = App.init(allocator, io);
+    var app = try App.init(allocator, io);
     defer app.deinit();
 
     // Platform
