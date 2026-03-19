@@ -23,7 +23,7 @@ pub const ImGuiRenderer = struct {
         var atlas_texture = try device.createTextureWithFormat(atlas_size, atlas_size, .r8_unorm, false);
         errdefer atlas_texture.deinit();
 
-        var ui_rndr = ImGuiRenderer{
+        var ui_renderer = ImGuiRenderer{
             .vertex_buffers = undefined,
             .index_buffers = undefined,
             .atlas_texture = atlas_texture,
@@ -38,11 +38,11 @@ pub const ImGuiRenderer = struct {
         const index_buffer_size = MAX_INDICES * @sizeOf(u16);
 
         for (0..FRAMES_IN_FLIGHT) |i| {
-            ui_rndr.vertex_buffers[i] = try device.createBuffer(@intCast(vertex_buffer_size));
-            ui_rndr.index_buffers[i] = try device.createBuffer(@intCast(index_buffer_size));
+            ui_renderer.vertex_buffers[i] = try device.createBuffer(@intCast(vertex_buffer_size));
+            ui_renderer.index_buffers[i] = try device.createBuffer(@intCast(index_buffer_size));
         }
 
-        return ui_rndr;
+        return ui_renderer;
     }
 
     pub fn upload(self: *ImGuiRenderer, ctx: *ui.ImGui) void {

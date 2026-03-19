@@ -43,8 +43,6 @@ pub const Platform = struct {
     start_time: std.Io.Clock.Timestamp,
 
     /// Initializes the complete macOS platform: window, renderer, IMGUI, and display link.
-    /// Does NOT start the display link - call `startDisplayLink()` after init when
-    /// the Platform struct is in its final memory location.
     pub fn init(app: *App) !Platform {
 
         // Check if Metal is available
@@ -120,7 +118,6 @@ pub const Platform = struct {
     }
 
     /// Start the CVDisplayLink vsync callback. Must be called after init()
-    /// when the Platform struct is in its final memory location.
     pub fn startDisplayLink(self: *Platform) void {
         self.displaylink.setCallback(displayLinkCallback, @ptrCast(self));
         self.displaylink.setDispatchToMain(true);
@@ -188,7 +185,7 @@ fn renderUiFrame(self: *Platform) !void {
 
     render.ui_frame += 1;
 
-    // ============ Get drawable and render
+    //  Get drawable and render
     const drawable_ptr = self.window.getNextDrawable() orelse return;
     const texture_ptr = window_c.getDrawableTexture(drawable_ptr) orelse return;
 
@@ -222,7 +219,7 @@ fn renderUiFrame(self: *Platform) !void {
     var render_encoder = command_buffer.createRenderEncoder(&render_pass) catch return;
     defer render_encoder.deinit();
 
-    // ============ Build IMGUI frame
+    //  Build IMGUI frame
     self.imgui_ctx.newFrame();
 
     // Get mouse input
