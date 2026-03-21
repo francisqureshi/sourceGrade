@@ -1,5 +1,5 @@
 const std = @import("std");
-const media = @import("media.zig");
+const media = @import("media/media.zig");
 
 const allocator = std.mem.Allocator;
 

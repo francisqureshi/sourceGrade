@@ -13,8 +13,6 @@ pub const Media = struct {
     allocator: Allocator,
 };
 
-const GLB = 9;
-
 /// Optional Overiddable type that holds original detected value
 /// and a user set 'override' value
 /// use .get() to return current value.

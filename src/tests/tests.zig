@@ -1,8 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const media = @import("../io/media.zig");
-const sources = @import("../io/sources.zig");
+const media = @import("../io/media/media.zig");
+const sources = @import("../io/media/sources.zig");
 
 const pg = @import("pg");
 const pgdb = @import("../io/db/pgdb.zig");

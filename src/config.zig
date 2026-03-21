@@ -1,6 +1,5 @@
 const std = @import("std");
 const com = @import("com");
-const renderer = @import("gpu/renderer.zig");
 const app = @import("app.zig");
 
 const Allocator = std.mem.Allocator;
@@ -10,7 +9,6 @@ const Io = std.Io;
 pub const AppConfig = struct {
     constants: com.common.Constants,
     window: app.WindowConfig,
-    renderer: renderer.RenderConfig,
     testing: TestingConfig,
 
     pub fn load(io: Io, allocator: Allocator) !AppConfig {
@@ -20,10 +18,6 @@ pub const AppConfig = struct {
         return .{
             .constants = constants,
             .window = parseWndCfg(constants.window_config),
-            .renderer = .{
-                .use_display_p3 = constants.use_display_p3,
-                .use_10bit = constants.use_10bit,
-            },
             .testing = .{
                 .video_path = constants.video_path,
                 .in_point = 15, // Hard coded debug vals

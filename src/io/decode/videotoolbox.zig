@@ -1,6 +1,6 @@
 const std = @import("std");
 const decoder = @import("../decode/decoder.zig");
-const media = @import("../media.zig");
+const media = @import("../media/media.zig");
 const c = @import("c.zig");
 
 pub const MTLDeviceRef = c.MTLDeviceRef;

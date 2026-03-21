@@ -7,8 +7,8 @@ const ui = @import("../../gui/ui.zig");
 const ImGuiRenderer = @import("ui_renderer.zig").ImGuiRenderer;
 const rend = @import("renderer.zig");
 const wnd = @import("window.zig");
-const VideoMonitor = @import("../../gpu/video_monitor.zig").VideoMonitor;
-const Rational = @import("../../io/media.zig").Rational;
+const VideoMonitor = @import("../../playback/video_monitor.zig").VideoMonitor;
+const Rational = @import("../../io/media/media.zig").Rational;
 
 // ============================================================================
 // Platform - Linux and Vulkan

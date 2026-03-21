@@ -2,9 +2,9 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const pg = @import("pg");
-const media = @import("../media.zig");
+const media = @import("../media/media.zig");
 
-const sources = @import("../sources.zig");
+const sources = @import("../media/sources.zig");
 
 const Allocator = std.mem.Allocator;
 const Io = std.Io;

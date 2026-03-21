@@ -6,7 +6,7 @@ const builtin = @import("builtin");
 
 const pg = @import("pg");
 const pgdb = @import("pgdb.zig");
-const media = @import("../media.zig");
+const media = @import("../media/media.zig");
 
 const Allocator = std.mem.Allocator;
 // const Io = std.Io;

@@ -4,9 +4,8 @@ const Io = std.Io;
 
 const com = @import("com");
 const config = @import("config.zig");
-const renderer = @import("gpu/renderer.zig");
 const ui = @import("gui/ui.zig");
-const VideoMonitor = @import("gpu/video_monitor.zig").VideoMonitor;
+const VideoMonitor = @import("playback/video_monitor.zig").VideoMonitor;
 
 pub const WindowConfig = union(enum) {
     maximised,

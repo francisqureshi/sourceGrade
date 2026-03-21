@@ -4,11 +4,11 @@ const metal = @import("metal");
 const Platform = @import("platform.zig").Platform;
 const ui = @import("../../gui/ui.zig");
 
-const media = @import("../../io/media.zig");
+const media = @import("../../io/media/media.zig");
 const DecodedFrame = @import("../../io/decode/decoder.zig").DecodedFrame;
 
 const videotoolbox = @import("../../io/decode/videotoolbox.zig");
-const vm = @import("../../gpu/video_monitor.zig");
+const VideoMonitor = @import("../../playback/video_monitor.zig").VideoMonitor;
 
 /// State that persists across render frames.
 /// Heap-allocated on first frame and reused for the lifetime of the app.
@@ -20,7 +20,7 @@ pub const Render = struct {
     decoder: videotoolbox.Decoder,
 
     /// Video playback controller (timing, frame index, decode triggers).
-    video_monitor: vm.VideoMonitor,
+    video_monitor: VideoMonitor,
 
     ui_frame: usize,
 
@@ -51,7 +51,7 @@ pub const Render = struct {
         );
         errdefer decoder.deinit();
 
-        const video_monitor = try vm.VideoMonitor.init(
+        const video_monitor = try VideoMonitor.init(
             &source_media.frame_rate.get(),
             platform.app.io,
             platform.app.allocator,

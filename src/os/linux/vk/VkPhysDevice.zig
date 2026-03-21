@@ -19,7 +19,7 @@ pub const VkPhysDevice = struct {
     memProps: vulkan.PhysicalDeviceMemoryProperties,
 
     /// Enumerates all physical devices and selects the best one.
-    /// Priority: exact match on constants.gpu name → discrete GPU → any capable GPU.
+    /// Priority: exact match on constants.vulkan_gpu name → discrete GPU → any capable GPU.
     /// A device is only considered if it supports VK_KHR_swapchain and has both
     /// graphics and present queue families.
     pub fn create(
@@ -52,7 +52,7 @@ pub const VkPhysDevice = struct {
                     .memProps = memProps,
                 };
                 const name_slice = std.mem.sliceTo(&vkPhysDevice.props.device_name, 0);
-                if (std.mem.eql(u8, constants.gpu, name_slice)) {
+                if (std.mem.eql(u8, constants.vulkan_gpu, name_slice)) {
                     try list.insert(allocator, 0, vkPhysDevice);
                     break;
                 }

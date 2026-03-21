@@ -4,7 +4,6 @@ const com = @import("com");
 const metal = @import("metal");
 
 const App = @import("../../app.zig").App;
-const gpu_renderer = @import("../../gpu/renderer.zig");
 const ui = @import("../../gui/ui.zig");
 const DisplayLink = @import("window.zig").DisplayLink;
 const ImGuiRenderer = @import("ui_renderer.zig").ImGuiRenderer;
@@ -26,7 +25,7 @@ pub const Platform = struct {
     /// The macOS window (NSWindow + CAMetalLayer).
     window: Window,
     /// Metal renderer with device, queue, and pipelines.
-    renderer: MetalRenderer,
+    metal_renderer: MetalRenderer,
     /// CVDisplayLink for vsync-synchronized rendering.
     displaylink: DisplayLink,
     /// IMGUI context for immediate-mode UI rendering (heap-allocated).
@@ -34,7 +33,6 @@ pub const Platform = struct {
     /// ui renderer
     ui_renderer: ImGuiRenderer,
     /// Render configuration (pixel format, color space settings).
-    config: gpu_renderer.RenderConfig,
     /// Render State
     /// Lazily initialized on first frame.
     /// Holds video source, decoder state, and textures.
@@ -52,7 +50,7 @@ pub const Platform = struct {
         }
 
         // Determine pixel format based on configuration
-        const pixel_format: metal.PixelFormat = if (app.cfg.renderer.use_10bit)
+        const pixel_format: metal.PixelFormat = if (app.cfg.constants.metal_use_10bit)
             .rgb10a2_unorm // 10-bit RGB + 2-bit alpha
         else
             .bgra8_unorm; // Standard 8-bit
@@ -74,7 +72,7 @@ pub const Platform = struct {
         window.setLayerPixelFormat(@intFromEnum(pixel_format));
 
         // Create Metal renderer (device, queue, pipelines)
-        var renderer = try MetalRenderer.init(pixel_format);
+        var metal_renderer = try MetalRenderer.init(pixel_format);
 
         // Initialize ImGui context on heap so pointer stays valid
         const imgui_ctx = try app.allocator.create(ui.ImGui);
@@ -87,7 +85,7 @@ pub const Platform = struct {
 
         // Initialize ImGuiRenderer
         const imgui_renderer = try ImGuiRenderer.init(
-            &renderer.device,
+            &metal_renderer.device,
             imgui_ctx.atlas.size,
         );
 
@@ -107,11 +105,10 @@ pub const Platform = struct {
         return .{
             .app = app,
             .window = window,
-            .renderer = renderer,
+            .metal_renderer = metal_renderer,
             .displaylink = displaylink,
             .imgui_ctx = imgui_ctx,
             .ui_renderer = imgui_renderer,
-            .config = app.cfg.renderer,
             .render = null,
             .start_time = start_time,
         };
@@ -139,7 +136,7 @@ pub const Platform = struct {
         }
 
         self.app.allocator.destroy(self.imgui_ctx);
-        self.renderer.deinit();
+        self.metal_renderer.deinit();
         self.window.deinit();
 
         std.debug.print("bye!\n", .{});
@@ -213,7 +210,7 @@ fn renderUiFrame(self: *Platform) !void {
     render_pass.setColorTexture(&drawable_texture, 0);
     render_pass.setClearColor(0.0, 0.0, 0.0, 1.0, 0);
 
-    var command_buffer = self.renderer.queue.createCommandBuffer() catch return;
+    var command_buffer = self.metal_renderer.queue.createCommandBuffer() catch return;
     defer command_buffer.deinit();
 
     var render_encoder = command_buffer.createRenderEncoder(&render_pass) catch return;
@@ -252,7 +249,7 @@ fn renderUiFrame(self: *Platform) !void {
             .viewport_size = .{ display_width_pts, display_height_pts },
         };
 
-        render_encoder.setPipeline(&self.renderer.video_pipeline);
+        render_encoder.setPipeline(&self.metal_renderer.video_pipeline);
         render_encoder.setVertexBytes(@ptrCast(&video_uniforms), @sizeOf(VideoUniforms), 0);
         render_encoder.setFragmentTexture(texture, 0);
         render_encoder.drawPrimitives(.triangle_strip, 0, 4);
@@ -263,7 +260,7 @@ fn renderUiFrame(self: *Platform) !void {
 
     const imgui_index_count = self.imgui_ctx.getIndexCount();
     if (imgui_index_count > 0) {
-        render_encoder.setPipeline(&self.renderer.imgui_pipeline);
+        render_encoder.setPipeline(&self.metal_renderer.imgui_pipeline);
 
         const imgui_vb = self.ui_renderer.getVertexBuffer();
         const imgui_ib = self.ui_renderer.getIndexBuffer();
@@ -275,7 +272,7 @@ fn renderUiFrame(self: *Platform) !void {
         };
         const imgui_uniforms = ImGuiUniforms{
             .screen_size = .{ self.imgui_ctx.display_width, self.imgui_ctx.display_height },
-            .use_display_p3 = self.config.use_display_p3,
+            .use_display_p3 = self.app.cfg.constants.metal_use_display_p3,
         };
         render_encoder.setVertexBytes(@ptrCast(&imgui_uniforms), @sizeOf(ImGuiUniforms), 1);
 

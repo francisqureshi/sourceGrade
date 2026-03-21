@@ -4,8 +4,6 @@ const builtin = @import("builtin");
 const App = @import("app.zig").App;
 const Platform = @import("os/mod.zig").Platform;
 
-const async_learning = @import("async.zig"); // TEMP Async tests
-
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 

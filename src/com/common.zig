@@ -7,17 +7,22 @@ pub const MAX_UI_VERTICES = 65536;
 pub const MAX_UI_INDICES = 131072;
 
 pub const Constants = struct {
+    // General
     window_config: []const u8,
     video_path: []const u8,
 
-    use_display_p3: bool,
-    use_10bit: bool,
+    // Metal (macOS)
+    metal_use_display_p3: bool,
+    metal_use_10bit: bool,
 
-    gpu: []const u8,
-    swap_chain_images: u8,
-    ups: f32,
-    validation: bool,
+    // Vulkan (Linux)
+    vulkan_gpu: []const u8,
+    vulkan_swap_chain_images: u8,
+    vulkan_validation: bool,
+
+    // Shared rendering
     vsync: bool,
+    ups: f32,
 
     pub fn load(io: std.Io, allocator: std.mem.Allocator) !Constants {
         var parser = toml.Parser(Constants).init(allocator);
@@ -32,22 +37,23 @@ pub const Constants = struct {
             .window_config = try allocator.dupe(u8, tmp.window_config),
             .video_path = try allocator.dupe(u8, tmp.video_path),
 
-            .use_display_p3 = tmp.use_display_p3,
-            .use_10bit = tmp.use_10bit,
+            .metal_use_display_p3 = tmp.metal_use_display_p3,
+            .metal_use_10bit = tmp.metal_use_10bit,
 
-            .gpu = try allocator.dupe(u8, tmp.gpu),
-            .swap_chain_images = tmp.swap_chain_images,
-            .ups = tmp.ups,
-            .validation = tmp.validation,
+            .vulkan_gpu = try allocator.dupe(u8, tmp.vulkan_gpu),
+            .vulkan_swap_chain_images = tmp.vulkan_swap_chain_images,
+            .vulkan_validation = tmp.vulkan_validation,
+
             .vsync = tmp.vsync,
+            .ups = tmp.ups,
         };
 
         return constants;
     }
 
     pub fn cleanup(self: *Constants, allocator: std.mem.Allocator) void {
-        allocator.free(self.gpu);
         allocator.free(self.window_config);
         allocator.free(self.video_path);
+        allocator.free(self.vulkan_gpu);
     }
 };

@@ -17,7 +17,7 @@ pub const VkCtx = struct {
     /// Top-level factory. Creates all Vulkan objects in dependency order:
     /// instance → surface → physical device → logical device → swapchain.
     pub fn create(allocator: std.mem.Allocator, constants: com.common.Constants, window: sdl3.video.Window) !VkCtx {
-        const vk_instance = try vk.inst.VkInstance.create(allocator, constants.validation);
+        const vk_instance = try vk.inst.VkInstance.create(allocator, constants.vulkan_validation);
         const vk_surface = try vk.surf.VkSurface.create(window, vk_instance);
         const vk_phys_device = try vk.phys.VkPhysDevice.create(
             allocator,
@@ -33,7 +33,7 @@ pub const VkCtx = struct {
             vk_phys_device,
             vk_device,
             vk_surface,
-            constants.swap_chain_images,
+            constants.vulkan_swap_chain_images,
             constants.vsync,
         );
 
