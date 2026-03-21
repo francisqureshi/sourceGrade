@@ -7,8 +7,8 @@ const App = @import("../../app.zig").App;
 const ui = @import("../../gui/ui.zig");
 const DisplayLink = @import("window.zig").DisplayLink;
 const ImGuiRenderer = @import("ui_renderer.zig").ImGuiRenderer;
-const MetalRenderer = @import("renderer.zig").MetalRenderer;
-const Render = @import("render_state.zig").Render;
+const MetalRenderer = @import("metal_renderer.zig").MetalRenderer;
+const Render = @import("render.zig").Render;
 const Window = @import("window.zig").Window;
 const window_c = @import("window.zig");
 
