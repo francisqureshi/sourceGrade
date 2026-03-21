@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 
 const App = @import("app.zig").App;
 const Platform = @import("os/mod.zig").Platform;
+const Core = @import("core.zig").Core;
 
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
@@ -19,12 +20,16 @@ pub fn main(init: std.process.Init.Minimal) !void {
     defer threaded.deinit();
     const io = threaded.io();
 
+    // Core - Cross Platform Logic
+    var core = try Core.init(allocator, io);
+    defer core.deinit();
+
     // App
-    var app = try App.init(allocator, io);
+    var app = try App.init(allocator, io, &core);
     defer app.deinit();
 
-    // Platform
-    var platform = try Platform.init(&app);
+    // Platform specific
+    var platform = try Platform.init(&app, &core);
     defer platform.deinit();
 
     try platform.run();

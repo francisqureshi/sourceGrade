@@ -3,6 +3,7 @@ const std = @import("std");
 const com = @import("com");
 
 const App = @import("../../app.zig").App;
+const Core = @import("../../core.zig").Core;
 const ui = @import("../../gui/ui.zig");
 const ImGuiRenderer = @import("ui_renderer.zig").ImGuiRenderer;
 const rend = @import("renderer.zig");
@@ -18,6 +19,7 @@ const Rational = @import("../../io/media/media.zig").Rational;
 /// This is the top-level coordinator for the Linux backend.
 pub const Platform = struct {
     app: *App,
+    core: *Core,
     wnd: wnd.Wnd,
     /// IMGUI context for immediate-mode UI rendering (heap-allocated).
     imgui_ctx: *ui.ImGui,
@@ -39,15 +41,15 @@ pub const Platform = struct {
 
     /// Creates the window, initialises the renderer, and uploads
     /// the initial scene data returned by `App.vkDemo`.
-    pub fn init(app: *App) !Platform {
+    pub fn init(app: *App, core: *Core) !Platform {
         const wnd_title = " zvk x sourceGrade";
-        const window = try wnd.Wnd.create(wnd_title, app.cfg.window);
+        const window = try wnd.Wnd.create(wnd_title, core.cfg.window);
 
         // Initialize ImGui context on heap so pointer stays valid
         const imgui_ctx = try app.allocator.create(ui.ImGui);
         imgui_ctx.* = try ui.ImGui.init(app.allocator);
 
-        var render = try rend.Render.create(app.allocator, app.io, app.cfg.constants, window.window);
+        var render = try rend.Render.create(app.allocator, app.io, core.cfg.constants, window.window);
 
         var arena = std.heap.ArenaAllocator.init(app.allocator);
         const arena_alloc = arena.allocator();
@@ -59,6 +61,7 @@ pub const Platform = struct {
         // Create platform with dummy frame rate (Linux has no video yet)
         var platform = Platform{
             .app = app,
+            .core = core,
             .wnd = window,
             .imgui_ctx = imgui_ctx,
             .render = render,
@@ -83,7 +86,7 @@ pub const Platform = struct {
         var last_time = std.Io.Clock.boot.now(self.app.io);
         var update_time = last_time;
         var delta_update: f32 = 0.0;
-        const time_u: f32 = 1.0 / self.app.cfg.constants.ups;
+        const time_u: f32 = 1.0 / self.core.cfg.constants.ups;
 
         while (!self.wnd.closed) {
             const now = std.Io.Clock.boot.now(self.app.io);

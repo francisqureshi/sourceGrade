@@ -30,7 +30,7 @@ pub const Render = struct {
     texture_set_holder: ?videotoolbox.MetalTextureSet,
 
     pub fn init(platform: *Platform) !Render {
-        const video_path = platform.app.cfg.testing.video_path;
+        const video_path = platform.core.cfg.testing.video_path;
 
         const sm = try media.SourceMedia.init(
             video_path,
@@ -55,7 +55,7 @@ pub const Render = struct {
             &source_media.frame_rate.get(),
             platform.app.io,
             platform.app.allocator,
-            &platform.app.playback,
+            &platform.core.playback,
         );
 
         std.debug.print("✓ Loaded video: {d}x{d} @ {d:.2}fps, {d} frames\n\n", .{

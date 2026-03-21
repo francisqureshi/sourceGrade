@@ -1,17 +1,18 @@
 const std = @import("std");
-const com = @import("com");
-const app = @import("app.zig");
-
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 
+const com = @import("com");
+
+const app = @import("app.zig");
+
 /// Application configuration, parsed from TOML and command-line args
-pub const AppConfig = struct {
+pub const Config = struct {
     constants: com.common.Constants,
     window: app.WindowConfig,
     testing: TestingConfig,
 
-    pub fn load(io: Io, allocator: Allocator) !AppConfig {
+    pub fn load(io: Io, allocator: Allocator) !Config {
         const constants = try com.common.Constants.load(io, allocator);
         errdefer constants.cleanup(allocator);
 
@@ -26,7 +27,7 @@ pub const AppConfig = struct {
         };
     }
 
-    pub fn deinit(self: *AppConfig, allocator: Allocator) void {
+    pub fn deinit(self: *Config, allocator: Allocator) void {
         self.constants.cleanup(allocator);
     }
 

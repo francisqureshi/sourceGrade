@@ -1,6 +1,7 @@
 const std = @import("std");
 const Rational = @import("../io/media/media.zig").Rational;
 const app = @import("../app.zig");
+const core = @import("../core.zig");
 
 const Io = std.Io;
 
@@ -22,7 +23,7 @@ pub const VideoMonitor = struct {
     io: Io,
     decode_arena: std.heap.ArenaAllocator,
 
-    playback: *app.Playback, // Reference to all playback state
+    playback: *core.Playback, // Reference to all playback state
 
     // Thread-safe shared state (read by vsync, written by monitor)
     current_frame_index: std.atomic.Value(usize),
@@ -41,7 +42,7 @@ pub const VideoMonitor = struct {
         frame_rate: *const Rational,
         io: Io,
         allocator: std.mem.Allocator,
-        playback: *app.Playback,
+        playback: *core.Playback,
     ) !VideoMonitor {
         const base_frame_duration_ns: u64 = std.time.ns_per_s / (frame_rate.num / frame_rate.den);
 
@@ -125,7 +126,7 @@ pub const VideoMonitor = struct {
 
     fn advanceFrame(
         curr_idx: isize,
-        playback: *const app.Playback,
+        playback: *const core.Playback,
         frames_to_advance: isize,
     ) AdvanceResult {
         // Read playback state

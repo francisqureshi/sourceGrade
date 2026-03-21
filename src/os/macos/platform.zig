@@ -4,6 +4,7 @@ const com = @import("com");
 const metal = @import("metal");
 
 const App = @import("../../app.zig").App;
+const Core = @import("../../core.zig").Core;
 const ui = @import("../../gui/ui.zig");
 const DisplayLink = @import("window.zig").DisplayLink;
 const ImGuiRenderer = @import("ui_renderer.zig").ImGuiRenderer;
@@ -22,6 +23,8 @@ const window_c = @import("window.zig");
 pub const Platform = struct {
     /// Reference to the application state (allocator, config, io).
     app: *App,
+    // Ref to Core
+    core: *Core,
     /// The macOS window (NSWindow + CAMetalLayer).
     window: Window,
     /// Metal renderer with device, queue, and pipelines.
@@ -41,7 +44,7 @@ pub const Platform = struct {
     start_time: std.Io.Clock.Timestamp,
 
     /// Initializes the complete macOS platform: window, renderer, IMGUI, and display link.
-    pub fn init(app: *App) !Platform {
+    pub fn init(app: *App, core: *Core) !Platform {
 
         // Check if Metal is available
         if (!metal.isAvailable()) {
@@ -50,17 +53,17 @@ pub const Platform = struct {
         }
 
         // Determine pixel format based on configuration
-        const pixel_format: metal.PixelFormat = if (app.cfg.constants.metal_use_10bit)
+        const pixel_format: metal.PixelFormat = if (core.cfg.constants.metal_use_10bit)
             .rgb10a2_unorm // 10-bit RGB + 2-bit alpha
         else
             .bgra8_unorm; // Standard 8-bit
 
         // Parse window dimensions from config
-        const width: u32 = switch (app.cfg.window) {
+        const width: u32 = switch (core.cfg.window) {
             .maximised => 1920, // Fallback for maximised
             .specific_size => |size| size.width,
         };
-        const height: u32 = switch (app.cfg.window) {
+        const height: u32 = switch (core.cfg.window) {
             .maximised => 1080,
             .specific_size => |size| size.height,
         };
@@ -104,6 +107,7 @@ pub const Platform = struct {
 
         return .{
             .app = app,
+            .core = core,
             .window = window,
             .metal_renderer = metal_renderer,
             .displaylink = displaylink,
@@ -272,7 +276,7 @@ fn renderUiFrame(self: *Platform) !void {
         };
         const imgui_uniforms = ImGuiUniforms{
             .screen_size = .{ self.imgui_ctx.display_width, self.imgui_ctx.display_height },
-            .use_display_p3 = self.app.cfg.constants.metal_use_display_p3,
+            .use_display_p3 = self.core.cfg.constants.metal_use_display_p3,
         };
         render_encoder.setVertexBytes(@ptrCast(&imgui_uniforms), @sizeOf(ImGuiUniforms), 1);
 
