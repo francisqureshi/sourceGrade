@@ -5,11 +5,11 @@ const metal = @import("metal");
 
 const App = @import("../../app.zig").App;
 const Core = @import("../../core.zig").Core;
-const ui = @import("../../gui/ui.zig");
+const ImGui = @import("../../gui/ui.zig").ImGui;
 const DisplayLink = @import("window.zig").DisplayLink;
 const ImGuiRenderer = @import("ui_renderer.zig").ImGuiRenderer;
 const MetalRenderer = @import("metal_renderer.zig").MetalRenderer;
-const Render = @import("render.zig").Render;
+const FrameDecoder = @import("frame_decoder.zig").FrameDecoder;
 const Window = @import("window.zig").Window;
 const window_c = @import("window.zig");
 
@@ -32,14 +32,12 @@ pub const Platform = struct {
     /// CVDisplayLink for vsync-synchronized rendering.
     displaylink: DisplayLink,
     /// IMGUI context for immediate-mode UI rendering (heap-allocated).
-    imgui_ctx: *ui.ImGui,
+    imgui_ctx: *ImGui,
     /// ui renderer
     ui_renderer: ImGuiRenderer,
-    /// Render configuration (pixel format, color space settings).
-    /// Render State
-    /// Lazily initialized on first frame.
-    /// Holds video source, decoder state, and textures.
-    render: ?*Render,
+    /// Frame decoder - lazily initialized on first frame.
+    /// Manages video decoding and GPU texture lifetime.
+    frame_decoder: ?*FrameDecoder,
     /// Timestamp when the platform was initialized (for elapsed time).
     start_time: std.Io.Clock.Timestamp,
 
@@ -78,8 +76,8 @@ pub const Platform = struct {
         var metal_renderer = try MetalRenderer.init(pixel_format);
 
         // Initialize ImGui context on heap so pointer stays valid
-        const imgui_ctx = try app.allocator.create(ui.ImGui);
-        imgui_ctx.* = try ui.ImGui.init(app.allocator);
+        const imgui_ctx = try app.allocator.create(ImGui);
+        imgui_ctx.* = try ImGui.init(app.allocator);
 
         // Set ImGui display size from config
         imgui_ctx.display_width = @floatFromInt(width);
@@ -113,7 +111,7 @@ pub const Platform = struct {
             .displaylink = displaylink,
             .imgui_ctx = imgui_ctx,
             .ui_renderer = imgui_renderer,
-            .render = null,
+            .frame_decoder = null,
             .start_time = start_time,
         };
     }
@@ -133,10 +131,9 @@ pub const Platform = struct {
         self.imgui_ctx.deinit();
         self.ui_renderer.deinit();
 
-        if (self.render) |render| {
-            render.deinit();
-            self.app.allocator.destroy(render.source_media);
-            self.app.allocator.destroy(render);
+        if (self.frame_decoder) |frame_decoder| {
+            frame_decoder.deinit();
+            self.app.allocator.destroy(frame_decoder);
         }
 
         self.app.allocator.destroy(self.imgui_ctx);
@@ -172,19 +169,29 @@ fn displayLinkCallback(userdata: ?*anyopaque) callconv(.c) void {
 /// Renders two layers: video (background) and IMGUI (foreground overlay).
 fn renderUiFrame(self: *Platform) !void {
 
-    // Get or init Render State
-    if (self.render == null) {
-        const render = self.app.allocator.create(Render) catch return;
-        render.* = Render.init(self) catch |err| {
-            std.debug.print("Error: Failed to init render state ({})\n", .{err});
-            self.app.allocator.destroy(render);
+    // Get or init FrameDecoder
+    if (self.frame_decoder == null) {
+        // Load source media into Core first
+        if (self.core.source_media == null) {
+            const video_path = self.core.cfg.testing.video_path;
+            self.core.loadSourceMedia(video_path) catch |err| {
+                std.debug.print("Error: Failed to load source media ({})\n", .{err});
+                return;
+            };
+        }
+
+        // Now create FrameDecoder (uses Core's source_media reference)
+        const frame_decoder = self.app.allocator.create(FrameDecoder) catch return;
+        frame_decoder.* = FrameDecoder.init(self) catch |err| {
+            std.debug.print("Error: Failed to init FrameDecoder ({})\n", .{err});
+            self.app.allocator.destroy(frame_decoder);
             return;
         };
-        self.render = render;
+        self.frame_decoder = frame_decoder;
     }
-    const render = self.render orelse return;
+    const frame_decoder = self.frame_decoder orelse return;
 
-    render.ui_frame += 1;
+    frame_decoder.ui_frame += 1;
 
     //  Get drawable and render
     const drawable_ptr = self.window.getNextDrawable() orelse return;
@@ -233,13 +240,13 @@ fn renderUiFrame(self: *Platform) !void {
     self.imgui_ctx.mouse_y = mouse_y;
     self.imgui_ctx.mouse_down = mouse_down;
 
-    try self.app.buildUI(self.imgui_ctx, &self.render.?.video_monitor);
+    try self.app.buildUI(self.imgui_ctx);
 
     // Decode the frame with Metal
-    decodeVideoFrame(render) catch {};
+    decodeVideoFrame(frame_decoder, self.core) catch {};
 
     // Layer 1: Video
-    if (render.packed_metal_texture) |*texture| {
+    if (frame_decoder.packed_metal_texture) |*texture| {
         const VideoUniforms = extern struct {
             video_size: [2]f32,
             viewport_size: [2]f32,
@@ -247,8 +254,8 @@ fn renderUiFrame(self: *Platform) !void {
 
         const video_uniforms = VideoUniforms{
             .video_size = .{
-                @floatFromInt(render.source_media.resolution.width),
-                @floatFromInt(render.source_media.resolution.height),
+                @floatFromInt(frame_decoder.source_media.resolution.width),
+                @floatFromInt(frame_decoder.source_media.resolution.height),
             },
             .viewport_size = .{ display_width_pts, display_height_pts },
         };
@@ -293,51 +300,53 @@ fn renderUiFrame(self: *Platform) !void {
     window_c.releaseTexture(texture_ptr);
 }
 
-fn decodeVideoFrame(render: *Render) !void {
+fn decodeVideoFrame(frame_decoder: *FrameDecoder, core: *Core) !void {
+    // Get video_monitor from Core
+    const video_monitor = if (core.video_monitor) |*vm| vm else return error.NoVideoMonitor;
 
     // Read current frame from monitor thread
-    const frame_idx = render.video_monitor.current_frame_index.load(.acquire);
+    const frame_idx = video_monitor.current_frame_index.load(.acquire);
 
     // Only decode if frame changed
-    if (render.video_monitor.last_decoded_frame_index == null or
-        render.video_monitor.last_decoded_frame_index.? != frame_idx)
+    if (video_monitor.last_decoded_frame_index == null or
+        video_monitor.last_decoded_frame_index.? != frame_idx)
     {
         // Reset scratch arena before decode
-        _ = render.video_monitor.decode_arena.reset(.free_all);
+        _ = video_monitor.decode_arena.reset(.free_all);
 
         // Clean up previous frame resources before next decode
-        if (render.decoded_frame_buffer) |*df| {
+        if (frame_decoder.decoded_frame_buffer) |*df| {
             df.deinit();
-            render.decoded_frame_buffer = null;
+            frame_decoder.decoded_frame_buffer = null;
         }
-        if (render.texture_set_holder) |*ts| {
+        if (frame_decoder.texture_set_holder) |*ts| {
             ts.deinit();
-            render.texture_set_holder = null;
+            frame_decoder.texture_set_holder = null;
         }
 
-        const decoded_frame = render.decoder.decodeFrame(
+        const decoded_frame = frame_decoder.decoder.decodeFrame(
             frame_idx,
-            render.video_monitor.decode_arena.allocator(),
+            video_monitor.decode_arena.allocator(),
         ) catch |err| {
             std.debug.print("Failed to decode frame: {}\n", .{err});
             return error.DecodeFrameFailed;
         };
-        render.decoded_frame_buffer = decoded_frame; // Keep alive until end of loop
+        frame_decoder.decoded_frame_buffer = decoded_frame; // Keep alive until end of loop
 
         // Create Metal texture from packed AYUV buffer (y416 format)
-        var texture_set = render.decoder.createMetalTextures(
+        var texture_set = frame_decoder.decoder.createMetalTextures(
             @ptrCast(decoded_frame.platform_handle),
         ) catch |err| {
             std.debug.print("Failed to create Metal textures: {}\n", .{err});
             return error.TextureCreationFailed;
         };
-        render.texture_set_holder = texture_set; // Keep alive until end of loop
+        frame_decoder.texture_set_holder = texture_set; // Keep alive until end of loop
 
         // Extract MTLTexture handle (single packed texture for y416)
         const mtl_tex = texture_set.getMetalTexture();
-        render.packed_metal_texture = metal.MetalTexture.initFromPtr(mtl_tex);
+        frame_decoder.packed_metal_texture = metal.MetalTexture.initFromPtr(mtl_tex);
 
         // Mark as decoded
-        render.video_monitor.last_decoded_frame_index = frame_idx;
+        video_monitor.last_decoded_frame_index = frame_idx;
     }
 }

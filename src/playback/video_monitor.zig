@@ -1,6 +1,5 @@
 const std = @import("std");
 const Rational = @import("../io/media/media.zig").Rational;
-const app = @import("../app.zig");
 const core = @import("../core.zig");
 
 const Io = std.Io;

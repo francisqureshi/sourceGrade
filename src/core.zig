@@ -2,30 +2,28 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 
-const config = @import("config.zig");
-
-pub const Playback = struct {
-    playing: std.atomic.Value(f32),
-    speed: std.atomic.Value(f32),
-    loop: std.atomic.Value(bool),
-    in_point: isize,
-    out_point: isize,
-};
+const Config = @import("config.zig").Config;
+const SourceMedia = @import("io/media/media.zig").SourceMedia;
+pub const Playback = @import("playback/playback.zig").Playback;
+const VideoMonitor = @import("playback/video_monitor.zig").VideoMonitor;
 
 pub const Core = struct {
     allocator: Allocator,
     io: Io,
 
-    cfg: config.Config,
+    cfg: Config,
     playback: Playback,
 
-    pub fn init(allocator: Allocator, io: Io) !Core {
+    // Core owns SourceMedia (will eventually be managed by MediaPool/Sources)
+    source_media: ?*SourceMedia,
+    video_monitor: ?VideoMonitor,
 
+    pub fn init(allocator: Allocator, io: Io) !Core {
         // Load and parse all configuration
-        const cfg = try config.Config.load(io, allocator);
+        const cfg = try Config.load(io, allocator);
 
         // Initialize playback state with test in/out points
-        const playback_state: Playback = .{
+        const playback: Playback = .{
             .playing = std.atomic.Value(f32).init(0.0),
             .speed = std.atomic.Value(f32).init(1.0),
             .loop = std.atomic.Value(bool).init(false),
@@ -37,11 +35,49 @@ pub const Core = struct {
             .allocator = allocator,
             .io = io,
             .cfg = cfg,
-            .playback = playback_state,
+            .playback = playback,
+            .source_media = null,
+            .video_monitor = null,
         };
     }
 
+    /// Load source media from path and initialize VideoMonitor.
+    /// Called after Platform is ready
+    pub fn loadSourceMedia(self: *Core, video_path: []const u8) !void {
+        const sm = try SourceMedia.init(video_path, self.io, self.allocator);
+
+        self.source_media = try self.allocator.create(SourceMedia);
+        self.source_media.?.* = sm;
+        errdefer {
+            self.source_media.?.deinit();
+            self.allocator.destroy(self.source_media.?);
+            self.source_media = null;
+        }
+
+        // Initialize VideoMonitor with loaded media
+        self.video_monitor = try VideoMonitor.init(
+            &self.source_media.?.frame_rate.get(),
+            self.io,
+            self.allocator,
+            &self.playback,
+        );
+
+        std.debug.print("✓ Core loaded video: {d}x{d} @ {d:.2}fps, {d} frames\n", .{
+            self.source_media.?.resolution.width,
+            self.source_media.?.resolution.height,
+            self.source_media.?.frame_rate_float,
+            self.source_media.?.duration_in_frames,
+        });
+    }
+
     pub fn deinit(self: *Core) void {
+        if (self.video_monitor) |*vm| vm.deinit();
+
+        if (self.source_media) |sm| {
+            sm.deinit();
+            self.allocator.destroy(sm);
+        }
+
         self.cfg.deinit(self.allocator);
     }
 };

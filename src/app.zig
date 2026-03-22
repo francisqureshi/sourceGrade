@@ -3,7 +3,6 @@ const Allocator = std.mem.Allocator;
 const Io = std.Io;
 
 const com = @import("com");
-// const config = @import("config.zig");
 const Core = @import("core.zig").Core;
 const ui = @import("gui/ui.zig");
 const VideoMonitor = @import("playback/video_monitor.zig").VideoMonitor;
@@ -37,7 +36,9 @@ pub const App = struct {
         _ = dt;
     }
 
-    pub fn buildUI(self: *App, imgui: *ui.ImGui, video_monitor: *VideoMonitor) !void {
+    pub fn buildUI(self: *App, imgui: *ui.ImGui) !void {
+        // Get video_monitor from Core
+        const video_monitor = if (self.core.video_monitor) |*vm| vm else return;
 
         // Test slider and rects
         _ = try imgui.slider(1, 1400, 300, 100, 50, &self.test_slider_value, 0, 1);
