@@ -52,8 +52,9 @@ void metal_window_process_events(void* window);
 /// Release the window
 void metal_window_release(void* window);
 
-/// Get current mouse state
-void metal_window_get_mouse_state(void* window, float* out_x, float* out_y, bool* out_down);
+/// Get current mouse state (position, buttons, scroll deltas)
+/// Scroll deltas are one-shot values (reset to 0 after reading)
+void metal_window_get_mouse_state(void* window, float* out_x, float* out_y, bool* out_down, bool* out_middle_down, float* out_scroll_x, float* out_scroll_y);
 
 /// Set the pixel format for the CAMetalLayer
 void metal_layer_set_pixel_format(void* layer, uint32_t pixel_format);

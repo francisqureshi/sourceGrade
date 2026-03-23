@@ -231,15 +231,34 @@ fn renderUiFrame(self: *Platform) !void {
     //  Build IMGUI frame
     self.imgui_ctx.newFrame();
 
-    // Get mouse input
+    // Get all mouse input (position, buttons, scroll)
     var mouse_x: f32 = 0;
     var mouse_y: f32 = 0;
     var mouse_down: bool = false;
-    self.window.getMouse(&mouse_x, &mouse_y, &mouse_down);
+    var mouse_middle_down: bool = false;
+    var scroll_x: f32 = 0;
+    var scroll_y: f32 = 0;
+    self.window.getMouse(
+        &mouse_x,
+        &mouse_y,
+        &mouse_down,
+        &mouse_middle_down,
+        &scroll_x,
+        &scroll_y,
+    );
 
     self.imgui_ctx.mouse_x = mouse_x;
     self.imgui_ctx.mouse_y = mouse_y;
     self.imgui_ctx.mouse_down = mouse_down;
+
+    // TODO: Wire scroll/middle-click to viewer pan/zoom
+    // For now, just print when we get input
+    if (mouse_middle_down) {
+        std.debug.print("Middle mouse down at ({d:.1}, {d:.1})\n", .{ mouse_x, mouse_y });
+    }
+    if (scroll_y != 0) {
+        std.debug.print("Scroll Y: {d:.2}\n", .{scroll_y});
+    }
 
     try self.app.buildUI(self.imgui_ctx);
 
@@ -247,8 +266,8 @@ fn renderUiFrame(self: *Platform) !void {
     const source_viewer = &self.app.viewers.items[0];
 
     // Get the monitor this viewer is displaying
-    const monitor_id = source_viewer.monitor_id orelse return;  // Skip if no monitor attached
-    if (monitor_id >= self.core.video_monitors.items.len) return;  // Safety check
+    const monitor_id = source_viewer.monitor_id orelse return; // Skip if no monitor attached
+    if (monitor_id >= self.core.video_monitors.items.len) return; // Safety check
     const monitor = &self.core.video_monitors.items[monitor_id];
 
     // Decode the frame for this viewer's monitor

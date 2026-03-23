@@ -53,11 +53,15 @@ pub const Window = struct {
         c.metal_window_show(self.handle);
     }
 
-    /// Gets the current mouse position and button state.
+    /// Gets the current mouse state: position, buttons, and scroll deltas.
     /// Coordinates are in window-local points (not pixels).
-    /// `out_down` is true if the primary mouse button is pressed.
-    pub fn getMouse(self: *Window, out_x: *f32, out_y: *f32, out_down: *bool) void {
-        c.metal_window_get_mouse_state(self.handle, out_x, out_y, out_down);
+    /// `out_down` is true if the primary (left) mouse button is pressed.
+    /// `out_middle_down` is true if the middle mouse button is pressed.
+    /// Scroll deltas are one-shot values (reset to 0 after reading).
+    /// Positive scrollY = scroll down, negative = scroll up.
+    /// Positive scrollX = scroll right, negative = scroll left.
+    pub fn getMouse(self: *Window, out_x: *f32, out_y: *f32, out_down: *bool, out_middle_down: *bool, out_scroll_x: *f32, out_scroll_y: *f32) void {
+        c.metal_window_get_mouse_state(self.handle, out_x, out_y, out_down, out_middle_down, out_scroll_x, out_scroll_y);
     }
 
     /// Returns the backing scale factor (Retina multiplier).

@@ -11,8 +11,11 @@ class MetalView: NSView {
     var mouseX: Float = 0.0
     var mouseY: Float = 0.0
     var mouseDown: Bool = false
+    var mouseMiddleDown: Bool = false
+    var scrollDeltaX: Float = 0.0
+    var scrollDeltaY: Float = 0.0
 
-    // CRITICAL: Tell AppKit this view is fully opaque (no transparency)
+    // Tell AppKit this view is fully opaque (no transparency)
     override var isOpaque: Bool { return true }
 
     override init(frame frameRect: NSRect) {
@@ -96,6 +99,48 @@ class MetalView: NSView {
         let location = convert(event.locationInWindow, from: nil)
         mouseX = Float(location.x)
         mouseY = Float(bounds.height - location.y)
+    }
+
+    /// Handle middle mouse button press (and other non-left/right buttons).
+    override func otherMouseDown(with event: NSEvent) {
+        let location = convert(event.locationInWindow, from: nil)
+        mouseX = Float(location.x)
+        mouseY = Float(bounds.height - location.y)
+
+        if event.buttonNumber == 2 {  // Middle button
+            mouseMiddleDown = true
+        }
+    }
+
+    /// Handle middle mouse button release.
+    override func otherMouseUp(with event: NSEvent) {
+        let location = convert(event.locationInWindow, from: nil)
+        mouseX = Float(location.x)
+        mouseY = Float(bounds.height - location.y)
+
+        if event.buttonNumber == 2 {  // Middle button
+            mouseMiddleDown = false
+        }
+    }
+
+    /// Handle middle mouse drag (for panning).
+    override func otherMouseDragged(with event: NSEvent) {
+        let location = convert(event.locationInWindow, from: nil)
+        mouseX = Float(location.x)
+        mouseY = Float(bounds.height - location.y)
+    }
+
+    /// Handle scroll wheel events (for zooming).
+    override func scrollWheel(with event: NSEvent) {
+        // Use precise scrolling deltas if available (trackpad), otherwise use standard deltas (mouse wheel)
+        if event.hasPreciseScrollingDeltas {
+            scrollDeltaX = Float(event.scrollingDeltaX)
+            scrollDeltaY = Float(event.scrollingDeltaY)
+        } else {
+            // Mouse wheel gives coarser values, scale them up for consistency
+            scrollDeltaX = Float(event.scrollingDeltaX) * 10.0
+            scrollDeltaY = Float(event.scrollingDeltaY) * 10.0
+        }
     }
 
     /// Rebuild tracking areas when view resizes to ensure mouse events are captured.
@@ -298,26 +343,40 @@ public func metal_window_release(_ windowPtr: UnsafeMutableRawPointer) {
     // Window is now released
 }
 
-/// Get current mouse position and button state from a window's MetalView.
+/// Get current mouse position, button states, and scroll deltas from a window's MetalView.
 /// Coordinates are in points with top-left origin.
+/// Scroll deltas are reset to 0 after reading (one-shot values).
 @_cdecl("metal_window_get_mouse_state")
 public func metal_window_get_mouse_state(
     _ windowPtr: UnsafeMutableRawPointer,
     _ outX: UnsafeMutablePointer<Float>,
     _ outY: UnsafeMutablePointer<Float>,
-    _ outDown: UnsafeMutablePointer<Bool>
+    _ outDown: UnsafeMutablePointer<Bool>,
+    _ outMiddleDown: UnsafeMutablePointer<Bool>,
+    _ outScrollX: UnsafeMutablePointer<Float>,
+    _ outScrollY: UnsafeMutablePointer<Float>
 ) {
     let window = Unmanaged<MetalWindow>.fromOpaque(windowPtr).takeUnretainedValue()
     guard let metalView = window.contentView as? MetalView else {
         outX.pointee = 0
         outY.pointee = 0
         outDown.pointee = false
+        outMiddleDown.pointee = false
+        outScrollX.pointee = 0
+        outScrollY.pointee = 0
         return
     }
 
     outX.pointee = metalView.mouseX
     outY.pointee = metalView.mouseY
     outDown.pointee = metalView.mouseDown
+    outMiddleDown.pointee = metalView.mouseMiddleDown
+
+    // Read and reset scroll deltas (one-shot)
+    outScrollX.pointee = metalView.scrollDeltaX
+    outScrollY.pointee = metalView.scrollDeltaY
+    metalView.scrollDeltaX = 0
+    metalView.scrollDeltaY = 0
 }
 
 /// Get the window's backing scale factor for HiDPI (Retina) support.
@@ -424,7 +483,8 @@ private func displayLinkCallback(
         wrapper.framePending = true
 
         // Dispatch to main via GCD
-        DispatchQueue.main.async { [weak wrapper, callback = wrapper.callback, userdata = wrapper.userdata] in
+        DispatchQueue.main.async {
+            [weak wrapper, callback = wrapper.callback, userdata = wrapper.userdata] in
             callback?(userdata)
             wrapper?.framePending = false
         }
@@ -497,7 +557,9 @@ public func metal_displaylink_stop(_ wrapperPtr: UnsafeMutableRawPointer) {
 /// When enabled, callbacks run on main thread via GCD with frame dropping.
 /// When disabled, callbacks run directly on CVDisplayLink thread (legacy).
 @_cdecl("metal_displaylink_set_dispatch_to_main")
-public func metal_displaylink_set_dispatch_to_main(_ wrapperPtr: UnsafeMutableRawPointer, _ enabled: Bool) {
+public func metal_displaylink_set_dispatch_to_main(
+    _ wrapperPtr: UnsafeMutableRawPointer, _ enabled: Bool
+) {
     let wrapper = Unmanaged<MetalDisplayLinkWrapper>.fromOpaque(wrapperPtr).takeUnretainedValue()
     wrapper.dispatchToMain = enabled
 }
