@@ -4,12 +4,13 @@ const com = @import("com");
 
 const App = @import("../../app.zig").App;
 const Core = @import("../../core.zig").Core;
-const ui = @import("../../gui/ui.zig");
+const ImGui = @import("../../gui/ui.zig").ImGui;
+const Rational = @import("../../io/media/media.zig").Rational;
+const VideoMonitor = @import("../../playback/video_monitor.zig").VideoMonitor;
 const ImGuiRenderer = @import("ui_renderer.zig").ImGuiRenderer;
 const rend = @import("renderer.zig");
 const wnd = @import("window.zig");
-const VideoMonitor = @import("../../playback/video_monitor.zig").VideoMonitor;
-const Rational = @import("../../io/media/media.zig").Rational;
+const TestDraw = @import("vk_quad_test.zig").TestDraw;
 
 // ============================================================================
 // Platform - Linux and Vulkan
@@ -22,7 +23,7 @@ pub const Platform = struct {
     core: *Core,
     wnd: wnd.Wnd,
     /// IMGUI context for immediate-mode UI rendering (heap-allocated).
-    imgui_ctx: *ui.ImGui,
+    imgui_ctx: *ImGui,
     render: rend.Render,
     video_monitor: VideoMonitor,
     dummy_frame_rate: Rational, // Dummy for Linux (no video yet)
@@ -46,8 +47,8 @@ pub const Platform = struct {
         const window = try wnd.Wnd.create(wnd_title, core.cfg.window);
 
         // Initialize ImGui context on heap so pointer stays valid
-        const imgui_ctx = try app.allocator.create(ui.ImGui);
-        imgui_ctx.* = try ui.ImGui.init(app.allocator);
+        const imgui_ctx = try app.allocator.create(ImGui);
+        imgui_ctx.* = try ImGui.init(app.allocator);
 
         var render = try rend.Render.create(app.allocator, app.io, core.cfg.constants, window.window);
 
@@ -55,7 +56,7 @@ pub const Platform = struct {
         const arena_alloc = arena.allocator();
         defer arena.deinit();
 
-        const init_data = try App.vkDemo(arena_alloc);
+        const init_data = try TestDraw.vkDemo(arena_alloc);
         try render.init(app.allocator, &init_data);
 
         // Create platform with dummy frame rate (Linux has no video yet)

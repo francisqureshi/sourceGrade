@@ -12,6 +12,7 @@ const MetalRenderer = @import("metal_renderer.zig").MetalRenderer;
 const FrameDecoder = @import("frame_decoder.zig").FrameDecoder;
 const Window = @import("window.zig").Window;
 const window_c = @import("window.zig");
+const VideoMonitor = @import("../../playback/video_monitor.zig").VideoMonitor;
 
 // ============================================================================
 // Platform - macOS AppKit + Metal
@@ -242,14 +243,25 @@ fn renderUiFrame(self: *Platform) !void {
 
     try self.app.buildUI(self.imgui_ctx);
 
-    // Decode the frame with Metal
-    decodeVideoFrame(frame_decoder, self.core) catch {};
+    // Get first viewer (for now - future: loop through all viewers)
+    const source_viewer = &self.app.viewers.items[0];
 
-    // Layer 1: Video
+    // Get the monitor this viewer is displaying
+    const monitor_id = source_viewer.monitor_id orelse return;  // Skip if no monitor attached
+    if (monitor_id >= self.core.video_monitors.items.len) return;  // Safety check
+    const monitor = &self.core.video_monitors.items[monitor_id];
+
+    // Decode the frame for this viewer's monitor
+    decodeVideoFrame(frame_decoder, self.core, monitor) catch {};
+
+    // Layer 1: Video (render into viewer bounds)
     if (frame_decoder.packed_metal_texture) |*texture| {
         const VideoUniforms = extern struct {
             video_size: [2]f32,
             viewport_size: [2]f32,
+            viewer_rect: [4]f32, // x, y, width, height
+            zoom: f32,
+            pan_offset: [2]f32,
         };
 
         const video_uniforms = VideoUniforms{
@@ -258,6 +270,9 @@ fn renderUiFrame(self: *Platform) !void {
                 @floatFromInt(frame_decoder.source_media.resolution.height),
             },
             .viewport_size = .{ display_width_pts, display_height_pts },
+            .viewer_rect = .{ source_viewer.x, source_viewer.y, source_viewer.width, source_viewer.height },
+            .zoom = source_viewer.zoom,
+            .pan_offset = .{ source_viewer.pan_x, source_viewer.pan_y },
         };
 
         render_encoder.setPipeline(&self.metal_renderer.video_pipeline);
@@ -300,9 +315,10 @@ fn renderUiFrame(self: *Platform) !void {
     window_c.releaseTexture(texture_ptr);
 }
 
-fn decodeVideoFrame(frame_decoder: *FrameDecoder, core: *Core) !void {
+fn decodeVideoFrame(frame_decoder: *FrameDecoder, core: *Core, video_monitor: *VideoMonitor) !void {
+    _ = core;
     // Get video_monitor from Core
-    const video_monitor = if (core.video_monitor) |*vm| vm else return error.NoVideoMonitor;
+    // const video_monitor = if (core.video_monitor) |*vm| vm else return error.NoVideoMonitor;
 
     // Read current frame from monitor thread
     const frame_idx = video_monitor.current_frame_index.load(.acquire);

@@ -6,6 +6,7 @@ const com = @import("com");
 const Core = @import("core.zig").Core;
 const ui = @import("gui/ui.zig");
 const VideoMonitor = @import("playback/video_monitor.zig").VideoMonitor;
+const Viewer = @import("gui/viewer.zig").Viewer;
 
 pub const WindowConfig = union(enum) {
     maximised,
@@ -16,19 +17,48 @@ pub const App = struct {
     allocator: Allocator,
     io: Io,
     core: *Core,
-    test_slider_value: f32,
+    viewers: std.ArrayList(Viewer),
+
+    //Test remove soon
+    colour_slider: f32,
 
     pub fn init(allocator: Allocator, io: Io, core: *Core) !App {
+
+        // Create viewers ArrayList
+        var viewers = std.ArrayList(Viewer).empty;
+
+        // Create initial viewer (full-screen for now)
+        const source_viewer = Viewer{
+            .x = 0.0,
+            .y = 0.0,
+            .width = 1000.0, // TODO: Get from curr wind size
+            .height = 562.0,
+            .visible = true,
+            .zoom = 1.0,
+            .pan_x = 0.0,
+            .pan_y = 0.0,
+            .monitor_id = 0, // References Core.video_monitors[0]
+        };
+
+        try viewers.append(allocator, source_viewer);
+
         return .{
             .allocator = allocator,
             .io = io,
             .core = core,
-            .test_slider_value = 0.5,
+            .viewers = viewers,
+
+            .colour_slider = 0.5,
         };
     }
 
     pub fn deinit(self: *App) void {
-        _ = self;
+        // _ = self;
+
+        // Deinit each viewer
+        for (self.viewers.items) |*vwr| vwr.deinit();
+
+        self.viewers.deinit(self.allocator);
     }
 
     pub fn update(self: *App, dt: f32) void {
@@ -38,11 +68,11 @@ pub const App = struct {
 
     pub fn buildUI(self: *App, imgui: *ui.ImGui) !void {
         // Get video_monitor from Core
-        const video_monitor = if (self.core.video_monitor) |*vm| vm else return;
+        const video_monitor = &self.core.video_monitors.items[0]; // WARN: Hard Code [0]
 
         // Test slider and rects
-        _ = try imgui.slider(1, 1400, 300, 100, 50, &self.test_slider_value, 0, 1);
-        imgui.addRect(1400, 50, 100, 100, ui.ImGui.packColor(self.test_slider_value, 1, 0, 1.0)) catch {};
+        _ = try imgui.slider(1, 1400, 300, 100, 50, &self.colour_slider, 0, 1);
+        imgui.addRect(1400, 50, 100, 100, ui.ImGui.packColor(self.colour_slider, 1, 0, 1.0)) catch {};
         imgui.addRect(1450, 100, 100, 100, ui.ImGui.packColor(0, 0, 1, 1.0)) catch {};
 
         // ============ Video Controls
@@ -143,75 +173,5 @@ pub const App = struct {
                 ui.ImGui.packColor(1, 1, 1, (1 / @as(f32, @floatFromInt(i + 1)))),
             ) catch {};
         }
-    }
-
-    pub fn vkDemo(arena_alloc: std.mem.Allocator) !com.mdata.Init {
-        const left_quad_model = com.mdata.Model{
-            .id = "LeftQuadModel",
-            .meshes = &[_]com.mdata.Mesh{
-                .{
-                    .id = "LeftQuadMesh",
-                    .vertices = &[_]f32{
-                        -0.99, // '0' Vertex Triplet
-                        0.99,
-                        0.0,
-                        -0.2, // '1' Vertex
-                        0.5,
-                        0.0,
-                        -0.2, // '2' Vertex
-                        -0.5,
-                        0.0,
-                        -0.8, // '3' Vertex
-                        -0.5,
-                        0.0,
-                    },
-                    .indices = &[_]u32{
-                        0, // Tri 0
-                        1,
-                        2,
-                        0, // Tri 1
-                        2,
-                        3,
-                    },
-                },
-            },
-        };
-
-        const right_quad_model = com.mdata.Model{
-            .id = "RightQuadModel",
-            .meshes = &[_]com.mdata.Mesh{
-                .{
-                    .id = "RightQuadMesh",
-                    .vertices = &[_]f32{
-                        0.8, // '0' Vertex Triplet
-                        0.5,
-                        0.0,
-                        0.2, // '1' Vertex
-                        0.5,
-                        0.0,
-                        0.2, // '2' Vertex
-                        -0.5,
-                        0.0,
-                        0.8, // '3' Vertex
-                        -0.5,
-                        0.0,
-                    },
-                    .indices = &[_]u32{
-                        0, // Tri 0
-                        1,
-                        2,
-                        0, // Tri 1
-                        2,
-                        3,
-                    },
-                },
-            },
-        };
-
-        const models = try arena_alloc.alloc(com.mdata.Model, 2);
-        models[0] = left_quad_model;
-        models[1] = right_quad_model;
-
-        return .{ .models = models };
     }
 };

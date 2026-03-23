@@ -16,7 +16,8 @@ pub const Core = struct {
 
     // Core owns SourceMedia (will eventually be managed by MediaPool/Sources)
     source_media: ?*SourceMedia,
-    video_monitor: ?VideoMonitor,
+
+    video_monitors: std.ArrayList(VideoMonitor),
 
     pub fn init(allocator: Allocator, io: Io) !Core {
         // Load and parse all configuration
@@ -37,7 +38,7 @@ pub const Core = struct {
             .cfg = cfg,
             .playback = playback,
             .source_media = null,
-            .video_monitor = null,
+            .video_monitors = std.ArrayList(VideoMonitor).empty,
         };
     }
 
@@ -55,12 +56,14 @@ pub const Core = struct {
         }
 
         // Initialize VideoMonitor with loaded media
-        self.video_monitor = try VideoMonitor.init(
+        // WARN: Probs need to decouple sourceMedia...
+        const video_monitor = try VideoMonitor.init(
             &self.source_media.?.frame_rate.get(),
             self.io,
             self.allocator,
             &self.playback,
         );
+        try self.video_monitors.append(self.allocator, video_monitor);
 
         std.debug.print("✓ Core loaded video: {d}x{d} @ {d:.2}fps, {d} frames\n", .{
             self.source_media.?.resolution.width,
@@ -71,7 +74,9 @@ pub const Core = struct {
     }
 
     pub fn deinit(self: *Core) void {
-        if (self.video_monitor) |*vm| vm.deinit();
+        for (self.video_monitors.items) |*vm| vm.deinit();
+
+        self.video_monitors.deinit(self.allocator);
 
         if (self.source_media) |sm| {
             sm.deinit();
