@@ -238,6 +238,7 @@ fn renderUiFrame(self: *Platform) !void {
     var mouse_middle_down: bool = false;
     var scroll_x: f32 = 0;
     var scroll_y: f32 = 0;
+
     self.window.getMouse(
         &mouse_x,
         &mouse_y,
@@ -251,6 +252,9 @@ fn renderUiFrame(self: *Platform) !void {
     self.imgui_ctx.mouse_y = mouse_y;
     self.imgui_ctx.mouse_down = mouse_down;
 
+    // Get first viewer (for now - future: loop through all viewers)
+    const source_viewer = &self.app.viewers.items[0];
+
     // TODO: Wire scroll/middle-click to viewer pan/zoom
     // For now, just print when we get input
     if (mouse_middle_down) {
@@ -258,12 +262,10 @@ fn renderUiFrame(self: *Platform) !void {
     }
     if (scroll_y != 0) {
         std.debug.print("Scroll Y: {d:.2}\n", .{scroll_y});
+        source_viewer.zoom += scroll_y * 0.01; // Direct test update;
     }
 
     try self.app.buildUI(self.imgui_ctx);
-
-    // Get first viewer (for now - future: loop through all viewers)
-    const source_viewer = &self.app.viewers.items[0];
 
     // Get the monitor this viewer is displaying
     const monitor_id = source_viewer.monitor_id orelse return; // Skip if no monitor attached
