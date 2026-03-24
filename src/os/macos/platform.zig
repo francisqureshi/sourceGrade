@@ -248,21 +248,26 @@ fn renderUiFrame(self: *Platform) !void {
         &scroll_y,
     );
 
+    const last_mouse_x = self.imgui_ctx.mouse_x;
+    const last_mouse_y = self.imgui_ctx.mouse_y;
+
     self.imgui_ctx.mouse_x = mouse_x;
     self.imgui_ctx.mouse_y = mouse_y;
     self.imgui_ctx.mouse_down = mouse_down;
 
+    const temp_pan_x_delta = (mouse_x - last_mouse_x);
+    const temp_pan_y_delta = (mouse_y - last_mouse_y);
+
     // Get first viewer (for now - future: loop through all viewers)
     const source_viewer = &self.app.viewers.items[0];
 
-    // TODO: Wire scroll/middle-click to viewer pan/zoom
-    // For now, just print when we get input
+    // Apply pan and zoom input to viewer
     if (mouse_middle_down) {
-        std.debug.print("Middle mouse down at ({d:.1}, {d:.1})\n", .{ mouse_x, mouse_y });
+        source_viewer.pan_x += temp_pan_x_delta;
+        source_viewer.pan_y += temp_pan_y_delta;
     }
     if (scroll_y != 0) {
-        std.debug.print("Scroll Y: {d:.2}\n", .{scroll_y});
-        source_viewer.zoom += scroll_y * 0.01; // Direct test update;
+        source_viewer.zoom += scroll_y * 0.01;
     }
 
     try self.app.buildUI(self.imgui_ctx);
@@ -280,8 +285,9 @@ fn renderUiFrame(self: *Platform) !void {
         const VideoUniforms = extern struct {
             video_size: [2]f32,
             viewport_size: [2]f32,
-            viewer_rect: [4]f32, // x, y, width, height
+            viewer_rect: [4]f32,
             zoom: f32,
+            _padding: f32 = undefined,
             pan_offset: [2]f32,
         };
 
@@ -296,10 +302,20 @@ fn renderUiFrame(self: *Platform) !void {
             .pan_offset = .{ source_viewer.pan_x, source_viewer.pan_y },
         };
 
+        // Set scissor rect to clip video to viewer bounds (convert points to pixels)
+        const scissor_x: u32 = @intFromFloat(source_viewer.x * backing_scale);
+        const scissor_y: u32 = @intFromFloat(source_viewer.y * backing_scale);
+        const scissor_w: u32 = @intFromFloat(source_viewer.width * backing_scale);
+        const scissor_h: u32 = @intFromFloat(source_viewer.height * backing_scale);
+
+        render_encoder.setScissorRect(scissor_x, scissor_y, scissor_w, scissor_h);
         render_encoder.setPipeline(&self.metal_renderer.video_pipeline);
         render_encoder.setVertexBytes(@ptrCast(&video_uniforms), @sizeOf(VideoUniforms), 0);
         render_encoder.setFragmentTexture(texture, 0);
         render_encoder.drawPrimitives(.triangle_strip, 0, 4);
+
+        // Reset scissor rect to full drawable for UI layer
+        render_encoder.setScissorRect(0, 0, @intCast(drawable_width), @intCast(drawable_height));
     }
 
     // Layer 2: IMGUI

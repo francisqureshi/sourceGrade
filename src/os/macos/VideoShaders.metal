@@ -65,8 +65,12 @@ vertex VideoVertexOut videoVertexShader(
     // Map viewer size to clip space
     float2 clip_half_size = (viewer_half_size / uniforms.viewport_size) * 2.0;
 
+    // Convert pan from screen points to clip space
+    float2 pan_in_clip = (uniforms.pan_offset / uniforms.viewport_size) * 2.0;
+    pan_in_clip.y = -pan_in_clip.y;  // Flip Y
+
     // Scale quad to viewer rect and position in clip space
-    float2 scaled_pos = positions[vertexID] * clip_half_size + clip_center;
+    float2 scaled_pos = positions[vertexID] * clip_half_size + clip_center + pan_in_clip;
 
     // Texture coordinates (flipped Y for video)
     float2 texCoords[4] = {
@@ -76,13 +80,8 @@ vertex VideoVertexOut videoVertexShader(
         float2(1.0, 0.0)   // top-right
     };
 
-    // Apply pan offset (shifts texture coordinates)
-    float2 tex_coord = texCoords[vertexID];
-    tex_coord.x += uniforms.pan_offset.x;
-    tex_coord.y += uniforms.pan_offset.y;
-
     out.position = float4(scaled_pos, 0.0, 1.0);
-    out.texCoord = tex_coord;
+    out.texCoord = texCoords[vertexID];
 
     return out;
 }
