@@ -258,16 +258,35 @@ fn renderUiFrame(self: *Platform) !void {
     const temp_pan_x_delta = (mouse_x - last_mouse_x);
     const temp_pan_y_delta = (mouse_y - last_mouse_y);
 
-    // Get first viewer (for now - future: loop through all viewers)
     const source_viewer = &self.app.viewers.items[0];
 
-    // Apply pan and zoom input to viewer
     if (mouse_middle_down) {
         source_viewer.pan_x += temp_pan_x_delta;
         source_viewer.pan_y += temp_pan_y_delta;
+
+        const video_width: f32 = @floatFromInt(frame_decoder.source_media.resolution.width);
+        const video_height: f32 = @floatFromInt(frame_decoder.source_media.resolution.height);
+
+        const video_aspect = video_width / video_height;
+        const viewer_aspect = source_viewer.width / source_viewer.height;
+
+        var scale_x: f32 = 1.0;
+        var scale_y: f32 = 1.0;
+        if (video_aspect > viewer_aspect) {
+            scale_y = viewer_aspect / video_aspect;
+        } else {
+            scale_x = video_aspect / viewer_aspect;
+        }
+
+        const max_pan_x = source_viewer.width * (scale_x * source_viewer.zoom * 0.5 + 0.45);
+        const max_pan_y = source_viewer.height * (scale_y * source_viewer.zoom * 0.5 + 0.45);
+
+        source_viewer.pan_x = std.math.clamp(source_viewer.pan_x, -max_pan_x, max_pan_x);
+        source_viewer.pan_y = std.math.clamp(source_viewer.pan_y, -max_pan_y, max_pan_y);
     }
     if (scroll_y != 0) {
-        source_viewer.zoom += scroll_y * 0.01;
+        source_viewer.zoom += scroll_y * -0.01;
+        source_viewer.zoom = std.math.clamp(source_viewer.zoom, 0.01, 3000.0);
     }
 
     try self.app.buildUI(self.imgui_ctx);
