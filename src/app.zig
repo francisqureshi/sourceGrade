@@ -29,8 +29,8 @@ pub const App = struct {
 
         // Create initial viewer (full-screen for now)
         const source_viewer = Viewer{
-            .x = 0.0,
-            .y = 0.0,
+            .x = 50.0,
+            .y = 50.0,
             .width = 1000.0,
             .height = 562.0,
             .visible = true,
@@ -66,14 +66,28 @@ pub const App = struct {
         _ = dt;
     }
 
-    pub fn buildUI(self: *App, imgui: *ui.ImGui) !void {
+    pub fn buildUi(self: *App, imgui: *ui.ImGui) !void {
         // Get video_monitor from Core
-        const video_monitor = &self.core.video_monitors.items[0]; // WARN: Hard Code [0]
+        const source_monitor = &self.core.video_monitors.items[0];
+        const source_viewer = &self.viewers.items[0];
 
-        // Test slider and rects
-        _ = try imgui.slider(1, 1400, 300, 100, 50, &self.colour_slider, 0, 1);
-        imgui.addRect(1400, 50, 100, 100, ui.ImGui.packColor(self.colour_slider, 1, 0, 1.0)) catch {};
-        imgui.addRect(1450, 100, 100, 100, ui.ImGui.packColor(0, 0, 1, 1.0)) catch {};
+        var viewer_vstack = ui.layout.VStack.init(50, 50, 800, 450, 0);
+        viewer_vstack.add(.{ .fill = 1.0 }, .{ .fill = 1.0 }, 0.0); // viewer
+        viewer_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 30.0 }, 0.0); // chin
+        viewer_vstack.solve();
+
+        const viewer = viewer_vstack.get(0);
+        const viewer_chin = viewer_vstack.get(1);
+
+        source_viewer.x = viewer.x;
+        source_viewer.y = viewer.y;
+        source_viewer.width = viewer.w;
+        source_viewer.height = viewer.h;
+
+        // // Test slider and rects
+        // _ = try imgui.slider(1, 1400, 300, 100, 50, &self.colour_slider, 0, 1);
+        // imgui.addRect(1400, 50, 100, 100, ui.ImGui.packColor(self.colour_slider, 1, 0, 1.0)) catch {};
+        // imgui.addRect(1450, 100, 100, 100, ui.ImGui.packColor(0, 0, 1, 1.0)) catch {};
 
         // ============ Video Controls
         var ctrl_slider: f32 = self.core.playback.speed.load(.acquire);
@@ -81,14 +95,38 @@ pub const App = struct {
             self.core.playback.speed.store(ctrl_slider, .release);
         }
 
-        const fwd_button_text: []const u8 = if (self.core.playback.playing.load(.acquire) != 0.0) "pause" else "play >";
-        const rev_button_text: []const u8 = if (self.core.playback.playing.load(.acquire) != 0.0) "pause" else "< play";
-
+        const fwd_button_text: []const u8 = if (self.core.playback.playing.load(.acquire) != 0.0) "||" else ">";
+        const rev_button_text: []const u8 = if (self.core.playback.playing.load(.acquire) != 0.0) "||" else "<";
         const loop_button_text: []const u8 = if (self.core.playback.loop.load(.acquire)) "loop ON" else "loop OFF";
 
-        const rev_clicked = imgui.button(3, 445, 450, 150, 50, rev_button_text) catch false;
-        const fwd_clicked = imgui.button(4, 605, 450, 150, 50, fwd_button_text) catch false;
-        const loop_clicked = imgui.button(5, 445 + 75, 550, 150, 50, loop_button_text) catch false;
+        // ============ Transport Controls
+        var row = ui.layout.HStack.init(viewer_chin.x, viewer_chin.y, viewer_chin.w, viewer_chin.h, 10);
+        const toolbar_height: ui.layout.SizePolicy = .{ .percent = 0.75 };
+        row.add(.{ .pixels = 50 }, toolbar_height, 0.0); // Rev
+        row.add(.{ .pixels = 50 }, toolbar_height, 0.0); // Fwd
+        row.add(.{ .fill = 0.33 }, toolbar_height, 0.0); // Loop
+        row.add(.{ .fill = 1.0 }, toolbar_height, 0.0); // TC display
+        row.solve();
+
+        const rev_rect = row.get(0);
+        const fwd_rect = row.get(1);
+        const loop_rect = row.get(2);
+        const tc_rect = row.get(3);
+
+        const rev_clicked = imgui.textButton(3, rev_rect.x, rev_rect.y, rev_rect.w, rev_rect.h, rev_button_text) catch false;
+        const fwd_clicked = imgui.textButton(4, fwd_rect.x, fwd_rect.y, fwd_rect.w, fwd_rect.h, fwd_button_text) catch false;
+        const loop_clicked = imgui.textButton(5, loop_rect.x, loop_rect.y, loop_rect.w, loop_rect.h, loop_button_text) catch false;
+
+        const current_frame = source_monitor.current_frame_index.load(.acquire);
+        var disp_frame_buf: [64]u8 = undefined;
+        const frame_text = std.fmt.bufPrint(&disp_frame_buf, "Frame: {d}  Speed: {d:.2}x", .{
+            current_frame,
+            self.core.playback.speed.load(.acquire),
+        }) catch "---";
+        try imgui.textLabel(tc_rect.x, tc_rect.y, tc_rect.w, tc_rect.h, frame_text, ui.ImGui.packColor(0.2, 0.2, 0.2, 1), .{ 255, 255, 255, 255 }, .left);
+
+        try imgui.addRectOutline(viewer.x, viewer.y, viewer.w, viewer.h, ui.ImGui.packColor(1, 1, 1, 1), 0.5);
+        try imgui.addRectOutline(viewer_chin.x, viewer_chin.y, viewer_chin.w, viewer_chin.h, ui.ImGui.packColor(1, 1, 1, 1), 0.5);
 
         if (fwd_clicked) {
             const current = self.core.playback.playing.load(.acquire);
@@ -96,9 +134,9 @@ pub const App = struct {
             self.core.playback.playing.store(new_state, .release);
 
             if (new_state != 0.0) {
-                try video_monitor.startMonitor(self.io);
+                try source_monitor.startMonitor(self.io);
             } else {
-                video_monitor.stopMonitor(self.io);
+                source_monitor.stopMonitor(self.io);
             }
         }
 
@@ -108,9 +146,9 @@ pub const App = struct {
             self.core.playback.playing.store(new_state, .release);
 
             if (new_state != 0.0) {
-                try video_monitor.startMonitor(self.io);
+                try source_monitor.startMonitor(self.io);
             } else {
-                video_monitor.stopMonitor(self.io);
+                source_monitor.stopMonitor(self.io);
             }
         }
 
@@ -119,59 +157,27 @@ pub const App = struct {
             self.core.playback.loop.store(!current, .release);
         }
 
-        // Frame counter display (read directly from VideoMonitor)
-        const current_frame = video_monitor.current_frame_index.load(.acquire);
-        var disp_frame_buf: [1024]u8 = undefined;
-        const disp_frame_num = std.fmt.bufPrint(
-            &disp_frame_buf,
-            "Frame: {d} Playback Speed: {d:.3}",
-            .{ current_frame, self.core.playback.speed.load(.acquire) },
-        ) catch "CantGetFrame";
-        _ = ui.ImGui.TextWidget.addText(imgui, disp_frame_num, 0, 0, 20.0, .{ 255, 0, 0, 255 }) catch {};
-
-        // ============ LAYOUT DEMO
-        var row = ui.layout.HStack.init(100, 200, 700, 50, 50);
-        const toolbar_height: ui.layout.SizePolicy = .{ .percent = 0.75 };
-        row.add(.{ .pixels = 200 }, toolbar_height, 0.1);
-        row.add(.{ .pixels = 200 }, toolbar_height, 0.25);
-        row.add(.{ .pixels = 200 }, toolbar_height, 0.5);
-        row.add(.{ .pixels = 200 }, toolbar_height, 1.0);
-        row.solve();
-
-        const btn1_rect = row.get(0);
-        const scrub_rect = row.get(1);
-        const tc_rect = row.get(2);
-        const second_fill_rect = row.get(3);
-
-        imgui.addRect(row.x, row.y, row.w, row.h, ui.ImGui.packColor(1, 0, 0, 1)) catch {};
-
-        _ = imgui.button(6, btn1_rect.x, btn1_rect.y, btn1_rect.w, btn1_rect.h, "|>") catch false;
-        _ = imgui.button(7, scrub_rect.x, scrub_rect.y, scrub_rect.w, scrub_rect.h, "------------|-------") catch false;
-        _ = imgui.button(8, tc_rect.x, tc_rect.y, tc_rect.w, tc_rect.h, "TC 00:00:00:00") catch false;
-        _ = imgui.button(9, second_fill_rect.x, second_fill_rect.y, second_fill_rect.w, second_fill_rect.h, "Second fill") catch false;
-
-        imgui.addCircle(900, 450, 100, 120, ui.ImGui.packColor(0, 0, 1, 1)) catch {};
-
-        var col = ui.layout.VStack.init(300, 50, 50, 500, 3);
-        const vert_bar_width: ui.layout.SizePolicy = .{ .percent = 0.66 };
-
-        col.add(vert_bar_width, .{ .percent = 0.33 }, 1.0);
-        for (0..30) |_| {
-            col.add(vert_bar_width, .{ .fill = 0.10 }, 0.0);
-        }
-        col.solve();
-
-        imgui.addRect(col.x, col.y, col.w, col.h, ui.ImGui.packColor(0, 0, 0, 1.0)) catch {};
-
-        for (0..col.child_count) |i| {
-            const elem = col.get(i);
-            imgui.addRect(
-                elem.x,
-                elem.y,
-                elem.w,
-                elem.h,
-                ui.ImGui.packColor(1, 1, 1, (1 / @as(f32, @floatFromInt(i + 1)))),
-            ) catch {};
-        }
+        // // V Stack
+        // var col = ui.layout.VStack.init(300, 50, 50, 500, 3);
+        // const vert_bar_width: ui.layout.SizePolicy = .{ .percent = 0.66 };
+        //
+        // col.add(vert_bar_width, .{ .percent = 0.33 }, 1.0);
+        // for (0..30) |_| {
+        //     col.add(vert_bar_width, .{ .fill = 0.10 }, 0.0);
+        // }
+        // col.solve();
+        //
+        // imgui.addRect(col.x, col.y, col.w, col.h, ui.ImGui.packColor(0, 0, 0, 1.0)) catch {};
+        //
+        // for (0..col.child_count) |i| {
+        //     const elem = col.get(i);
+        //     imgui.addRect(
+        //         elem.x,
+        //         elem.y,
+        //         elem.w,
+        //         elem.h,
+        //         ui.ImGui.packColor(1, 1, 1, (1 / @as(f32, @floatFromInt(i + 1)))),
+        //     ) catch {};
+        // }
     }
 };

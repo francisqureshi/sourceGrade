@@ -175,8 +175,6 @@ pub const ImGui = struct {
         });
     }
 
-    // INFO: Removed fn render in favour of ui_renderder.zig
-
     /// Add a filled triangle to the current frame's geometry, xy is first point, other points followed are relative.
     pub fn addTriangle(self: *ImGui, x: f32, y: f32, xb: f32, yb: f32, xc: f32, yc: f32, color: u32) !void {
         const base = @as(u16, @intCast(self.vertices.items.len));
@@ -263,15 +261,48 @@ pub const ImGui = struct {
 
         const base = @as(u16, @intCast(self.vertices.items.len));
 
-        // Create thick line as quad
+        // Create thick line as quad (UV 0,0 to skip texture sampling)
         try self.vertices.append(self.allocator, ImVertex.init(x0 + nx, y0 + ny, 0, 0, color));
-        try self.vertices.append(self.allocator, ImVertex.init(x1 + nx, y1 + ny, 1, 0, color));
-        try self.vertices.append(self.allocator, ImVertex.init(x1 - nx, y1 - ny, 1, 1, color));
-        try self.vertices.append(self.allocator, ImVertex.init(x0 - nx, y0 - ny, 0, 1, color));
+        try self.vertices.append(self.allocator, ImVertex.init(x1 + nx, y1 + ny, 0, 0, color));
+        try self.vertices.append(self.allocator, ImVertex.init(x1 - nx, y1 - ny, 0, 0, color));
+        try self.vertices.append(self.allocator, ImVertex.init(x0 - nx, y0 - ny, 0, 0, color));
 
         try self.indices.appendSlice(self.allocator, &[6]u16{
             base + 0, base + 1, base + 2,
             base + 0, base + 2, base + 3,
+        });
+    }
+
+    pub fn addRectOutline(self: *ImGui, x: f32, y: f32, w: f32, h: f32, color: u32, thickness: f32) !void {
+        const t = thickness * 0.5;
+        const base = @as(u16, @intCast(self.vertices.items.len));
+
+        // Outer corners (clockwise from top-left)
+        try self.vertices.append(self.allocator, ImVertex.init(x - t, y - t, 0, 0, color)); // 0: outer TL
+        try self.vertices.append(self.allocator, ImVertex.init(x + w + t, y - t, 0, 0, color)); // 1: outer TR
+        try self.vertices.append(self.allocator, ImVertex.init(x + w + t, y + h + t, 0, 0, color)); // 2: outer BR
+        try self.vertices.append(self.allocator, ImVertex.init(x - t, y + h + t, 0, 0, color)); // 3: outer BL
+
+        // Inner corners (clockwise from top-left)
+        try self.vertices.append(self.allocator, ImVertex.init(x + t, y + t, 0, 0, color)); // 4: inner TL
+        try self.vertices.append(self.allocator, ImVertex.init(x + w - t, y + t, 0, 0, color)); // 5: inner TR
+        try self.vertices.append(self.allocator, ImVertex.init(x + w - t, y + h - t, 0, 0, color)); // 6: inner BR
+        try self.vertices.append(self.allocator, ImVertex.init(x + t, y + h - t, 0, 0, color)); // 7: inner BL
+
+        // 8 triangles forming the border (2 per side)
+        try self.indices.appendSlice(self.allocator, &[_]u16{
+            // Top edge
+            base + 0, base + 1, base + 5,
+            base + 0, base + 5, base + 4,
+            // Right edge
+            base + 1, base + 2, base + 6,
+            base + 1, base + 6, base + 5,
+            // Bottom edge
+            base + 2, base + 3, base + 7,
+            base + 2, base + 7, base + 6,
+            // Left edge
+            base + 3, base + 0, base + 4,
+            base + 3, base + 4, base + 7,
         });
     }
 
@@ -307,7 +338,7 @@ pub const ImGui = struct {
 
     /// Immediate-mode button widget
     /// Returns true if button was clicked this frame
-    pub fn button(self: *ImGui, id: u32, x: f32, y: f32, w: f32, h: f32, label: []const u8) !bool {
+    pub fn textButton(self: *ImGui, id: u32, x: f32, y: f32, w: f32, h: f32, label: []const u8) !bool {
         const is_hot = self.isInRect(x, y, w, h);
         const is_active = self.active_id == id;
 
@@ -335,8 +366,11 @@ pub const ImGui = struct {
 
         try self.addRect(x, y, w, h, color);
 
-        const font_size = 16;
-        _ = TextWidget.addText(self, label, ((w / 2) + x), (y + (h / 2) - (font_size / 2)), font_size, .{ 255, 255, 255, 255 }) catch {};
+        const font_size: f32 = 16;
+        const text_width = self.measureText(label, font_size) catch 0;
+        const text_x = x + (w / 2) - (text_width / 2);
+        const text_y = y + (h / 2) - (font_size / 2);
+        _ = TextWidget.addText(self, label, text_x, text_y, font_size, .{ 255, 255, 255, 255 }) catch {};
 
         return clicked;
     }
@@ -390,6 +424,44 @@ pub const ImGui = struct {
     /// Get the number of indices to render
     pub fn getIndexCount(self: *ImGui) u32 {
         return @intCast(self.indices.items.len);
+    }
+
+    pub const TextAlign = enum { left, center, right };
+
+    /// Simple text label with background and alignment
+    pub fn textLabel(self: *ImGui, x: f32, y: f32, w: f32, h: f32, label: []const u8, bg_color: u32, text_color: [4]u8, alignment: TextAlign) !void {
+        try self.addRect(x, y, w, h, bg_color);
+        const font_size: f32 = 16;
+        const padding: f32 = 4;
+
+        const text_width = try self.measureText(label, font_size);
+        const text_x = switch (alignment) {
+            .left => x + padding,
+            .center => x + (w / 2) - (text_width / 2),
+            .right => x + w - text_width - padding,
+        };
+        const text_y = y + (h / 2) - (font_size / 2);
+
+        _ = try TextWidget.addText(self, label, text_x, text_y, font_size, text_color);
+    }
+
+    /// Measure text width without rendering
+    pub fn measureText(self: *ImGui, text: []const u8, font_size: f32) !f32 {
+        if (comptime builtin.os.tag != .macos) {
+            return 0;
+        }
+
+        const scaled_font_size = font_size * self.backing_scale_factor;
+        const entry = try self.getOrCreateFontEntry(scaled_font_size);
+        const scale = self.backing_scale_factor;
+
+        var width: f32 = 0;
+        for (text) |char| {
+            const glyph_id = try entry.font.getGlyphID(char);
+            const glyph = try self.getOrRenderGlyph(entry, glyph_id);
+            width += glyph.advance_x / scale;
+        }
+        return width;
     }
 
     // ========================================================================

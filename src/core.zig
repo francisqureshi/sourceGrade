@@ -27,7 +27,7 @@ pub const Core = struct {
         const playback: Playback = .{
             .playing = std.atomic.Value(f32).init(0.0),
             .speed = std.atomic.Value(f32).init(1.0),
-            .loop = std.atomic.Value(bool).init(false),
+            .loop = std.atomic.Value(bool).init(true),
             .in_point = cfg.testing.in_point,
             .out_point = cfg.testing.out_point,
         };

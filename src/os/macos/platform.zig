@@ -284,12 +284,13 @@ fn renderUiFrame(self: *Platform) !void {
         source_viewer.pan_x = std.math.clamp(source_viewer.pan_x, -max_pan_x, max_pan_x);
         source_viewer.pan_y = std.math.clamp(source_viewer.pan_y, -max_pan_y, max_pan_y);
     }
+
     if (scroll_y != 0) {
         source_viewer.zoom += scroll_y * -0.01;
         source_viewer.zoom = std.math.clamp(source_viewer.zoom, 0.01, 3000.0);
     }
 
-    try self.app.buildUI(self.imgui_ctx);
+    try self.app.buildUi(self.imgui_ctx);
 
     // Get the monitor this viewer is displaying
     const monitor_id = source_viewer.monitor_id orelse return; // Skip if no monitor attached
