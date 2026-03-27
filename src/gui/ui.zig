@@ -412,12 +412,14 @@ pub const ImGui = struct {
 
         switch (icon) {
             .play => {
-                // Right-pointing triangle (tip right, base left)
-                try self.addTriangle(cx - size * 0.5, cy - size * 0.8, size * 1.2, size * 0.8, 0, size * 1.6, icon_color);
+                // Right-pointing triangle: base on left, tip on right, centered
+                const half_h = size * 0.7;
+                try self.addTriangle(cx - size * 0.4, cy - half_h, size, half_h, 0, half_h * 2, icon_color);
             },
             .reverse => {
-                // Left-pointing triangle (tip left, base right)
-                try self.addTriangle(cx + size * 0.5, cy - size * 0.8, -size * 1.2, size * 0.8, 0, size * 1.6, icon_color);
+                // Left-pointing triangle: base on right, tip on left, centered
+                const half_h = size * 0.7;
+                try self.addTriangle(cx + size * 0.4, cy - half_h, -size, half_h, 0, half_h * 2, icon_color);
             },
             .pause => {
                 // Two vertical bars

@@ -99,19 +99,21 @@ pub const App = struct {
 
         // ============ Transport Controls
         var row = ui.layout.HStack.init(viewer_chin.x, viewer_chin.y, viewer_chin.w, viewer_chin.h, 10);
-        const toolbar_height: ui.layout.SizePolicy = .{ .percent = 0.75 };
-        row.add(.{ .pixels = 20 }, toolbar_height, 0.0); // Rev
-        row.add(.{ .pixels = 20 }, toolbar_height, 0.0); // Pause
-        row.add(.{ .pixels = 20 }, toolbar_height, 0.0); // Fwd
+        const toolbar_height: ui.layout.SizePolicy = .{ .fill = 1.0 };
+        row.add(.{ .pixels = 30 }, toolbar_height, 0.0); // Padd left
+        row.add(.{ .pixels = 30 }, toolbar_height, 0.0); // Rev
+        row.add(.{ .pixels = 30 }, toolbar_height, 0.0); // Pause
+        row.add(.{ .pixels = 30 }, toolbar_height, 0.0); // Fwd
         row.add(.{ .fill = 0.33 }, toolbar_height, 0.0); // Loop
         row.add(.{ .fill = 1.0 }, toolbar_height, 0.0); // TC display
         row.solve();
 
-        const rev_rect = row.get(0);
-        const pause_rect = row.get(1);
-        const fwd_rect = row.get(2);
-        const loop_rect = row.get(3);
-        const tc_rect = row.get(4);
+        // const padd_left = row.get(0);
+        const rev_rect = row.get(1);
+        const pause_rect = row.get(2);
+        const fwd_rect = row.get(3);
+        const loop_rect = row.get(4);
+        const tc_rect = row.get(5);
 
         const rev_clicked = imgui.iconButton(3, rev_rect.x, rev_rect.y, rev_rect.w, rev_rect.h, .reverse) catch false;
         const pause_clicked = imgui.iconButton(4, pause_rect.x, pause_rect.y, pause_rect.w, pause_rect.h, .pause) catch false;
