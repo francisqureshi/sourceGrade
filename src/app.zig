@@ -95,27 +95,28 @@ pub const App = struct {
             self.core.playback.speed.store(ctrl_slider, .release);
         }
 
-        const fwd_button_text: []const u8 = if (self.core.playback.playing.load(.acquire) != 0.0) "||" else ">";
-        const rev_button_text: []const u8 = if (self.core.playback.playing.load(.acquire) != 0.0) "||" else "<";
         const loop_button_text: []const u8 = if (self.core.playback.loop.load(.acquire)) "loop ON" else "loop OFF";
 
         // ============ Transport Controls
         var row = ui.layout.HStack.init(viewer_chin.x, viewer_chin.y, viewer_chin.w, viewer_chin.h, 10);
         const toolbar_height: ui.layout.SizePolicy = .{ .percent = 0.75 };
-        row.add(.{ .pixels = 50 }, toolbar_height, 0.0); // Rev
-        row.add(.{ .pixels = 50 }, toolbar_height, 0.0); // Fwd
+        row.add(.{ .pixels = 20 }, toolbar_height, 0.0); // Rev
+        row.add(.{ .pixels = 20 }, toolbar_height, 0.0); // Pause
+        row.add(.{ .pixels = 20 }, toolbar_height, 0.0); // Fwd
         row.add(.{ .fill = 0.33 }, toolbar_height, 0.0); // Loop
         row.add(.{ .fill = 1.0 }, toolbar_height, 0.0); // TC display
         row.solve();
 
         const rev_rect = row.get(0);
-        const fwd_rect = row.get(1);
-        const loop_rect = row.get(2);
-        const tc_rect = row.get(3);
+        const pause_rect = row.get(1);
+        const fwd_rect = row.get(2);
+        const loop_rect = row.get(3);
+        const tc_rect = row.get(4);
 
-        const rev_clicked = imgui.textButton(3, rev_rect.x, rev_rect.y, rev_rect.w, rev_rect.h, rev_button_text) catch false;
-        const fwd_clicked = imgui.textButton(4, fwd_rect.x, fwd_rect.y, fwd_rect.w, fwd_rect.h, fwd_button_text) catch false;
-        const loop_clicked = imgui.textButton(5, loop_rect.x, loop_rect.y, loop_rect.w, loop_rect.h, loop_button_text) catch false;
+        const rev_clicked = imgui.iconButton(3, rev_rect.x, rev_rect.y, rev_rect.w, rev_rect.h, .reverse) catch false;
+        const pause_clicked = imgui.iconButton(4, pause_rect.x, pause_rect.y, pause_rect.w, pause_rect.h, .pause) catch false;
+        const fwd_clicked = imgui.iconButton(5, fwd_rect.x, fwd_rect.y, fwd_rect.w, fwd_rect.h, .play) catch false;
+        const loop_clicked = imgui.textButton(6, loop_rect.x, loop_rect.y, loop_rect.w, loop_rect.h, loop_button_text) catch false;
 
         const current_frame = source_monitor.current_frame_index.load(.acquire);
         var disp_frame_buf: [64]u8 = undefined;
@@ -129,27 +130,18 @@ pub const App = struct {
         try imgui.addRectOutline(viewer_chin.x, viewer_chin.y, viewer_chin.w, viewer_chin.h, ui.ImGui.packColor(1, 1, 1, 1), 0.5);
 
         if (fwd_clicked) {
-            const current = self.core.playback.playing.load(.acquire);
-            const new_state: f32 = if (current == 0.0) 1.0 else 0.0;
-            self.core.playback.playing.store(new_state, .release);
-
-            if (new_state != 0.0) {
-                try source_monitor.startMonitor(self.io);
-            } else {
-                source_monitor.stopMonitor(self.io);
-            }
+            self.core.playback.playing.store(1.0, .release);
+            try source_monitor.startMonitor(self.io);
         }
 
         if (rev_clicked) {
-            const current = self.core.playback.playing.load(.acquire);
-            const new_state: f32 = if (current == 0.0) -1.0 else 0.0;
-            self.core.playback.playing.store(new_state, .release);
+            self.core.playback.playing.store(-1.0, .release);
+            try source_monitor.startMonitor(self.io);
+        }
 
-            if (new_state != 0.0) {
-                try source_monitor.startMonitor(self.io);
-            } else {
-                source_monitor.stopMonitor(self.io);
-            }
+        if (pause_clicked) {
+            self.core.playback.playing.store(0.0, .release);
+            source_monitor.stopMonitor(self.io);
         }
 
         if (loop_clicked) {

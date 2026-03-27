@@ -179,14 +179,14 @@ pub const ImGui = struct {
     pub fn addTriangle(self: *ImGui, x: f32, y: f32, xb: f32, yb: f32, xc: f32, yc: f32, color: u32) !void {
         const base = @as(u16, @intCast(self.vertices.items.len));
 
-        // Add 3 vertices (clockwise from top-left)
+        // Add 3 vertices (UV 0,0 to skip texture sampling)
         try self.vertices.append(self.allocator, ImVertex.init(x, y, 0, 0, color));
-        try self.vertices.append(self.allocator, ImVertex.init(x + xb, y + yb, 1, 0, color));
-        try self.vertices.append(self.allocator, ImVertex.init(x + xc, y + yc, 1, 1, color));
+        try self.vertices.append(self.allocator, ImVertex.init(x + xb, y + yb, 0, 0, color));
+        try self.vertices.append(self.allocator, ImVertex.init(x + xc, y + yc, 0, 0, color));
 
         // Add 3 indices
         try self.indices.appendSlice(self.allocator, &[3]u16{
-            base + 0, base + 1, base + 2, // First triangle
+            base + 0, base + 1, base + 2,
         });
     }
 
@@ -371,6 +371,67 @@ pub const ImGui = struct {
         const text_x = x + (w / 2) - (text_width / 2);
         const text_y = y + (h / 2) - (font_size / 2);
         _ = TextWidget.addText(self, label, text_x, text_y, font_size, .{ 255, 255, 255, 255 }) catch {};
+
+        return clicked;
+    }
+
+    pub const Icon = enum { play, reverse, pause, stop };
+
+    /// Immediate-mode icon button (play/pause/stop/reverse)
+    pub fn iconButton(self: *ImGui, id: u32, x: f32, y: f32, w: f32, h: f32, icon: Icon) !bool {
+        const is_hot = self.isInRect(x, y, w, h);
+        const is_active = self.active_id == id;
+
+        if (is_hot) self.hot_id = id;
+
+        var clicked = false;
+
+        if (is_active) {
+            if (!self.mouse_down) {
+                if (is_hot) clicked = true;
+                self.active_id = 0;
+            }
+        } else if (is_hot) {
+            if (self.mouse_down) self.active_id = id;
+        }
+
+        const bg_color = if (is_active)
+            packColor(0.8, 0.3, 0.3, 1.0)
+        else if (is_hot)
+            packColor(0.5, 0.5, 0.5, 1.0)
+        else
+            packColor(0.3, 0.3, 0.3, 1.0);
+
+        const icon_color = packColor(1, 1, 1, 1);
+
+        try self.addRect(x, y, w, h, bg_color);
+
+        const cx = x + w / 2;
+        const cy = y + h / 2;
+        const size = @min(w, h) * 0.4;
+
+        switch (icon) {
+            .play => {
+                // Right-pointing triangle (tip right, base left)
+                try self.addTriangle(cx - size * 0.5, cy - size * 0.8, size * 1.2, size * 0.8, 0, size * 1.6, icon_color);
+            },
+            .reverse => {
+                // Left-pointing triangle (tip left, base right)
+                try self.addTriangle(cx + size * 0.5, cy - size * 0.8, -size * 1.2, size * 0.8, 0, size * 1.6, icon_color);
+            },
+            .pause => {
+                // Two vertical bars
+                const bar_w = size * 0.35;
+                const bar_h = size * 1.6;
+                const gap = size * 0.25;
+                try self.addRect(cx - gap - bar_w, cy - bar_h / 2, bar_w, bar_h, icon_color);
+                try self.addRect(cx + gap, cy - bar_h / 2, bar_w, bar_h, icon_color);
+            },
+            .stop => {
+                // Square
+                try self.addRect(cx - size * 0.6, cy - size * 0.6, size * 1.2, size * 1.2, icon_color);
+            },
+        }
 
         return clicked;
     }
