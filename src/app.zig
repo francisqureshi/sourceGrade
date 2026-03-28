@@ -21,6 +21,7 @@ pub const App = struct {
 
     //Test remove soon
     colour_slider: f32,
+    test_slider: f32,
 
     pub fn init(allocator: Allocator, io: Io, core: *Core) !App {
 
@@ -49,6 +50,7 @@ pub const App = struct {
             .viewers = viewers,
 
             .colour_slider = 0.5,
+            .test_slider = 0.0,
         };
     }
 
@@ -73,21 +75,56 @@ pub const App = struct {
 
         var viewer_vstack = ui.layout.VStack.init(50, 50, 800, 450, 0);
         viewer_vstack.add(.{ .fill = 1.0 }, .{ .fill = 1.0 }, 0.0); // viewer
-        viewer_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 30.0 }, 0.0); // chin
+        viewer_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 50.0 }, 0.0); // chin / controls
         viewer_vstack.solve();
 
-        const viewer = viewer_vstack.get(0);
+        const viewer_video_surface = viewer_vstack.get(0);
         const viewer_chin = viewer_vstack.get(1);
 
-        source_viewer.x = viewer.x;
-        source_viewer.y = viewer.y;
-        source_viewer.width = viewer.w;
-        source_viewer.height = viewer.h;
+        source_viewer.x = viewer_video_surface.x;
+        source_viewer.y = viewer_video_surface.y;
+        source_viewer.width = viewer_video_surface.w;
+        source_viewer.height = viewer_video_surface.h;
 
-        // // Test slider and rects
-        // _ = try imgui.slider(1, 1400, 300, 100, 50, &self.colour_slider, 0, 1);
-        // imgui.addRect(1400, 50, 100, 100, ui.ImGui.packColor(self.colour_slider, 1, 0, 1.0)) catch {};
-        // imgui.addRect(1450, 100, 100, 100, ui.ImGui.packColor(0, 0, 1, 1.0)) catch {};
+        var viewer_ctrls_vstack = ui.layout.VStack.init(viewer_chin.x, viewer_chin.y, viewer_chin.w, viewer_chin.h, 0);
+        viewer_ctrls_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 20.0 }, 0.0); // scrubber
+        viewer_ctrls_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 30.0 }, 0.0); // buttons
+        viewer_ctrls_vstack.solve();
+
+        const viewer_scrubber = viewer_ctrls_vstack.get(0);
+        const viewer_ctrls = viewer_ctrls_vstack.get(1);
+
+        // ============ Video Scrubber
+        var scrubber_hstack = ui.layout.HStack.init(viewer_scrubber.x, viewer_scrubber.y, viewer_scrubber.w, viewer_scrubber.h, 0);
+        scrubber_hstack.add(.{ .percent = 0.025 }, .{ .fill = 1.0 }, 1.0);
+        scrubber_hstack.add(.{ .fill = 1.0 }, .{ .fill = 1.0 }, 1.0);
+        scrubber_hstack.add(.{ .percent = 0.025 }, .{ .fill = 1.0 }, 1.0);
+        scrubber_hstack.solve();
+
+        const scrubber = scrubber_hstack.get(1);
+
+        var scrubber_slider: usize = source_monitor.current_frame_index.load(.acquire);
+        var scrubber_in: usize = @intCast(self.core.playback.in_point);
+        var scrubber_out: usize = @intCast(self.core.playback.out_point);
+        if (try imgui.scrubBar(
+            111,
+            112,
+            113,
+            scrubber.x,
+            scrubber.y,
+            scrubber.w,
+            scrubber.h,
+            &scrubber_slider,
+            &scrubber_in,
+            &scrubber_out,
+            0,
+            @intCast(self.core.source_media.?.duration_in_frames),
+        )) {
+            source_monitor.current_frame_index.store(scrubber_slider, .release);
+
+            self.core.playback.in_point = @intCast(scrubber_in);
+            self.core.playback.out_point = @intCast(scrubber_out);
+        }
 
         // ============ Video Controls
         var ctrl_slider: f32 = self.core.playback.speed.load(.acquire);
@@ -98,7 +135,7 @@ pub const App = struct {
         const loop_button_text: []const u8 = if (self.core.playback.loop.load(.acquire)) "loop ON" else "loop OFF";
 
         // ============ Transport Controls
-        var row = ui.layout.HStack.init(viewer_chin.x, viewer_chin.y, viewer_chin.w, viewer_chin.h, 10);
+        var row = ui.layout.HStack.init(viewer_ctrls.x, viewer_ctrls.y, viewer_ctrls.w, viewer_ctrls.h, 10);
         const toolbar_height: ui.layout.SizePolicy = .{ .fill = 1.0 };
         row.add(.{ .pixels = 30 }, toolbar_height, 0.0); // Padd left
         row.add(.{ .pixels = 30 }, toolbar_height, 0.0); // Rev
@@ -128,7 +165,8 @@ pub const App = struct {
         }) catch "---";
         try imgui.textLabel(tc_rect.x, tc_rect.y, tc_rect.w, tc_rect.h, frame_text, ui.ImGui.packColor(0.2, 0.2, 0.2, 1), .{ 255, 255, 255, 255 }, .left);
 
-        try imgui.addRectOutline(viewer.x, viewer.y, viewer.w, viewer.h, ui.ImGui.packColor(1, 1, 1, 1), 0.5);
+        // Outlines
+        try imgui.addRectOutline(viewer_video_surface.x, viewer_video_surface.y, viewer_video_surface.w, viewer_video_surface.h, ui.ImGui.packColor(1, 1, 1, 1), 0.5);
         try imgui.addRectOutline(viewer_chin.x, viewer_chin.y, viewer_chin.w, viewer_chin.h, ui.ImGui.packColor(1, 1, 1, 1), 0.5);
 
         if (fwd_clicked) {

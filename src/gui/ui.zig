@@ -352,7 +352,7 @@ pub const ImGui = struct {
                 if (is_hot) clicked = true; // Released over button = click
                 self.active_id = 0;
             }
-        } else if (is_hot) {
+        } else if (is_hot and self.active_id == 0) {
             if (self.mouse_down) self.active_id = id; // Pressed over button
         }
 
@@ -391,7 +391,7 @@ pub const ImGui = struct {
                 if (is_hot) clicked = true;
                 self.active_id = 0;
             }
-        } else if (is_hot) {
+        } else if (is_hot and self.active_id == 0) {
             if (self.mouse_down) self.active_id = id;
         }
 
@@ -458,7 +458,7 @@ pub const ImGui = struct {
             } else {
                 self.active_id = 0;
             }
-        } else if (is_hot) {
+        } else if (is_hot and self.active_id == 0) {
             if (self.mouse_down) self.active_id = id;
         }
 
@@ -480,6 +480,133 @@ pub const ImGui = struct {
         const thumb_x = x + t * w - thumb_width / 2;
         const thumb_color = packColor(1.0, 1.0, 1.0, 1.0);
         try self.addRect(thumb_x, y, thumb_width, h, thumb_color);
+
+        return val_changed;
+    }
+
+    /// Immediate-mode scrubber slider widget with in/out points
+    /// Returns true if any value changed
+    pub fn scrubBar(
+        self: *ImGui,
+        playhead_id: u32,
+        in_id: u32,
+        out_id: u32,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        curr_frame: *usize,
+        in_point: *usize,
+        out_point: *usize,
+        min_val: usize,
+        max_val: usize,
+    ) !bool {
+        var val_changed: bool = false;
+        const range_f: f32 = @floatFromInt(max_val - min_val);
+
+        // Helper to convert frame to x position
+        const frameToX = struct {
+            fn f(frame: usize, min: usize, range: f32, bar_x: f32, bar_w: f32) f32 {
+                const frame_f: f32 = @floatFromInt(frame - min);
+                return bar_x + (frame_f / range) * bar_w;
+            }
+        }.f;
+
+        // Helper to convert x position to frame
+        const xToFrame = struct {
+            fn f(mouse_x: f32, bar_x: f32, bar_w: f32, min: usize, range: f32) usize {
+                const t = std.math.clamp((mouse_x - bar_x) / bar_w, 0.0, 1.0);
+                return min + @as(usize, @intFromFloat(t * range));
+            }
+        }.f;
+
+        // Thumb dimensions
+        const playhead_width: f32 = 4;
+        const io_width: f32 = 2;
+
+        // Calculate positions
+        const playhead_x = frameToX(curr_frame.*, min_val, range_f, x, w);
+        const in_x = frameToX(in_point.*, min_val, range_f, x, w);
+        const out_x = frameToX(out_point.*, min_val, range_f, x, w);
+
+        // Hit test areas (slightly wider than visual for easier clicking)
+        const hit_margin: f32 = 6;
+
+        const playhead_hot = self.mouse_x >= playhead_x - hit_margin and self.mouse_x <= playhead_x + hit_margin and
+            self.mouse_y >= y and self.mouse_y < y + h;
+        const in_hot = self.mouse_x >= in_x - hit_margin and self.mouse_x <= in_x + hit_margin and
+            self.mouse_y >= y and self.mouse_y < y + h;
+        const out_hot = self.mouse_x >= out_x - hit_margin and self.mouse_x <= out_x + hit_margin and
+            self.mouse_y >= y and self.mouse_y < y + h;
+
+        // Handle playhead dragging
+        if (self.active_id == playhead_id) {
+            if (self.mouse_down) {
+                curr_frame.* = xToFrame(self.mouse_x, x, w, min_val, range_f);
+                // Clamp playhead between in and out points
+                curr_frame.* = std.math.clamp(curr_frame.*, in_point.*, out_point.*);
+                val_changed = true;
+            } else {
+                self.active_id = 0;
+            }
+        } else if (playhead_hot and self.mouse_down and self.active_id == 0) {
+            self.active_id = playhead_id;
+        }
+
+        // Handle in point dragging
+        if (self.active_id == in_id) {
+            if (self.mouse_down) {
+                in_point.* = xToFrame(self.mouse_x, x, w, min_val, range_f);
+                // Clamp: in point can't go past out point
+                if (in_point.* > out_point.*) in_point.* = out_point.*;
+                val_changed = true;
+            } else {
+                self.active_id = 0;
+            }
+        } else if (in_hot and self.mouse_down and self.active_id == 0) {
+            self.active_id = in_id;
+        }
+
+        // Handle out point dragging
+        if (self.active_id == out_id) {
+            if (self.mouse_down) {
+                out_point.* = xToFrame(self.mouse_x, x, w, min_val, range_f);
+                // Clamp: out point can't go before in point
+                if (out_point.* < in_point.*) out_point.* = in_point.*;
+                val_changed = true;
+            } else {
+                self.active_id = 0;
+            }
+        } else if (out_hot and self.mouse_down and self.active_id == 0) {
+            self.active_id = out_id;
+        }
+
+        // Update hot_id for cursor feedback
+        if (playhead_hot) self.hot_id = playhead_id;
+        if (in_hot) self.hot_id = in_id;
+        if (out_hot) self.hot_id = out_id;
+
+        // Draw track
+        const track_height = h * 0.2;
+        const track_y = y + (h - track_height) / 2;
+        const track_color = packColor(0.4, 0.4, 0.4, 1.0);
+        try self.addRect(x, track_y, w, track_height, track_color);
+
+        // Draw in/out region (highlighted area between in and out)
+        const region_color = packColor(0.3, 0.5, 0.7, 0.5);
+        try self.addRect(in_x, track_y, out_x - in_x, track_height, region_color);
+
+        // Draw in point (thin line)
+        const in_color = if (self.active_id == in_id) packColor(0.5, 1.0, 0.5, 1.0) else packColor(0.3, 0.8, 0.3, 1.0);
+        try self.addRect(in_x - io_width / 2, y, io_width, h, in_color);
+
+        // Draw out point (thin line)
+        const out_color = if (self.active_id == out_id) packColor(1.0, 0.5, 0.5, 1.0) else packColor(0.8, 0.3, 0.3, 1.0);
+        try self.addRect(out_x - io_width / 2, y, io_width, h, out_color);
+
+        // Draw playhead (thicker, on top)
+        const playhead_color = if (self.active_id == playhead_id) packColor(1.0, 1.0, 1.0, 1.0) else packColor(0.9, 0.9, 0.9, 1.0);
+        try self.addRect(playhead_x - playhead_width / 2, y + (h * 0.15), playhead_width, h * 0.7, playhead_color);
 
         return val_changed;
     }
