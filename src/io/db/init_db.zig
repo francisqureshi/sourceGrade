@@ -19,8 +19,7 @@ pub fn startDb(allocator: Allocator, io: std.Io) !*pg.Pool {
     // cases. The pool's `acquire` method, to get a connection is thread-safe.
     // The pool may start 1 background thread to reconnect disconnected
     // connections (or connections in an invalid state).
-    const pool = pg.Pool.init(allocator, .{
-        .io = io,
+    const pool = pg.Pool.init(allocator, io, .{
         .size = 5,
         .connect = .{
             .port = 5433,

@@ -6,13 +6,15 @@ const metal = @import("metal");
 const App = @import("../../app.zig").App;
 const Core = @import("../../core.zig").Core;
 const ImGui = @import("../../gui/ui.zig").ImGui;
+const VideoMonitor = @import("../../playback/video_monitor.zig").VideoMonitor;
 const DisplayLink = @import("window.zig").DisplayLink;
+const FrameDecoder = @import("frame_decoder.zig").FrameDecoder;
 const ImGuiRenderer = @import("ui_renderer.zig").ImGuiRenderer;
 const MetalRenderer = @import("metal_renderer.zig").MetalRenderer;
-const FrameDecoder = @import("frame_decoder.zig").FrameDecoder;
 const Window = @import("window.zig").Window;
 const window_c = @import("window.zig");
-const VideoMonitor = @import("../../playback/video_monitor.zig").VideoMonitor;
+
+const log = std.log.scoped(.macos);
 
 // ============================================================================
 // Platform - macOS AppKit + Metal
@@ -47,7 +49,7 @@ pub const Platform = struct {
 
         // Check if Metal is available
         if (!metal.isAvailable()) {
-            std.debug.print("Error: Metal is not available on this system\n", .{});
+            log.debug("Error: Metal is not available on this system", .{});
             return error.MetalNotAvailable;
         }
 
@@ -83,7 +85,7 @@ pub const Platform = struct {
         // Set ImGui display size from config
         imgui_ctx.display_width = @floatFromInt(width);
         imgui_ctx.display_height = @floatFromInt(height);
-        std.debug.print("✓ Created IMGUI context (triple-buffered)\n\n", .{});
+        log.debug("✓ Created IMGUI context (triple-buffered)", .{});
 
         // Initialize ImGuiRenderer
         const imgui_renderer = try ImGuiRenderer.init(
@@ -100,7 +102,7 @@ pub const Platform = struct {
         // Create CVDisplayLink for vsync
         const displaylink = try DisplayLink.init(&window);
 
-        std.debug.print("Close the window or press Cmd+Q to quit.\n\n", .{});
+        log.debug("Close the window or press Cmd+Q to quit.", .{});
 
         const start_time = std.Io.Clock.Timestamp.now(app.io, .awake);
 
@@ -122,7 +124,7 @@ pub const Platform = struct {
         self.displaylink.setCallback(displayLinkCallback, @ptrCast(self));
         self.displaylink.setDispatchToMain(true);
         self.displaylink.start();
-        std.debug.print("✓ Started CVDisplayLink\n", .{});
+        log.debug("✓ Started CVDisplayLink", .{});
     }
 
     /// Releases all platform resources in reverse order of creation.
@@ -141,7 +143,7 @@ pub const Platform = struct {
         self.metal_renderer.deinit();
         self.window.deinit();
 
-        std.debug.print("bye!\n", .{});
+        log.debug("bye! :)", .{});
     }
 
     /// Runs the macOS event loop. Blocks forever until the app terminates.
@@ -176,7 +178,7 @@ fn renderUiFrame(self: *Platform) !void {
         if (self.core.source_media == null) {
             const video_path = self.core.cfg.testing.video_path;
             self.core.loadSourceMedia(video_path) catch |err| {
-                std.debug.print("Error: Failed to load source media ({})\n", .{err});
+                log.debug("Error: Failed to load source media ({})", .{err});
                 return;
             };
         }
@@ -184,7 +186,7 @@ fn renderUiFrame(self: *Platform) !void {
         // Now create FrameDecoder (uses Core's source_media reference)
         const frame_decoder = self.app.allocator.create(FrameDecoder) catch return;
         frame_decoder.* = FrameDecoder.init(self) catch |err| {
-            std.debug.print("Error: Failed to init FrameDecoder ({})\n", .{err});
+            log.debug("Error: Failed to init FrameDecoder ({})", .{err});
             self.app.allocator.destroy(frame_decoder);
             return;
         };
@@ -401,7 +403,7 @@ fn decodeVideoFrame(frame_decoder: *FrameDecoder, core: *Core, video_monitor: *V
             frame_idx,
             video_monitor.decode_arena.allocator(),
         ) catch |err| {
-            std.debug.print("Failed to decode frame: {}\n", .{err});
+            log.debug("Failed to decode frame: {}", .{err});
             return error.DecodeFrameFailed;
         };
         frame_decoder.decoded_frame_buffer = decoded_frame; // Keep alive until end of loop
@@ -410,7 +412,7 @@ fn decodeVideoFrame(frame_decoder: *FrameDecoder, core: *Core, video_monitor: *V
         var texture_set = frame_decoder.decoder.createMetalTextures(
             @ptrCast(decoded_frame.platform_handle),
         ) catch |err| {
-            std.debug.print("Failed to create Metal textures: {}\n", .{err});
+            log.debug("Failed to create Metal textures: {}", .{err});
             return error.TextureCreationFailed;
         };
         frame_decoder.texture_set_holder = texture_set; // Keep alive until end of loop

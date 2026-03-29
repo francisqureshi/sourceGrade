@@ -2,10 +2,17 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 
+const pg = @import("pg");
+const pgdb = @import("io/db/pgdb.zig");
+const db_test = @import("io/db/init_db.zig");
+const sources = @import("io/media/sources.zig");
+
 const Config = @import("config.zig").Config;
 const SourceMedia = @import("io/media/media.zig").SourceMedia;
 pub const Playback = @import("playback/playback.zig").Playback;
 const VideoMonitor = @import("playback/video_monitor.zig").VideoMonitor;
+
+const log = std.log.scoped(.core);
 
 pub const Core = struct {
     allocator: Allocator,
@@ -65,7 +72,7 @@ pub const Core = struct {
         );
         try self.video_monitors.append(self.allocator, video_monitor);
 
-        std.debug.print("✓ Core loaded video: {d}x{d} @ {d:.2}fps, {d} frames\n", .{
+        log.debug("✓ Core loaded video: {d}x{d} @ {d:.2}fps, {d} frames", .{
             self.source_media.?.resolution.width,
             self.source_media.?.resolution.height,
             self.source_media.?.frame_rate_float,

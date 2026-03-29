@@ -57,7 +57,7 @@ pub const HStack = struct {
     }
 
     /// Add Child to Array at child_count idx
-    pub fn add(self: *HStack, width: SizePolicy, height: SizePolicy, strictness: f32) void {
+    pub fn add(self: *HStack, width: SizePolicy, height: SizePolicy, strictness: f32) *Rect {
         const ce = ChildEntry{
             .width_policy = width,
             .height_policy = height,
@@ -66,7 +66,11 @@ pub const HStack = struct {
         };
         self.children[self.child_count] = ce;
 
+        const result_rect = &self.children[self.child_count].resolved_rect;
+
         self.child_count += 1;
+
+        return result_rect;
     }
 
     pub fn solve(self: *HStack) void {
@@ -200,7 +204,7 @@ pub const VStack = struct {
     }
 
     /// Add Child to Array at child_count idx
-    pub fn add(self: *VStack, width: SizePolicy, height: SizePolicy, strictness: f32) void {
+    pub fn add(self: *VStack, width: SizePolicy, height: SizePolicy, strictness: f32) *Rect {
         const ce = ChildEntry{
             .width_policy = width,
             .height_policy = height,
@@ -209,7 +213,11 @@ pub const VStack = struct {
         };
         self.children[self.child_count] = ce;
 
+        const result_rect = &self.children[self.child_count].resolved_rect;
+
         self.child_count += 1;
+
+        return result_rect;
     }
 
     pub fn solve(self: *VStack) void {

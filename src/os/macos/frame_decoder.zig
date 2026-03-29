@@ -8,6 +8,8 @@ const SourceMedia = @import("../../io/media/media.zig").SourceMedia;
 const VideoMonitor = @import("../../playback/video_monitor.zig").VideoMonitor;
 const Platform = @import("platform.zig").Platform;
 
+const log = std.log.scoped(.frameDecoder);
+
 /// Manages video frame decoding and GPU resource lifetime.
 /// Decodes frames on demand using platform-specific decoder (VideoToolbox on macOS).
 /// Keeps decoded frame buffers and Metal textures alive between vsync callbacks.
@@ -39,7 +41,7 @@ pub const FrameDecoder = struct {
         );
         errdefer decoder.deinit();
 
-        std.debug.print("✓ FrameDecoder initialized with {d}x{d} video\n\n", .{
+        log.debug("✓ FrameDecoder initialized with {d}x{d} video", .{
             source_media.resolution.width,
             source_media.resolution.height,
         });

@@ -74,29 +74,22 @@ pub const App = struct {
         const source_viewer = &self.viewers.items[0];
 
         var window_vstack = ui.layout.VStack.init(0, 0, imgui.display_width, imgui.display_height, 0);
-        window_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 28 }, 0);
-        window_vstack.add(.{ .fill = 1.0 }, .{ .fill = 1.0 }, 0);
+        _ = window_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 28 }, 0); // top_stack (unused)
+        const main_stack = window_vstack.add(.{ .fill = 1.0 }, .{ .fill = 1.0 }, 0);
         window_vstack.solve();
 
-        const top_stack = window_vstack.get(0);
-        _ = top_stack;
-
-        const main_stack = window_vstack.get(1);
         var main_hstack = ui.layout.HStack.init(main_stack.x, main_stack.y, main_stack.w, main_stack.h / 2, 0);
-        main_hstack.add(.{ .fill = 0.25 }, .{ .fill = 1.0 }, 0);
-        main_hstack.add(.{ .fill = 0.25 }, .{ .fill = 1.0 }, 0);
-        main_hstack.add(.{ .fill = 0.5 }, .{ .fill = 1.0 }, 0);
+        _ = main_hstack.add(.{ .pixels = 1 }, .{ .fill = 1.0 }, 1); //FIXME: 1px left window pad... probs same for 0 y too.
+        const sources = main_hstack.add(.{ .fill = 0.33 }, .{ .fill = 1.0 }, 0);
+        const viewer = main_hstack.add(.{ .fill = 0.66 }, .{ .fill = 1.0 }, 0);
         main_hstack.solve();
 
-        const viewer = main_hstack.get(2);
+        //:INFO: VIEWER UI
 
         var viewer_vstack = ui.layout.VStack.init(viewer.x, viewer.y, viewer.w, viewer.h, 0);
-        viewer_vstack.add(.{ .fill = 1.0 }, .{ .fill = 1.0 }, 0.0); // viewer
-        viewer_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 50.0 }, 0.0); // chin / controls
+        const viewer_video_surface = viewer_vstack.add(.{ .fill = 1.0 }, .{ .fill = 1.0 }, 0.0); // viewer
+        const viewer_chin = viewer_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 50.0 }, 0.0); // chin / controls
         viewer_vstack.solve();
-
-        const viewer_video_surface = viewer_vstack.get(0);
-        const viewer_chin = viewer_vstack.get(1);
 
         source_viewer.x = viewer_video_surface.x;
         source_viewer.y = viewer_video_surface.y;
@@ -104,21 +97,16 @@ pub const App = struct {
         source_viewer.height = viewer_video_surface.h;
 
         var viewer_ctrls_vstack = ui.layout.VStack.init(viewer_chin.x, viewer_chin.y, viewer_chin.w, viewer_chin.h, 0);
-        viewer_ctrls_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 20.0 }, 0.0); // scrubber
-        viewer_ctrls_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 30.0 }, 0.0); // buttons
+        const viewer_scrubber = viewer_ctrls_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 20.0 }, 0.0); // scrubber
+        const viewer_ctrls = viewer_ctrls_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 30.0 }, 0.0); // buttons
         viewer_ctrls_vstack.solve();
 
-        const viewer_scrubber = viewer_ctrls_vstack.get(0);
-        const viewer_ctrls = viewer_ctrls_vstack.get(1);
-
-        // ============ Video Scrubber
+        //  Video Scrubber
         var scrubber_hstack = ui.layout.HStack.init(viewer_scrubber.x, viewer_scrubber.y, viewer_scrubber.w, viewer_scrubber.h, 0);
-        scrubber_hstack.add(.{ .percent = 0.025 }, .{ .fill = 1.0 }, 1.0);
-        scrubber_hstack.add(.{ .fill = 1.0 }, .{ .fill = 1.0 }, 1.0);
-        scrubber_hstack.add(.{ .percent = 0.025 }, .{ .fill = 1.0 }, 1.0);
+        _ = scrubber_hstack.add(.{ .percent = 0.025 }, .{ .fill = 1.0 }, 1.0);
+        const scrubber = scrubber_hstack.add(.{ .fill = 1.0 }, .{ .fill = 1.0 }, 1.0);
+        _ = scrubber_hstack.add(.{ .percent = 0.025 }, .{ .fill = 1.0 }, 1.0);
         scrubber_hstack.solve();
-
-        const scrubber = scrubber_hstack.get(1);
 
         var scrubber_slider: usize = source_monitor.current_frame_index.load(.acquire);
         var scrubber_in: usize = @intCast(self.core.playback.in_point);
@@ -145,25 +133,17 @@ pub const App = struct {
 
         const loop_button_text: []const u8 = if (self.core.playback.loop.load(.acquire)) "loop ON" else "loop OFF";
 
-        // ============ Transport Controls
+        //  Transport Controls
         var row = ui.layout.HStack.init(viewer_ctrls.x, viewer_ctrls.y, viewer_ctrls.w, viewer_ctrls.h, 10);
         const toolbar_height: ui.layout.SizePolicy = .{ .fill = 1.0 };
-        row.add(.{ .pixels = 30 }, toolbar_height, 0.0); // Padd left
-        row.add(.{ .pixels = 30 }, toolbar_height, 0.0); // Rev
-        row.add(.{ .pixels = 30 }, toolbar_height, 0.0); // Pause
-        row.add(.{ .pixels = 30 }, toolbar_height, 0.0); // Fwd
-        row.add(.{ .fill = 0.33 }, toolbar_height, 0.0); // Loop
-        row.add(.{ .fill = 1.0 }, toolbar_height, 0.0); // TC display
-        row.add(.{ .fill = 1.0 }, toolbar_height, 0.0); // Speed slider
+        _ = row.add(.{ .pixels = 30 }, toolbar_height, 0.0);
+        const rev_rect = row.add(.{ .pixels = 30 }, toolbar_height, 0.0);
+        const pause_rect = row.add(.{ .pixels = 30 }, toolbar_height, 0.0);
+        const fwd_rect = row.add(.{ .pixels = 30 }, toolbar_height, 0.0);
+        const loop_rect = row.add(.{ .fill = 0.33 }, toolbar_height, 0.0);
+        const tc_rect = row.add(.{ .fill = 1.0 }, toolbar_height, 0.0);
+        const speed_rect = row.add(.{ .fill = 1.0 }, toolbar_height, 0.0);
         row.solve();
-
-        // const padd_left = row.get(0);
-        const rev_rect = row.get(1);
-        const pause_rect = row.get(2);
-        const fwd_rect = row.get(3);
-        const loop_rect = row.get(4);
-        const tc_rect = row.get(5);
-        const speed_rect = row.get(6);
 
         const rev_clicked = imgui.iconButton(3, rev_rect.x, rev_rect.y, rev_rect.w, rev_rect.h, .reverse) catch false;
         const pause_clicked = imgui.iconButton(4, pause_rect.x, pause_rect.y, pause_rect.w, pause_rect.h, .pause) catch false;
@@ -178,7 +158,7 @@ pub const App = struct {
         }) catch "---";
         try imgui.textLabel(tc_rect.x, tc_rect.y, tc_rect.w, tc_rect.h, frame_text, ui.ImGui.packColor(0.2, 0.2, 0.2, 1), .{ 255, 255, 255, 255 }, .left);
 
-        // ============ Video Controls
+        //  Video Controls
         var ctrl_slider: f32 = self.core.playback.speed.load(.acquire);
         if (try imgui.slider(2, speed_rect.x, speed_rect.y, speed_rect.w, speed_rect.h / 2, &ctrl_slider, 0.01, 12.0)) {
             self.core.playback.speed.store(ctrl_slider, .release);
@@ -208,27 +188,11 @@ pub const App = struct {
             self.core.playback.loop.store(!current, .release);
         }
 
-        // // V Stack
-        // var col = ui.layout.VStack.init(300, 50, 50, 500, 3);
-        // const vert_bar_width: ui.layout.SizePolicy = .{ .percent = 0.66 };
-        //
-        // col.add(vert_bar_width, .{ .percent = 0.33 }, 1.0);
-        // for (0..30) |_| {
-        //     col.add(vert_bar_width, .{ .fill = 0.10 }, 0.0);
-        // }
-        // col.solve();
-        //
-        // imgui.addRect(col.x, col.y, col.w, col.h, ui.ImGui.packColor(0, 0, 0, 1.0)) catch {};
-        //
-        // for (0..col.child_count) |i| {
-        //     const elem = col.get(i);
-        //     imgui.addRect(
-        //         elem.x,
-        //         elem.y,
-        //         elem.w,
-        //         elem.h,
-        //         ui.ImGui.packColor(1, 1, 1, (1 / @as(f32, @floatFromInt(i + 1)))),
-        //     ) catch {};
-        // }
+        //:INFO: SOURCES UI
+        const transparent = ui.ImGui.packColor(0, 0, 0, 0);
+        try imgui.textLabel(sources.x, sources.y, sources.w, sources.h, "Sources", transparent, .{ 255, 255, 255, 255 }, .left);
+
+        // Outlines
+        try imgui.addRectOutline(sources.x, sources.y, sources.w, sources.h, ui.ImGui.packColor(1, 1, 1, 1), 0.5);
     }
 };

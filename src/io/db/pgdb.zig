@@ -18,7 +18,7 @@ const Project = struct {
 };
 
 // Source struct mirrors the sources table schema
-pub const dbSource = struct {
+pub const DbSource = struct {
     id: []const u8,
     path: []const u8,
     filename: []const u8,
@@ -84,11 +84,11 @@ pub fn listProjects(pool: *pg.Pool) !void {
     , .{}, .{ .column_names = true });
     defer result.deinit();
 
-    std.debug.print("\n=== Projects ===\n", .{});
+    log.debug("=== Projects ===", .{});
 
     var mapper = result.mapper(Project, .{ .dupe = true });
     while (try mapper.next()) |project| {
-        std.debug.print("ID: {s} | Name: {s} | FPS: {?d}\n", .{
+        log.debug("ID: {s} | Name: {s} | FPS: {?d}", .{
             project.id,
             project.name,
             project.frame_rate,
@@ -123,7 +123,7 @@ pub fn deleteProject(pool: *pg.Pool, project_id: i32) !void {
 
     const rows = try conn.exec("DELETE FROM projects WHERE id = $1", .{project_id});
 
-    std.debug.print("Deleted project {d} (affected {?d} rows)\n", .{ project_id, rows });
+    log.debug("Deleted project {d} (affected {?d} rows)", .{ project_id, rows });
 }
 
 pub fn resetDatabase(pool: *pg.Pool) !void {
@@ -136,7 +136,7 @@ pub fn resetDatabase(pool: *pg.Pool) !void {
     // Optionally delete orphaned sources too
     _ = try conn.exec("DELETE FROM sources", .{});
 
-    std.debug.print("Database reset complete\n", .{});
+    log.debug("Database reset complete", .{});
 }
 
 // Source Media Database Functions
@@ -146,12 +146,12 @@ pub fn createSource(pool: *pg.Pool, source_media: *media.SourceMedia) ![16]u8 {
     var conn = try pool.acquire();
     defer conn.release();
 
-    std.debug.print("\n=== Attempting to create source ===\n", .{});
-    std.debug.print("Path: {s}\n", .{source_media.file_path});
-    std.debug.print("File: {s}\n", .{source_media.file_name});
-    std.debug.print("Codec: {s}\n", .{source_media.codec});
-    std.debug.print("Resolution: {d}x{d}\n", .{ source_media.resolution.width, source_media.resolution.height });
-    std.debug.print("Original Frame rate: {d}/{d}\n", .{ source_media.frame_rate.original.num, source_media.frame_rate.original.den });
+    log.debug("=== Attempting to create source ===", .{});
+    log.debug("Path: {s}", .{source_media.file_path});
+    log.debug("File: {s}", .{source_media.file_name});
+    log.debug("Codec: {s}", .{source_media.codec});
+    log.debug("Resolution: {d}x{d}", .{ source_media.resolution.width, source_media.resolution.height });
+    log.debug("Original Frame rate: {d}/{d}", .{ source_media.frame_rate.original.num, source_media.frame_rate.original.den });
 
     // Simplified INSERT - omit optional/complex fields for now
     const result = try conn.query(
@@ -180,7 +180,7 @@ pub fn createSource(pool: *pg.Pool, source_media: *media.SourceMedia) ![16]u8 {
         var id: [16]u8 = undefined;
         @memcpy(&id, row.get([]const u8, 0));
         const hex_id = try pg.uuidToHex(&id);
-        std.debug.print("✓ Created source ID: {s}\n", .{hex_id});
+        log.debug("✓ Created source ID: {s}", .{hex_id});
 
         // Add UUID to SourceMedia
         source_media.addUUID(id);
@@ -201,7 +201,7 @@ pub fn hydrateSourceMediaPool(db_pool: *pg.Pool, io: Io, source_pool_allocator: 
     , .{}, .{ .column_names = true });
     defer result.deinit();
 
-    std.debug.print("\n=== Rehydrated Sources ===\n", .{});
+    log.debug("=== Rehydrated Sources ===", .{});
 
     var mapper = result.mapper(struct {
         id: []const u8,
@@ -217,18 +217,18 @@ pub fn hydrateSourceMediaPool(db_pool: *pg.Pool, io: Io, source_pool_allocator: 
         source_media.* = try media.SourceMedia.initFromDb(uuid, db_source.path, io, source_pool_allocator);
         try sources.source_pool.put(source_pool_allocator, uuid, source_media);
 
-        std.debug.print("source_media size: {d} bytes \n", .{source_media.totalSize()});
+        log.debug("source_media size: {d} bytes", .{source_media.totalSize()});
 
         const printble_hex_id = try pg.uuidToHex(db_source.id);
-        std.debug.print(
-            "ID: {s} | {s} | {d}x{d} | {d} frames @ {d:.2}fps | {s}\n",
+        log.debug(
+            "ID: {s} | {s} | {d}x{d} | {d} frames @ {d:.2}fps | {s}",
             .{ &printble_hex_id, source_media.file_name, source_media.resolution.width, source_media.resolution.height, source_media.duration_in_frames, source_media.frame_rate_float, source_media.codec },
         );
     }
 }
 
 /// FIXEME: This should maybe now just be a look up to source_pool and return the SourceMedia...
-pub fn getSourceById(pool: *pg.Pool, source_id: []const u8) !?dbSource {
+pub fn getSourceById(pool: *pg.Pool, source_id: []const u8) !?DbSource {
     var conn = try pool.acquire();
     defer conn.release();
 
@@ -246,7 +246,7 @@ pub fn getSourceById(pool: *pg.Pool, source_id: []const u8) !?dbSource {
     , .{source_id}, .{ .column_names = true })) orelse return null;
     defer row.deinit() catch {};
 
-    return dbSource{
+    return DbSource{
         .id = row.getCol([]const u8, "id"),
         .path = row.getCol([]const u8, "path"),
         .filename = row.getCol([]const u8, "filename"),
@@ -287,7 +287,7 @@ pub fn listSources(pool: *pg.Pool) !void {
     , .{}, .{ .column_names = true });
     defer result.deinit();
 
-    std.debug.print("\n=== Sources ===\n", .{});
+    log.debug("=== Sources ===", .{});
 
     var mapper = result.mapper(struct {
         id: []const u8,
@@ -304,8 +304,8 @@ pub fn listSources(pool: *pg.Pool) !void {
         const fps = @as(f32, @floatFromInt(source.frame_rate_num)) / @as(f32, @floatFromInt(source.frame_rate_den));
         const hex_id = try pg.uuidToHex(source.id);
 
-        std.debug.print(
-            "ID: {s} | {s} | {d}x{d} | {d} frames @ {d:.2}fps | {s}\n",
+        log.debug(
+            "ID: {s} | {s} | {d}x{d} | {d} frames @ {d:.2}fps | {s}",
             .{ &hex_id, source.filename, source.width, source.height, source.duration_frames, fps, source.codec },
         );
     }
@@ -508,5 +508,5 @@ pub fn resetAndInitializeDatabase(pool: *pg.Pool) !void {
         \\    EXECUTE FUNCTION update_modified_at()
     , .{});
 
-    std.debug.print("✓ Database fully reset and reinitialized with new schema\n", .{});
+    log.debug("✓ Database fully reset and reinitialized with new schema", .{});
 }

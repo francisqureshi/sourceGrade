@@ -37,9 +37,6 @@
         .metal_bindings = .{
             .path = "../metal-bindings",
         },
-        .pg = .{
-            .path = "../pg.zig/",
-        },
         .smpte = .{
             .url = "git+https://github.com/francisqureshi/smpte.git#1ee42133d53423250d872aeab6c5aa27f4317028",
             .hash = "smpte-0.0.0-P_FX_J8xAABoQ09xSq5BqEcCZP48tUbgQV4vEEpyBs9u",
@@ -55,6 +52,11 @@
         .vulkan_headers = .{
             .url = "https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.338.tar.gz",
             .hash = "N-V-__8AAMZuLQIcPe--JSv0kn_Ga8tsjgbkaojW0OHW2Rfd",
+        },
+        .pg = .{
+            .url = "git+https://github.com/francisqureshi/pg.zig.git?ref=dev#57af7005c9b9a87501f33345158dc9ba266a54f8",
+            .hash = "pg-0.0.0-Wp_7gQaDBgCUoVfNGD8VOdJc1E3cCHYijgSRd3Qd9a3Q",
+            // zig fetch --save "git+https://github.com/francisqureshi/pg.zig.git#dev" fork with latest zig master fixes
         },
         .toml = .{
             .url = "git+https://github.com/sam701/zig-toml#a73c9423d88ed413204b39638fab7e9bccdb83fd",

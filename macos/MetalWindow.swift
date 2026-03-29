@@ -305,7 +305,7 @@ public func metal_window_run_app() {
     }
 
     // Clean exit - event loop stopped, will return to Zig
-    print("Swift: Event loop exiting cleanly")
+    // print("Swift: Event loop exiting cleanly")
 }
 
 /// Check if the window is still visible and the app is running.
@@ -621,4 +621,8 @@ class MetalWindow: NSWindow {
             self.isMovableByWindowBackground = true
         }
     }
+
+    // Ensure window can become key/main for proper focus handling
+    override var canBecomeKey: Bool { return true }
+    override var canBecomeMain: Bool { return true }
 }

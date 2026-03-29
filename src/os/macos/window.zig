@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const log = std.log.scoped(.window);
+
 // C bridge for Swift window
 const c = @cImport({
     @cInclude("metal_window.h");
@@ -24,21 +26,21 @@ pub const Window = struct {
         const window = c.metal_window_create(width, height, borderless) orelse
             return error.WindowCreationFailed;
 
-        std.debug.print("✓ Created Metal window\n", .{});
+        log.debug("✓ Created Metal window", .{});
 
         const layer = c.metal_window_get_layer(window) orelse {
             c.metal_window_release(window);
             return error.LayerNotFound;
         };
 
-        std.debug.print("✓ Got CAMetalLayer from window\n", .{});
+        log.debug("✓ Got CAMetalLayer from window", .{});
 
         const device = c.metal_window_get_device(window) orelse {
             c.metal_window_release(window);
             return error.DeviceNotFound;
         };
 
-        std.debug.print("✓ Got MTLDevice\n", .{});
+        log.debug("✓ Got MTLDevice", .{});
 
         return .{
             .handle = window,
@@ -125,7 +127,7 @@ pub const DisplayLink = struct {
         const displaylink = c.metal_displaylink_create(window.handle) orelse
             return error.DisplayLinkCreationFailed;
 
-        std.debug.print("✓ Created CVDisplayLink\n", .{});
+        log.debug("✓ Created CVDisplayLink", .{});
         return .{ .handle = displaylink };
     }
 

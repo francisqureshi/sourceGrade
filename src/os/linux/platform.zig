@@ -37,7 +37,7 @@ pub const Platform = struct {
 
         self.app.allocator.destroy(self.imgui_ctx);
 
-        std.debug.print("bye! from Platform.deinit()\n", .{});
+        std.debug.print("bye! :) from Platform.deinit()\n", .{});
     }
 
     /// Creates the window, initialises the renderer, and uploads

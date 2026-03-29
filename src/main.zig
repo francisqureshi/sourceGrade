@@ -1,12 +1,12 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
+const Io = std.Io;
 const builtin = @import("builtin");
 
 const App = @import("app.zig").App;
-const Platform = @import("os/mod.zig").Platform;
 const Core = @import("core.zig").Core;
-
-const Allocator = std.mem.Allocator;
-const Io = std.Io;
+const dev = @import("dev_runner.zig");
+const Platform = @import("os/mod.zig").Platform;
 
 pub fn main(init: std.process.Init.Minimal) !void {
     std.debug.print("=== sourceGrade ===\n\n", .{});
@@ -23,6 +23,8 @@ pub fn main(init: std.process.Init.Minimal) !void {
     // Core - Cross Platform Logic
     var core = try Core.init(allocator, io);
     defer core.deinit();
+
+    try dev.testHydrate(core);
 
     // App
     var app = try App.init(allocator, io, &core);

@@ -1,6 +1,8 @@
 const std = @import("std");
 const metal = @import("metal");
 
+const log = std.log.scoped(.metal);
+
 // ============================================================================
 // Metal Renderer - handles device, queue, shaders, and pipelines
 // ============================================================================
@@ -33,13 +35,13 @@ pub const MetalRenderer = struct {
 
         // Create command queue
         const queue = try device.createCommandQueue();
-        std.debug.print("✓ Created command queue\n", .{});
+        log.debug("✓ Created command queue", .{});
 
         // Load shaders (concatenate UI and video shader files)
         const shader_source = @embedFile("Shaders.metal") ++ @embedFile("VideoShaders.metal");
 
         var library = try device.createLibraryFromSource(shader_source);
-        std.debug.print("✓ Compiled shader library\n", .{});
+        log.debug("✓ Compiled shader library", .{});
 
         // ============ Create main pipeline
         var vertex_fn = try library.createFunction("vertexShaderBuffered");
@@ -47,7 +49,7 @@ pub const MetalRenderer = struct {
 
         var fragment_fn = try library.createFunction("fragmentShader");
         defer fragment_fn.deinit();
-        std.debug.print("✓ Loaded vertex and fragment shaders\n", .{});
+        log.debug("✓ Loaded vertex and fragment shaders", .{});
 
         const pipeline_desc = metal.RenderPipelineDescriptor{
             .pixel_format = pixel_format,
@@ -55,7 +57,7 @@ pub const MetalRenderer = struct {
         };
 
         const pipeline = try vertex_fn.createRenderPipeline(&device, &fragment_fn, pipeline_desc);
-        std.debug.print("✓ Created render pipeline\n", .{});
+        log.debug("✓ Created render pipeline", .{});
 
         // ============ Create IMGUI pipeline with alpha blending
         var imgui_vertex_fn = try library.createFunction("imguiVertexShader");
@@ -74,7 +76,7 @@ pub const MetalRenderer = struct {
         };
 
         const imgui_pipeline = try imgui_vertex_fn.createRenderPipeline(&device, &imgui_fragment_fn, imgui_pipeline_desc);
-        std.debug.print("✓ Created IMGUI render pipeline\n", .{});
+        log.debug("✓ Created IMGUI render pipeline", .{});
 
         // ============ Create video pipeline
         var video_vertex_fn = try library.createFunction("videoVertexShader");
@@ -89,7 +91,7 @@ pub const MetalRenderer = struct {
         };
 
         const video_pipeline = try video_vertex_fn.createRenderPipeline(&device, &video_fragment_fn, video_pipeline_desc);
-        std.debug.print("✓ Created video render pipeline\n\n", .{});
+        log.debug("✓ Created video render pipeline", .{});
 
         return .{
             .device = device,

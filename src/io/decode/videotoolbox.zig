@@ -1,12 +1,12 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
+const Io = std.Io;
+
 const decoder = @import("../decode/decoder.zig");
 const media = @import("../media/media.zig");
 const c = @import("c.zig");
-
 pub const MTLDeviceRef = c.MTLDeviceRef;
 
-const Allocator = std.mem.Allocator;
-const Io = std.Io;
 pub const log = std.log.scoped(.videoToolBox);
 
 const VideoToolboxError = error{
@@ -127,10 +127,10 @@ pub const Decoder = struct {
         self.frame_ctx.pixel_buffer = null;
 
         const frame_size = try self.source_media.getFrameSize(frame_index);
-        // std.debug.print("\nFirst frame size: {d} bytes\n", .{frame_size});
+        // log.debug("\nFirst frame size: {d} bytes\n", .{frame_size});
 
         // Use scratch instead of self.source_media.mctx.allocator
-        // std.debug.print("Requesting: {d} bytes\n", .{frame_size});
+        // log.debug("Requesting: {d} bytes\n", .{frame_size});
         const encoded_frame_buffer = try scratch_allocator.alloc(u8, frame_size);
 
         const compressed_frame_size = try self.source_media.readFrame(frame_index, encoded_frame_buffer);
@@ -183,7 +183,7 @@ pub const Decoder = struct {
             const bytes_per_row = c.CVPixelBufferGetBytesPerRow(pixel_buffer);
             const format_bytes: [4]u8 = @bitCast(pixel_format);
             const bits_per_pixel = (bytes_per_row * 8) / width;
-            std.debug.print("\n🎬 Video texture: {d}x{d}, {s} ({d}-bit/pixel)\n", .{ width, height, &format_bytes, bits_per_pixel });
+            log.debug("Video texture: {d}x{d}, {s} ({d}-bit/pixel)", .{ width, height, &format_bytes, bits_per_pixel });
         }
 
         // Choose Metal pixel format based on CVPixelBuffer format
@@ -194,7 +194,7 @@ pub const Decoder = struct {
             c.kCVPixelFormatType_4444AYpCbCr16 => c.MTLPixelFormatRGBA16Unorm,
             else => {
                 const format_bytes: [4]u8 = @bitCast(pixel_format);
-                std.debug.print("Unknown pixel format: 0x{X:0>8} ('{s}')\n", .{ pixel_format, &format_bytes });
+                log.debug("Unknown pixel format: 0x{X:0>8} ('{s}')", .{ pixel_format, &format_bytes });
                 return error.UnsupportedPixelFormat;
             },
         };
@@ -213,7 +213,7 @@ pub const Decoder = struct {
         );
 
         if (status != c.noErr) {
-            std.debug.print(" Failed to create texture: {}\n", .{status});
+            log.debug("Failed to create texture: {}", .{status});
             return error.TextureCreationFailed;
         }
 
@@ -235,7 +235,7 @@ pub const Decoder = struct {
         const format_bytes: [4]u8 = @bitCast(pixel_format);
         const bits_per_pixel = (bytes_per_row * 8) / width;
 
-        std.debug.print("Decoded: {d}x{d}, {s} ({d}-bit/pixel)\n", .{ width, height, &format_bytes, bits_per_pixel });
+        log.debug("Decoded: {d}x{d}, {s} ({d}-bit/pixel)", .{ width, height, &format_bytes, bits_per_pixel });
     }
 
     /// Releases all VideoToolbox resources: format description, decompression session,
@@ -284,7 +284,7 @@ export fn decompressionOutputCallback(
     presentationDuration: c.CMTime,
 ) callconv(.c) void {
     if (status != c.noErr) {
-        std.debug.print("Decode callback error: {d}\n", .{status});
+        log.debug("Decode callback error: {d}", .{status});
         return;
     }
 
@@ -307,11 +307,11 @@ export fn decompressionOutputCallback(
     // // Convert pixel format to readable string
     // const format_bytes: [4]u8 = @bitCast(pixel_format);
     //
-    // std.debug.print("   Decoded CVPixelBuffer:\n", .{});
-    // std.debug.print("   Resolution: {d}x{d}\n", .{ width, height });
-    // std.debug.print("   Pixel Format: 0x{X:0>8} ('{s}')\n", .{ pixel_format, &format_bytes });
-    // std.debug.print("   Bytes per Row: {d}\n", .{bytes_per_row});
-    // std.debug.print("   Total Size: {d} bytes\n", .{bytes_per_row * height});
+    // log.debug("   Decoded CVPixelBuffer:\n", .{});
+    // log.debug("   Resolution: {d}x{d}\n", .{ width, height });
+    // log.debug("   Pixel Format: 0x{X:0>8} ('{s}')\n", .{ pixel_format, &format_bytes });
+    // log.debug("   Bytes per Row: {d}\n", .{bytes_per_row});
+    // log.debug("   Total Size: {d} bytes\n", .{bytes_per_row * height});
 }
 
 /// Creates CMVideoFormatDescription from the stsd (sample description) atom.
@@ -327,7 +327,7 @@ fn createFormatDescription(source_media: *const media.SourceMedia) !c.CMVideoFor
     const image_desc_offset = 8;
 
     if (source_media.stsd_data.len < image_desc_offset) {
-        std.debug.print("stsd_data too small: {d} bytes\n", .{source_media.stsd_data.len});
+        log.debug("stsd_data too small: {d} bytes", .{source_media.stsd_data.len});
         return error.CreateFormatDescriptionFailed;
     }
 
@@ -344,7 +344,7 @@ fn createFormatDescription(source_media: *const media.SourceMedia) !c.CMVideoFor
     );
 
     if (status != c.noErr) {
-        std.debug.print("CMVideoFormatDescriptionCreateFromBigEndianImageDescriptionData failed: {d}\n", .{status});
+        log.debug("CMVideoFormatDescriptionCreateFromBigEndianImageDescriptionData failed: {d}", .{status});
         return error.CreateFormatDescriptionFailed;
     }
     return format_desc.?;
@@ -404,7 +404,7 @@ fn createDecompressionSession(
     );
 
     if (status != c.noErr) {
-        std.debug.print("VTDecompressionSessionCreate failed: {d}\n", .{status});
+        log.debug("VTDecompressionSessionCreate failed: {d}", .{status});
         return error.CreateDecompressionSessionFailed;
     }
 
@@ -511,14 +511,14 @@ fn decompress(
     );
 
     if (status != c.noErr) {
-        std.debug.print("VTDecompressionSessionDecodeFrame failed: {d}\n", .{status});
+        log.debug("VTDecompressionSessionDecodeFrame failed: {d}", .{status});
         return error.DecodeFrameFailed;
     }
 
     // Wait for decoder to finish (blocks until callback completes)
     const wait_status = c.VTDecompressionSessionWaitForAsynchronousFrames(session);
     if (wait_status != c.noErr) {
-        std.debug.print("VTDecompressionSessionWaitForAsynchronousFrames failed: {d}\n", .{wait_status});
+        log.debug("VTDecompressionSessionWaitForAsynchronousFrames failed: {d}", .{wait_status});
         return error.DecoderWaitFailed;
     }
 }
@@ -527,7 +527,7 @@ fn decompress(
 /// Decodes frame 0 and prints debug info. Used during development.
 /// Does not require Metal device - cannot create textures.
 pub fn decode(source_media: *const media.SourceMedia) !void {
-    std.debug.print("\n=== VideoToolbox Tests ===\n", .{});
+    log.debug("=== VideoToolbox Tests ===", .{});
 
     const format_desc = try createFormatDescription(source_media);
     defer c.CFRelease(format_desc);
@@ -538,7 +538,7 @@ pub fn decode(source_media: *const media.SourceMedia) !void {
     // Check if hardware decode is supported for this codec
     const codec_type = c.CMFormatDescriptionGetMediaSubType(format_desc);
     const hw_supported = c.VTIsHardwareDecodeSupported(codec_type);
-    std.debug.print("Hardware decode supported: {}\n", .{hw_supported != 0});
+    log.debug("Hardware decode supported: {}", .{hw_supported != 0});
 
     var frame_ctx = FrameContext{ .pixel_buffer = null };
 
@@ -548,30 +548,30 @@ pub fn decode(source_media: *const media.SourceMedia) !void {
         c.CFRelease(session);
     }
 
-    std.debug.print("VTDecompressionSession created successfully!\n", .{});
+    log.debug("VTDecompressionSession created successfully!", .{});
 
     const frame_size = try source_media.getFrameSize(0);
-    std.debug.print("\nFirst frame size: {d} bytes\n", .{frame_size});
+    log.debug("First frame size: {d} bytes", .{frame_size});
 
     const buffer = try source_media.mctx.allocator.alloc(u8, frame_size);
 
     const bytes_read = try source_media.readFrame(0, buffer);
-    std.debug.print("Read {d} bytes from frame 0\n", .{bytes_read});
+    log.debug("Read {d} bytes from frame 0", .{bytes_read});
 
     const block_buffer = try createBlockBuffer(buffer);
-    std.debug.print("block_buffer: {*}\n", .{block_buffer});
+    log.debug("block_buffer: {*}", .{block_buffer});
 
     const timing_info = createSampleTimingInfo(0, source_media);
     const sample_buffer = try createSampleBuffer(block_buffer, timing_info, format_desc);
 
-    std.debug.print("sample_buffer: {*}\n", .{sample_buffer});
+    log.debug("sample_buffer: {*}", .{sample_buffer});
 
     // Phase 4.5: Decode the frame
     try decompress(session, sample_buffer);
 
     // Now frame_ctx.pixel_buffer contains the decoded frame!
     if (frame_ctx.pixel_buffer) |pb| {
-        std.debug.print("Got pixel buffer: {*}\n", .{pb});
+        log.debug("Got pixel buffer: {*}", .{pb});
         // ... do stuff with it ...
         c.CFRelease(pb); // Release when done
     }
@@ -583,7 +583,7 @@ pub fn decode(source_media: *const media.SourceMedia) !void {
     //  Check agian after defers
     if (frame_ctx.pixel_buffer) |pb| {
         // vtb.CFRelease(pb); // Release when done
-        std.debug.print("Check agian after CFRealease(pb) + defers....\nGot pixel buffer: {*}\n", .{pb});
+        log.debug("Check agian after CFRealease(pb) + defers.... Got pixel buffer: {*}", .{pb});
     }
 }
 
@@ -597,15 +597,15 @@ fn getSupportedPixelFormats(session: c.VTDecompressionSessionRef) !void {
         &props,
     );
     if (prop_status == c.noErr and props != null) {
-        std.debug.print("\n📋 Supported Pixel Formats (ordered by quality):\n", .{});
+        log.debug("📋 Supported Pixel Formats (ordered by quality):", .{});
         const count = c.CFArrayGetCount(@ptrCast(props));
-        std.debug.print("   Count: {}\n", .{count});
+        log.debug("   Count: {}", .{count});
         for (0..@intCast(count)) |i| {
             const num = c.CFArrayGetValueAtIndex(@ptrCast(props), @intCast(i));
             var format: u32 = 0;
             _ = c.CFNumberGetValue(@ptrCast(@alignCast(@constCast(num))), c.kCFNumberSInt32Type, &format);
             const bytes = @as([4]u8, @bitCast(format));
-            std.debug.print("   [{}] 0x{X:0>8} ('{c}{c}{c}{c}')\n", .{ i, format, bytes[3], bytes[2], bytes[1], bytes[0] });
+            log.debug("   [{}] 0x{X:0>8} ('{c}{c}{c}{c}')", .{ i, format, bytes[3], bytes[2], bytes[1], bytes[0] });
         }
         c.CFRelease(props.?);
     }
@@ -614,17 +614,17 @@ fn getSupportedPixelFormats(session: c.VTDecompressionSessionRef) !void {
 /// Debug: Prints format description details (codec FourCC, dimensions).
 /// Useful for verifying stsd parsing worked correctly.
 fn verifyFmtDes(format_desc: c.CMVideoFormatDescriptionRef) !void {
-    std.debug.print("Format description created: {*}\n", .{format_desc});
+    log.debug("Format description created: {*}", .{format_desc});
 
     // Verify the codec type
     const codec_type = c.CMFormatDescriptionGetMediaSubType(format_desc);
     const codec_bytes: [4]u8 = @bitCast(codec_type);
-    std.debug.print("   Codec FourCC: 0x{X:0>8} ('{s}')\n", .{
+    log.debug("   Codec FourCC: 0x{X:0>8} ('{s}')", .{
         codec_type,
         &codec_bytes,
     });
 
     // Verify dimensions
     const dims = c.CMVideoFormatDescriptionGetDimensions(format_desc);
-    std.debug.print("   Dimensions: {d}x{d}\n", .{ dims.width, dims.height });
+    log.debug("   Dimensions: {d}x{d}", .{ dims.width, dims.height });
 }
