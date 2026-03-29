@@ -73,7 +73,24 @@ pub const App = struct {
         const source_monitor = &self.core.video_monitors.items[0];
         const source_viewer = &self.viewers.items[0];
 
-        var viewer_vstack = ui.layout.VStack.init(50, 50, 800, 450, 0);
+        var window_vstack = ui.layout.VStack.init(0, 0, imgui.display_width, imgui.display_height, 0);
+        window_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 28 }, 0);
+        window_vstack.add(.{ .fill = 1.0 }, .{ .fill = 1.0 }, 0);
+        window_vstack.solve();
+
+        const top_stack = window_vstack.get(0);
+        _ = top_stack;
+
+        const main_stack = window_vstack.get(1);
+        var main_hstack = ui.layout.HStack.init(main_stack.x, main_stack.y, main_stack.w, main_stack.h / 2, 0);
+        main_hstack.add(.{ .fill = 0.25 }, .{ .fill = 1.0 }, 0);
+        main_hstack.add(.{ .fill = 0.25 }, .{ .fill = 1.0 }, 0);
+        main_hstack.add(.{ .fill = 0.5 }, .{ .fill = 1.0 }, 0);
+        main_hstack.solve();
+
+        const viewer = main_hstack.get(2);
+
+        var viewer_vstack = ui.layout.VStack.init(viewer.x, viewer.y, viewer.w, viewer.h, 0);
         viewer_vstack.add(.{ .fill = 1.0 }, .{ .fill = 1.0 }, 0.0); // viewer
         viewer_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 50.0 }, 0.0); // chin / controls
         viewer_vstack.solve();
@@ -126,12 +143,6 @@ pub const App = struct {
             self.core.playback.out_point = @intCast(scrubber_out);
         }
 
-        // ============ Video Controls
-        var ctrl_slider: f32 = self.core.playback.speed.load(.acquire);
-        if (try imgui.slider(2, 600, 800, 400, 10, &ctrl_slider, 0.01, 8.0)) {
-            self.core.playback.speed.store(ctrl_slider, .release);
-        }
-
         const loop_button_text: []const u8 = if (self.core.playback.loop.load(.acquire)) "loop ON" else "loop OFF";
 
         // ============ Transport Controls
@@ -143,6 +154,7 @@ pub const App = struct {
         row.add(.{ .pixels = 30 }, toolbar_height, 0.0); // Fwd
         row.add(.{ .fill = 0.33 }, toolbar_height, 0.0); // Loop
         row.add(.{ .fill = 1.0 }, toolbar_height, 0.0); // TC display
+        row.add(.{ .fill = 1.0 }, toolbar_height, 0.0); // Speed slider
         row.solve();
 
         // const padd_left = row.get(0);
@@ -151,6 +163,7 @@ pub const App = struct {
         const fwd_rect = row.get(3);
         const loop_rect = row.get(4);
         const tc_rect = row.get(5);
+        const speed_rect = row.get(6);
 
         const rev_clicked = imgui.iconButton(3, rev_rect.x, rev_rect.y, rev_rect.w, rev_rect.h, .reverse) catch false;
         const pause_clicked = imgui.iconButton(4, pause_rect.x, pause_rect.y, pause_rect.w, pause_rect.h, .pause) catch false;
@@ -164,6 +177,12 @@ pub const App = struct {
             self.core.playback.speed.load(.acquire),
         }) catch "---";
         try imgui.textLabel(tc_rect.x, tc_rect.y, tc_rect.w, tc_rect.h, frame_text, ui.ImGui.packColor(0.2, 0.2, 0.2, 1), .{ 255, 255, 255, 255 }, .left);
+
+        // ============ Video Controls
+        var ctrl_slider: f32 = self.core.playback.speed.load(.acquire);
+        if (try imgui.slider(2, speed_rect.x, speed_rect.y, speed_rect.w, speed_rect.h / 2, &ctrl_slider, 0.01, 12.0)) {
+            self.core.playback.speed.store(ctrl_slider, .release);
+        }
 
         // Outlines
         try imgui.addRectOutline(viewer_video_surface.x, viewer_video_surface.y, viewer_video_surface.w, viewer_video_surface.h, ui.ImGui.packColor(1, 1, 1, 1), 0.5);

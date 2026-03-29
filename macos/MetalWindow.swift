@@ -586,7 +586,7 @@ class MetalWindow: NSWindow {
         let styleMask: NSWindow.StyleMask =
             borderless
             ? [.borderless]
-            : [.titled, .closable, .resizable, .miniaturizable]
+            : [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView]
 
         super.init(
             contentRect: contentRect,
@@ -599,6 +599,12 @@ class MetalWindow: NSWindow {
         self.title = "Metal IMGUI"
         self.isOpaque = true
         self.backgroundColor = .black
+
+        // Chromeless look - traffic lights, no title bar
+        if !borderless {
+            self.titlebarAppearsTransparent = true
+            self.titleVisibility = .hidden
+        }
 
         // Enable mouse tracking
         self.acceptsMouseMovedEvents = true

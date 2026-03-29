@@ -14,6 +14,8 @@ pub const Window = struct {
     layer: *anyopaque,
     /// Opaque pointer to the MTLDevice used by the layer.
     device_ptr: *anyopaque,
+    width: usize,
+    height: usize,
 
     /// Creates a new macOS window with a Metal-backed layer.
     /// Returns the window handle, layer, and device pointer.
@@ -38,7 +40,13 @@ pub const Window = struct {
 
         std.debug.print("✓ Got MTLDevice\n", .{});
 
-        return .{ .handle = window, .layer = layer, .device_ptr = device };
+        return .{
+            .handle = window,
+            .layer = layer,
+            .device_ptr = device,
+            .width = @intCast(width),
+            .height = @intCast(height),
+        };
     }
 
     /// Releases the native window resources.
@@ -83,6 +91,20 @@ pub const Window = struct {
     /// The drawable must be released with `releaseDrawable()` after presenting.
     pub fn getNextDrawable(self: *Window) ?*anyopaque {
         return c.metal_layer_get_next_drawable(self.layer);
+    }
+
+    /// Updates the cached width/height from the CAMetalLayer's drawable size.
+    /// Call this each frame to detect window resize.
+    /// Returns true if the size changed.
+    pub fn updateSize(self: *Window) bool {
+        var new_width: u32 = 0;
+        var new_height: u32 = 0;
+        c.metal_layer_get_drawable_size(self.layer, &new_width, &new_height);
+
+        const changed = (new_width != self.width or new_height != self.height);
+        self.width = @intCast(new_width);
+        self.height = @intCast(new_height);
+        return changed;
     }
 
     /// Initializes the NSApplication shared instance.

@@ -220,7 +220,7 @@ fn renderUiFrame(self: *Platform) !void {
     var render_pass = metal.MetalRenderPassDescriptor.init();
     defer render_pass.deinit();
     render_pass.setColorTexture(&drawable_texture, 0);
-    render_pass.setClearColor(0.0, 0.0, 0.0, 1.0, 0);
+    render_pass.setClearColor(0.0, 0.0, 0.0, 1.0, 0); // BG of video quad
 
     var command_buffer = self.metal_renderer.queue.createCommandBuffer() catch return;
     defer command_buffer.deinit();

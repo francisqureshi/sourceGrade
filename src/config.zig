@@ -22,7 +22,7 @@ pub const Config = struct {
             .testing = .{
                 .video_path = constants.video_path,
                 .in_point = 15, // Hard coded debug vals
-                .out_point = 45,
+                .out_point = 450,
             },
         };
     }

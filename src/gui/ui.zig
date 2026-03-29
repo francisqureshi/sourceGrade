@@ -593,7 +593,7 @@ pub const ImGui = struct {
         try self.addRect(x, track_y, w, track_height, track_color);
 
         // Draw in/out region (highlighted area between in and out)
-        const region_color = packColor(0.3, 0.5, 0.7, 0.5);
+        const region_color = packColor(0.7, 0.7, 0.7, 1.0);
         try self.addRect(in_x, track_y, out_x - in_x, track_height, region_color);
 
         // Draw in point (thin line)
