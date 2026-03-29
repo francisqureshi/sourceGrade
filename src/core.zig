@@ -2,10 +2,9 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 
-const pg = @import("pg");
-const pgdb = @import("io/db/pgdb.zig");
-const db_test = @import("io/db/init_db.zig");
-const sources = @import("io/media/sources.zig");
+const Database = @import("io/db/database.zig").Database;
+const ProjectManager = @import("io/project/project_manager.zig").ProjectManager;
+const Sources = @import("io/media/sources.zig").Sources;
 
 const Config = @import("config.zig").Config;
 const SourceMedia = @import("io/media/media.zig").SourceMedia;
@@ -21,6 +20,9 @@ pub const Core = struct {
     cfg: Config,
     playback: Playback,
 
+    database: *Database,
+    project_manager: *ProjectManager,
+    sources: *Sources,
     // Core owns SourceMedia (will eventually be managed by MediaPool/Sources)
     source_media: ?*SourceMedia,
 
@@ -29,6 +31,51 @@ pub const Core = struct {
     pub fn init(allocator: Allocator, io: Io) !Core {
         // Load and parse all configuration
         const cfg = try Config.load(io, allocator);
+
+        // Initialize database
+        const database = try allocator.create(Database);
+        database.* = try Database.init(allocator, io);
+        errdefer {
+            database.deinit();
+            allocator.destroy(database);
+        }
+
+        // Initialize project manager
+        const project_manager = try allocator.create(ProjectManager);
+        project_manager.* = ProjectManager.init();
+        errdefer {
+            project_manager.deinit(allocator);
+            allocator.destroy(project_manager);
+        }
+
+        // Initialize sources
+        const sources = try allocator.create(Sources);
+        sources.* = Sources.init();
+        errdefer {
+            sources.deinit(allocator);
+            allocator.destroy(sources);
+        }
+
+        // Load default project from config
+        const project_id = cfg.constants.default_project_id;
+        project_manager.load(database.pool, project_id) catch |err| {
+            log.warn("Project {d} not found ({}), no project loaded", .{ project_id, err });
+            // Continue without a project - ProjectManager UI will handle this later
+        };
+
+        // Hydrate sources from database
+        try sources.hydrateFromDb(database.pool, io, allocator);
+
+        // Import test video if project loaded and sources is empty
+        if (project_manager.current != null and sources.map.count() == 0) {
+            _ = try sources.importFromFile(
+                database.pool,
+                project_manager.current.?.id,
+                cfg.testing.video_path,
+                io,
+                allocator,
+            );
+        }
 
         // Initialize playback state with test in/out points
         const playback: Playback = .{
@@ -44,28 +91,27 @@ pub const Core = struct {
             .io = io,
             .cfg = cfg,
             .playback = playback,
+            .database = database,
+            .project_manager = project_manager,
+            .sources = sources,
             .source_media = null,
             .video_monitors = std.ArrayList(VideoMonitor).empty,
         };
     }
 
-    /// Load source media from path and initialize VideoMonitor.
+    /// Load first source from Sources and initialize VideoMonitor.
     /// Called after Platform is ready
-    pub fn loadSourceMedia(self: *Core, video_path: []const u8) !void {
-        const sm = try SourceMedia.init(video_path, self.io, self.allocator);
-
-        self.source_media = try self.allocator.create(SourceMedia);
-        self.source_media.?.* = sm;
-        errdefer {
-            self.source_media.?.deinit();
-            self.allocator.destroy(self.source_media.?);
-            self.source_media = null;
+    pub fn loadSourceMedia(self: *Core) !void {
+        // Get first source from sources map
+        if (self.sources.map.values().len == 0) {
+            return error.NoSourcesAvailable;
         }
+        const sm = self.sources.map.values()[0];
+        self.source_media = sm;
 
         // Initialize VideoMonitor with loaded media
-        // WARN: Probs need to decouple sourceMedia...
         const video_monitor = try VideoMonitor.init(
-            &self.source_media.?.frame_rate.get(),
+            &sm.frame_rate.get(),
             self.io,
             self.allocator,
             &self.playback,
@@ -73,22 +119,28 @@ pub const Core = struct {
         try self.video_monitors.append(self.allocator, video_monitor);
 
         log.debug("✓ Core loaded video: {d}x{d} @ {d:.2}fps, {d} frames", .{
-            self.source_media.?.resolution.width,
-            self.source_media.?.resolution.height,
-            self.source_media.?.frame_rate_float,
-            self.source_media.?.duration_in_frames,
+            sm.resolution.width,
+            sm.resolution.height,
+            sm.frame_rate_float,
+            sm.duration_in_frames,
         });
     }
 
     pub fn deinit(self: *Core) void {
         for (self.video_monitors.items) |*vm| vm.deinit();
-
         self.video_monitors.deinit(self.allocator);
 
-        if (self.source_media) |sm| {
-            sm.deinit();
-            self.allocator.destroy(sm);
-        }
+        // source_media is just a pointer into sources.map, don't free it separately
+        self.source_media = null;
+
+        self.sources.deinit(self.allocator);
+        self.allocator.destroy(self.sources);
+
+        self.project_manager.deinit(self.allocator);
+        self.allocator.destroy(self.project_manager);
+
+        self.database.deinit();
+        self.allocator.destroy(self.database);
 
         self.cfg.deinit(self.allocator);
     }

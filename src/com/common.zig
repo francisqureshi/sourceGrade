@@ -9,6 +9,7 @@ pub const MAX_UI_INDICES = 131072;
 pub const Constants = struct {
     // General
     window_config: []const u8,
+    default_project_id: i32,
     video_path: []const u8,
 
     // Metal (macOS)
@@ -35,6 +36,7 @@ pub const Constants = struct {
 
         const constants = Constants{
             .window_config = try allocator.dupe(u8, tmp.window_config),
+            .default_project_id = tmp.default_project_id,
             .video_path = try allocator.dupe(u8, tmp.video_path),
 
             .metal_use_display_p3 = tmp.metal_use_display_p3,

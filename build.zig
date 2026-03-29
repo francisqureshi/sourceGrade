@@ -346,6 +346,24 @@ pub fn build(b: *std.Build) void {
     // by passing `--prefix` or `-p`.
     b.installArtifact(exe);
 
+    // Database reinit tool
+    const reinit_db_exe = b.addExecutable(.{
+        .name = "reinit_db",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/tools/reinit_db.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    reinit_db_exe.root_module.addImport("pg", b.dependency("pg", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("pg"));
+
+    const run_reinit_db = b.addRunArtifact(reinit_db_exe);
+    const reinit_db_step = b.step("reinitdb", "Reset and reinitialize the database schema");
+    reinit_db_step.dependOn(&run_reinit_db.step);
+
     // This creates a top level step. Top level steps have a name and can be
     // invoked by name when running `zig build` (e.g. `zig build run`).
     // This will evaluate the `run` step rather than the default step.

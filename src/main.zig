@@ -24,13 +24,11 @@ pub fn main(init: std.process.Init.Minimal) !void {
     var core = try Core.init(allocator, io);
     defer core.deinit();
 
-    try dev.testHydrate(core);
-
     // App
     var app = try App.init(allocator, io, &core);
     defer app.deinit();
 
-    // Platform specific
+    // Run via specific Platform:
     var platform = try Platform.init(&app, &core);
     defer platform.deinit();
 

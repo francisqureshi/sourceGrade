@@ -13,7 +13,8 @@ CREATE TABLE projects (
 -- Source media (actual files on disk)
 CREATE TABLE sources (
     id UUID PRIMARY KEY,
-    
+    project_id INT REFERENCES projects(id) ON DELETE CASCADE,
+
     -- File metadata
     path TEXT NOT NULL UNIQUE,
     filename TEXT NOT NULL,

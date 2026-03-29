@@ -6,7 +6,7 @@ const sources = @import("../io/media/sources.zig");
 
 const pg = @import("pg");
 const pgdb = @import("../io/db/pgdb.zig");
-const db_test = @import("../io/db/init_db.zig");
+const db_test = @import("../io/db/database.zig");
 
 pub const log = std.log.scoped(.pgSQL);
 

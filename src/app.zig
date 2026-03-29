@@ -69,17 +69,20 @@ pub const App = struct {
     }
 
     pub fn buildUi(self: *App, imgui: *ui.ImGui) !void {
+        const transparent = ui.ImGui.packColor(0, 0, 0, 0);
+
         // Get video_monitor from Core
         const source_monitor = &self.core.video_monitors.items[0];
         const source_viewer = &self.viewers.items[0];
 
-        var window_vstack = ui.layout.VStack.init(0, 0, imgui.display_width, imgui.display_height, 0);
-        _ = window_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 28 }, 0); // top_stack (unused)
+        var window_vstack = ui.layout.VStack.init(1, 0, imgui.display_width - 1, imgui.display_height, 0); // X + 1 px
+        const top_stack = window_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 28 }, 0);
         const main_stack = window_vstack.add(.{ .fill = 1.0 }, .{ .fill = 1.0 }, 0);
         window_vstack.solve();
 
+        _ = top_stack;
+
         var main_hstack = ui.layout.HStack.init(main_stack.x, main_stack.y, main_stack.w, main_stack.h / 2, 0);
-        _ = main_hstack.add(.{ .pixels = 1 }, .{ .fill = 1.0 }, 1); //FIXME: 1px left window pad... probs same for 0 y too.
         const sources = main_hstack.add(.{ .fill = 0.33 }, .{ .fill = 1.0 }, 0);
         const viewer = main_hstack.add(.{ .fill = 0.66 }, .{ .fill = 1.0 }, 0);
         main_hstack.solve();
@@ -189,8 +192,16 @@ pub const App = struct {
         }
 
         //:INFO: SOURCES UI
-        const transparent = ui.ImGui.packColor(0, 0, 0, 0);
-        try imgui.textLabel(sources.x, sources.y, sources.w, sources.h, "Sources", transparent, .{ 255, 255, 255, 255 }, .left);
+        var sources_vstack = ui.layout.VStack.init(sources.x, sources.y, sources.w, sources.h, 0);
+        const titlebar = sources_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 20 }, 1.0);
+        const sources_pane = sources_vstack.add(.{ .fill = 1.0 }, .{ .fill = 1.0 }, 1.0);
+        sources_vstack.solve();
+
+        try imgui.textLabel(titlebar.x, titlebar.y, titlebar.w, titlebar.h, "Sources", transparent, .{ 255, 255, 255, 255 }, .left);
+
+        const sources_text = self.core.sources.map.values()[0].file_name;
+
+        try imgui.textLabel(sources_pane.x, sources_pane.y, sources_pane.w, sources_pane.h, sources_text, transparent, .{ 255, 255, 255, 255 }, .left);
 
         // Outlines
         try imgui.addRectOutline(sources.x, sources.y, sources.w, sources.h, ui.ImGui.packColor(1, 1, 1, 1), 0.5);

@@ -1,16 +1,15 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
+const Io = std.Io;
 const builtin = @import("builtin");
 
 const pg = @import("pg");
+
 const media = @import("../media/media.zig");
 
-const sources = @import("../media/sources.zig");
-
-const Allocator = std.mem.Allocator;
-const Io = std.Io;
 pub const log = std.log.scoped(.pgSQL);
 
-const Project = struct {
+pub const Project = struct {
     id: []const u8,
     name: []const u8,
     frame_rate: ?f64, // Can be null
@@ -20,6 +19,7 @@ const Project = struct {
 // Source struct mirrors the sources table schema
 pub const DbSource = struct {
     id: []const u8,
+    project_id: i32,
     path: []const u8,
     filename: []const u8,
     file_modified_at: ?i64,
@@ -110,10 +110,10 @@ pub fn getProjectById(pool: *pg.Pool, project_id: i32) !?Project {
 
     // Manually extract or use .to() for struct mapping
     return Project{
-        .id = row.getCol([]const u8, "id"),
-        .name = row.getCol([]const u8, "name"),
-        .frame_rate = row.getCol(?f64, "frame_rate"),
-        .created_at = row.getCol(i64, "created_at"),
+        .id = try row.getCol([]const u8, "id"),
+        .name = try row.getCol([]const u8, "name"),
+        .frame_rate = try row.getCol(?f64, "frame_rate"),
+        .created_at = try row.getCol(i64, "created_at"),
     };
 }
 
@@ -142,7 +142,7 @@ pub fn resetDatabase(pool: *pg.Pool) !void {
 // Source Media Database Functions
 
 /// Create Source entry in DB from SourceMedia.. WIP
-pub fn createSource(pool: *pg.Pool, source_media: *media.SourceMedia) ![16]u8 {
+pub fn createSource(pool: *pg.Pool, project_id: i32, source_media: *media.SourceMedia) ![16]u8 {
     var conn = try pool.acquire();
     defer conn.release();
 
@@ -156,12 +156,13 @@ pub fn createSource(pool: *pg.Pool, source_media: *media.SourceMedia) ![16]u8 {
     // Simplified INSERT - omit optional/complex fields for now
     const result = try conn.query(
         \\INSERT INTO sources
-        \\  (path, filename, codec, width, height,
+        \\  (project_id, path, filename, codec, width, height,
         \\   frame_rate_num, frame_rate_den,
         \\   start_timecode, end_timecode, drop_frame, duration_frames)
-        \\VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        \\VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         \\RETURNING id
     , .{
+        project_id,
         source_media.file_path,
         source_media.file_name,
         source_media.codec,
@@ -178,7 +179,7 @@ pub fn createSource(pool: *pg.Pool, source_media: *media.SourceMedia) ![16]u8 {
 
     if (try result.next()) |row| {
         var id: [16]u8 = undefined;
-        @memcpy(&id, row.get([]const u8, 0));
+        @memcpy(&id, try row.get([]const u8, 0));
         const hex_id = try pg.uuidToHex(&id);
         log.debug("✓ Created source ID: {s}", .{hex_id});
 
@@ -190,50 +191,14 @@ pub fn createSource(pool: *pg.Pool, source_media: *media.SourceMedia) ![16]u8 {
     return error.NoSourceCreated;
 }
 
-pub fn hydrateSourceMediaPool(db_pool: *pg.Pool, io: Io, source_pool_allocator: Allocator) !void {
-    var conn = try db_pool.acquire();
-    defer conn.release();
+//FIXME: This should maybe now just be a look up to source_pool and return the SourceMedia...
 
-    var result = try conn.queryOpts(
-        \\SELECT id, path 
-        \\FROM sources
-        \\ORDER BY created_at DESC
-    , .{}, .{ .column_names = true });
-    defer result.deinit();
-
-    log.debug("=== Rehydrated Sources ===", .{});
-
-    var mapper = result.mapper(struct {
-        id: []const u8,
-        path: []const u8,
-    }, .{ .dupe = true });
-
-    while (try mapper.next()) |db_source| {
-        const uuid: [16]u8 = db_source.id[0..16].*;
-
-        // Heap allocate hydrated to SourcePoolAllocator
-        const source_media = try source_pool_allocator.create(media.SourceMedia);
-
-        source_media.* = try media.SourceMedia.initFromDb(uuid, db_source.path, io, source_pool_allocator);
-        try sources.source_pool.put(source_pool_allocator, uuid, source_media);
-
-        log.debug("source_media size: {d} bytes", .{source_media.totalSize()});
-
-        const printble_hex_id = try pg.uuidToHex(db_source.id);
-        log.debug(
-            "ID: {s} | {s} | {d}x{d} | {d} frames @ {d:.2}fps | {s}",
-            .{ &printble_hex_id, source_media.file_name, source_media.resolution.width, source_media.resolution.height, source_media.duration_in_frames, source_media.frame_rate_float, source_media.codec },
-        );
-    }
-}
-
-/// FIXEME: This should maybe now just be a look up to source_pool and return the SourceMedia...
 pub fn getSourceById(pool: *pg.Pool, source_id: []const u8) !?DbSource {
     var conn = try pool.acquire();
     defer conn.release();
 
     var row = (try conn.rowOpts(
-        \\SELECT id, path, filename, file_modified_at, file_size_bytes,
+        \\SELECT id, project_id, path, filename, file_modified_at, file_size_bytes,
         \\       codec, width, height, container_width, container_height,
         \\       frame_rate_num, frame_rate_den, frame_rate_float,
         \\       time_base_num, time_base_den,
@@ -248,6 +213,7 @@ pub fn getSourceById(pool: *pg.Pool, source_id: []const u8) !?DbSource {
 
     return DbSource{
         .id = row.getCol([]const u8, "id"),
+        .project_id = row.getCol(i32, "project_id"),
         .path = row.getCol([]const u8, "path"),
         .filename = row.getCol([]const u8, "filename"),
         .file_modified_at = row.getCol(?i64, "file_modified_at"),
@@ -341,7 +307,8 @@ pub fn resetAndInitializeDatabase(pool: *pg.Pool) !void {
     _ = try conn.exec(
         \\CREATE TABLE sources (
         \\    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        \\    
+        \\    project_id INT REFERENCES projects(id) ON DELETE CASCADE,
+        \\
         \\    -- File metadata
         \\    path TEXT NOT NULL UNIQUE,
         \\    filename TEXT NOT NULL,

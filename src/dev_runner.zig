@@ -5,7 +5,7 @@ const Io = std.Io;
 const pg = @import("pg");
 
 const Core = @import("core.zig").Core;
-const db_test = @import("io/db/init_db.zig");
+const db_test = @import("io/db/database.zig");
 const pgdb = @import("io/db/pgdb.zig");
 const sources = @import("io/media/sources.zig");
 
@@ -20,6 +20,8 @@ pub fn testHydrate(core: Core) !void {
 
     //Inspect source_pool
     try inspectSourcePool(core.allocator);
+
+    try pgdb.listProjects(db_pool);
 }
 
 fn inspectSourcePool(allocator: Allocator) !void {

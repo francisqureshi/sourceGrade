@@ -1,5 +1,6 @@
 # General
-window_config="900x900"
+window_config="1600x900"
+default_project_id=1
 # video_path="/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov"
 video_path="/Users/fq/Desktop/AGMM/Kolon_Spring_SS25_16x9_90s_GRADE_3840x1440.mov"
 # video_path="/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov"

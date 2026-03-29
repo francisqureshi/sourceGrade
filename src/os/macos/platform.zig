@@ -174,10 +174,9 @@ fn renderUiFrame(self: *Platform) !void {
 
     // Get or init FrameDecoder
     if (self.frame_decoder == null) {
-        // Load source media into Core first
+        // Load source media into Core first (from Sources)
         if (self.core.source_media == null) {
-            const video_path = self.core.cfg.testing.video_path;
-            self.core.loadSourceMedia(video_path) catch |err| {
+            self.core.loadSourceMedia() catch |err| {
                 log.debug("Error: Failed to load source media ({})", .{err});
                 return;
             };

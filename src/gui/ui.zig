@@ -621,7 +621,7 @@ pub const ImGui = struct {
     /// Simple text label with background and alignment
     pub fn textLabel(self: *ImGui, x: f32, y: f32, w: f32, h: f32, label: []const u8, bg_color: u32, text_color: [4]u8, alignment: TextAlign) !void {
         try self.addRect(x, y, w, h, bg_color);
-        const font_size: f32 = 16;
+        const font_size: f32 = 14;
         const padding: f32 = 4;
 
         const text_width = try self.measureText(label, font_size);
