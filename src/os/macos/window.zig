@@ -93,20 +93,6 @@ pub const Window = struct {
         return c.metal_layer_get_next_drawable(self.layer);
     }
 
-    /// Updates the cached width/height from the CAMetalLayer's drawable size.
-    /// Call this each frame to detect window resize.
-    /// Returns true if the size changed.
-    pub fn updateSize(self: *Window) bool {
-        var new_width: u32 = 0;
-        var new_height: u32 = 0;
-        c.metal_layer_get_drawable_size(self.layer, &new_width, &new_height);
-
-        const changed = (new_width != self.width or new_height != self.height);
-        self.width = @intCast(new_width);
-        self.height = @intCast(new_height);
-        return changed;
-    }
-
     /// Initializes the NSApplication shared instance.
     /// Must be called before showing any windows.
     /// This sets up the macOS application environment.
