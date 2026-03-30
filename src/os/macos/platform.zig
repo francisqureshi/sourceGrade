@@ -6,7 +6,7 @@ const metal = @import("metal");
 const App = @import("../../app.zig").App;
 const Core = @import("../../core.zig").Core;
 const ImGui = @import("../../gui/ui.zig").ImGui;
-const VideoMonitor = @import("../../playback/video_monitor.zig").VideoMonitor;
+const Session = @import("../../playback/session.zig").Session;
 const DisplayLink = @import("window.zig").DisplayLink;
 const FrameDecoder = @import("frame_decoder.zig").FrameDecoder;
 const ImGuiRenderer = @import("ui_renderer.zig").ImGuiRenderer;
@@ -38,9 +38,6 @@ pub const Platform = struct {
     imgui_ctx: *ImGui,
     /// ui renderer
     ui_renderer: ImGuiRenderer,
-    /// Frame decoder - lazily initialized on first frame.
-    /// Manages video decoding and GPU texture lifetime.
-    frame_decoder: ?*FrameDecoder,
     /// Timestamp when the platform was initialized (for elapsed time).
     start_time: std.Io.Clock.Timestamp,
 
@@ -85,7 +82,7 @@ pub const Platform = struct {
         // Set ImGui display size from config
         imgui_ctx.display_width = @floatFromInt(width);
         imgui_ctx.display_height = @floatFromInt(height);
-        log.debug("✓ Created IMGUI context (triple-buffered)", .{});
+        log.debug("Created IMGUI context (triple-buffered)", .{});
 
         // Initialize ImGuiRenderer
         const imgui_renderer = try ImGuiRenderer.init(
@@ -114,7 +111,6 @@ pub const Platform = struct {
             .displaylink = displaylink,
             .imgui_ctx = imgui_ctx,
             .ui_renderer = imgui_renderer,
-            .frame_decoder = null,
             .start_time = start_time,
         };
     }
@@ -124,7 +120,7 @@ pub const Platform = struct {
         self.displaylink.setCallback(displayLinkCallback, @ptrCast(self));
         self.displaylink.setDispatchToMain(true);
         self.displaylink.start();
-        log.debug("✓ Started CVDisplayLink", .{});
+        log.debug("Started CVDisplayLink", .{});
     }
 
     /// Releases all platform resources in reverse order of creation.
@@ -134,9 +130,14 @@ pub const Platform = struct {
         self.imgui_ctx.deinit();
         self.ui_renderer.deinit();
 
-        if (self.frame_decoder) |frame_decoder| {
-            frame_decoder.deinit();
-            self.app.allocator.destroy(frame_decoder);
+        // Clean up decoders stored in sessions
+        for (self.core.sessions.values()) |session| {
+            if (session.decoder) |decoder_ptr| {
+                const frame_decoder: *FrameDecoder = @ptrCast(@alignCast(decoder_ptr));
+                frame_decoder.deinit();
+                self.app.allocator.destroy(frame_decoder);
+                session.decoder = null;
+            }
         }
 
         self.app.allocator.destroy(self.imgui_ctx);
@@ -171,27 +172,27 @@ fn displayLinkCallback(userdata: ?*anyopaque) callconv(.c) void {
 /// Handles lazy video initialization, input polling, UI building, and GPU submission.
 /// Renders two layers: video (background) and IMGUI (foreground overlay).
 fn renderUiFrame(self: *Platform) !void {
+    const source_viewer = &self.app.viewers.items[0];
 
-    // Get or init FrameDecoder
-    if (self.frame_decoder == null) {
-        // Load source media into Core first (from Sources)
-        if (self.core.source_media == null) {
-            self.core.loadSourceMedia() catch |err| {
-                log.debug("Error: Failed to load source media ({})", .{err});
-                return;
-            };
+    // Get session from viewer (early return if no session)
+    const session = source_viewer.session orelse return;
+
+    // Get or init FrameDecoder for this session
+    const frame_decoder: *FrameDecoder = blk: {
+        if (session.decoder) |ptr| {
+            break :blk @ptrCast(@alignCast(ptr));
         }
 
-        // Now create FrameDecoder (uses Core's source_media reference)
-        const frame_decoder = self.app.allocator.create(FrameDecoder) catch return;
-        frame_decoder.* = FrameDecoder.init(self) catch |err| {
+        // Create FrameDecoder for this session
+        const fd = self.app.allocator.create(FrameDecoder) catch return;
+        fd.* = FrameDecoder.init(self, session) catch |err| {
             log.debug("Error: Failed to init FrameDecoder ({})", .{err});
-            self.app.allocator.destroy(frame_decoder);
+            self.app.allocator.destroy(fd);
             return;
         };
-        self.frame_decoder = frame_decoder;
-    }
-    const frame_decoder = self.frame_decoder orelse return;
+        session.decoder = @ptrCast(fd);
+        break :blk fd;
+    };
 
     frame_decoder.ui_frame += 1;
 
@@ -259,14 +260,12 @@ fn renderUiFrame(self: *Platform) !void {
     const temp_pan_x_delta = (mouse_x - last_mouse_x);
     const temp_pan_y_delta = (mouse_y - last_mouse_y);
 
-    const source_viewer = &self.app.viewers.items[0];
-
     if (mouse_middle_down) {
         source_viewer.pan_x += temp_pan_x_delta;
         source_viewer.pan_y += temp_pan_y_delta;
 
-        const video_width: f32 = @floatFromInt(frame_decoder.source_media.resolution.width);
-        const video_height: f32 = @floatFromInt(frame_decoder.source_media.resolution.height);
+        const video_width: f32 = @floatFromInt(session.source.resolution.width);
+        const video_height: f32 = @floatFromInt(session.source.resolution.height);
 
         const video_aspect = video_width / video_height;
         const viewer_aspect = source_viewer.width / source_viewer.height;
@@ -293,13 +292,8 @@ fn renderUiFrame(self: *Platform) !void {
 
     try self.app.buildUi(self.imgui_ctx);
 
-    // Get the monitor this viewer is displaying
-    const monitor_id = source_viewer.monitor_id orelse return; // Skip if no monitor attached
-    if (monitor_id >= self.core.video_monitors.items.len) return; // Safety check
-    const monitor = &self.core.video_monitors.items[monitor_id];
-
-    // Decode the frame for this viewer's monitor
-    decodeVideoFrame(frame_decoder, self.core, monitor) catch {};
+    // Decode the frame using session's monitor
+    decodeVideoFrame(frame_decoder, session) catch {};
 
     // Layer 1: Video (render into viewer bounds)
     if (frame_decoder.packed_metal_texture) |*texture| {
@@ -314,8 +308,8 @@ fn renderUiFrame(self: *Platform) !void {
 
         const video_uniforms = VideoUniforms{
             .video_size = .{
-                @floatFromInt(frame_decoder.source_media.resolution.width),
-                @floatFromInt(frame_decoder.source_media.resolution.height),
+                @floatFromInt(session.source.resolution.width),
+                @floatFromInt(session.source.resolution.height),
             },
             .viewport_size = .{ display_width_pts, display_height_pts },
             .viewer_rect = .{ source_viewer.x, source_viewer.y, source_viewer.width, source_viewer.height },
@@ -373,20 +367,16 @@ fn renderUiFrame(self: *Platform) !void {
     window_c.releaseTexture(texture_ptr);
 }
 
-fn decodeVideoFrame(frame_decoder: *FrameDecoder, core: *Core, video_monitor: *VideoMonitor) !void {
-    _ = core;
-    // Get video_monitor from Core
-    // const video_monitor = if (core.video_monitor) |*vm| vm else return error.NoVideoMonitor;
-
-    // Read current frame from monitor thread
-    const frame_idx = video_monitor.current_frame_index.load(.acquire);
+fn decodeVideoFrame(frame_decoder: *FrameDecoder, session: *Session) !void {
+    // Read current frame from session's monitor
+    const frame_idx = session.monitor.current_frame_index.load(.acquire);
 
     // Only decode if frame changed
-    if (video_monitor.last_decoded_frame_index == null or
-        video_monitor.last_decoded_frame_index.? != frame_idx)
+    if (session.monitor.last_decoded_frame_index == null or
+        session.monitor.last_decoded_frame_index.? != frame_idx)
     {
         // Reset scratch arena before decode
-        _ = video_monitor.decode_arena.reset(.free_all);
+        _ = session.monitor.decode_arena.reset(.free_all);
 
         // Clean up previous frame resources before next decode
         if (frame_decoder.decoded_frame_buffer) |*df| {
@@ -400,7 +390,7 @@ fn decodeVideoFrame(frame_decoder: *FrameDecoder, core: *Core, video_monitor: *V
 
         const decoded_frame = frame_decoder.decoder.decodeFrame(
             frame_idx,
-            video_monitor.decode_arena.allocator(),
+            session.monitor.decode_arena.allocator(),
         ) catch |err| {
             log.debug("Failed to decode frame: {}", .{err});
             return error.DecodeFrameFailed;
@@ -421,6 +411,6 @@ fn decodeVideoFrame(frame_decoder: *FrameDecoder, core: *Core, video_monitor: *V
         frame_decoder.packed_metal_texture = metal.MetalTexture.initFromPtr(mtl_tex);
 
         // Mark as decoded
-        video_monitor.last_decoded_frame_index = frame_idx;
+        session.monitor.last_decoded_frame_index = frame_idx;
     }
 }

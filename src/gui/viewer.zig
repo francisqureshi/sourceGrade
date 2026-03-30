@@ -1,3 +1,5 @@
+const Session = @import("../playback/session.zig").Session;
+
 pub const Viewer = struct {
     // Screen-space bounds (in points)
     x: f32,
@@ -11,9 +13,9 @@ pub const Viewer = struct {
     pan_x: f32, // Pan offset in normalized coords
     pan_y: f32,
 
-    // Which VideoMonitor's output to display
-    monitor_id: ?usize, // Index into Core.monitors array (future)
-    // null = no monitor attached (shows placeholder)
+    /// The session being displayed (not owned)
+    /// null = no session loaded (shows placeholder)
+    session: ?*Session,
 
     pub fn deinit(self: *Viewer) void {
         _ = self;

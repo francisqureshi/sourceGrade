@@ -4,8 +4,8 @@ const Io = std.Io;
 
 const com = @import("com");
 const Core = @import("core.zig").Core;
+const Session = @import("playback/session.zig").Session;
 const ui = @import("gui/ui.zig");
-const VideoMonitor = @import("playback/video_monitor.zig").VideoMonitor;
 const Viewer = @import("gui/viewer.zig").Viewer;
 
 pub const WindowConfig = union(enum) {
@@ -24,11 +24,17 @@ pub const App = struct {
     test_slider: f32,
 
     pub fn init(allocator: Allocator, io: Io, core: *Core) !App {
-
         // Create viewers ArrayList
         var viewers = std.ArrayList(Viewer).empty;
 
-        // Create initial viewer (full-screen for now)
+        // Get first source and create session (if sources exist)
+        var initial_session: ?*Session = null;
+        if (core.sources.map.keys().len > 0) {
+            const first_uuid = core.sources.map.keys()[0];
+            initial_session = try core.getOrCreateSession(first_uuid);
+        }
+
+        // Create initial viewer
         const source_viewer = Viewer{
             .x = 50.0,
             .y = 50.0,
@@ -38,7 +44,7 @@ pub const App = struct {
             .zoom = 1.0,
             .pan_x = 0.0,
             .pan_y = 0.0,
-            .monitor_id = 0, // References Core.video_monitors[0]
+            .session = initial_session,
         };
 
         try viewers.append(allocator, source_viewer);
@@ -55,8 +61,6 @@ pub const App = struct {
     }
 
     pub fn deinit(self: *App) void {
-        // _ = self;
-
         // Deinit each viewer
         for (self.viewers.items) |*vwr| vwr.deinit();
 
@@ -71,9 +75,10 @@ pub const App = struct {
     pub fn buildUi(self: *App, imgui: *ui.ImGui) !void {
         const transparent = ui.ImGui.packColor(0, 0, 0, 0);
 
-        // Get video_monitor from Core
-        const source_monitor = &self.core.video_monitors.items[0];
         const source_viewer = &self.viewers.items[0];
+
+        // Get session from viewer (early return if no session loaded)
+        const session = source_viewer.session orelse return;
 
         var window_vstack = ui.layout.VStack.init(1, 0, imgui.display_width - 1, imgui.display_height, 0); // X + 1 px
         const top_stack = window_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 28 }, 0);
@@ -111,9 +116,9 @@ pub const App = struct {
         _ = scrubber_hstack.add(.{ .percent = 0.025 }, .{ .fill = 1.0 }, 1.0);
         scrubber_hstack.solve();
 
-        var scrubber_slider: usize = source_monitor.current_frame_index.load(.acquire);
-        var scrubber_in: usize = @intCast(self.core.playback.in_point);
-        var scrubber_out: usize = @intCast(self.core.playback.out_point);
+        var scrubber_slider: usize = session.monitor.current_frame_index.load(.acquire);
+        var scrubber_in: usize = @intCast(session.playback.in_point);
+        var scrubber_out: usize = @intCast(session.playback.out_point);
         if (try imgui.scrubBar(
             111,
             112,
@@ -126,15 +131,15 @@ pub const App = struct {
             &scrubber_in,
             &scrubber_out,
             0,
-            @intCast(self.core.source_media.?.duration_in_frames),
+            @intCast(session.source.duration_in_frames),
         )) {
-            source_monitor.current_frame_index.store(scrubber_slider, .release);
+            session.monitor.current_frame_index.store(scrubber_slider, .release);
 
-            self.core.playback.in_point = @intCast(scrubber_in);
-            self.core.playback.out_point = @intCast(scrubber_out);
+            session.playback.in_point = @intCast(scrubber_in);
+            session.playback.out_point = @intCast(scrubber_out);
         }
 
-        const loop_button_text: []const u8 = if (self.core.playback.loop.load(.acquire)) "loop ON" else "loop OFF";
+        const loop_button_text: []const u8 = if (session.playback.loop.load(.acquire)) "loop ON" else "loop OFF";
 
         //  Transport Controls
         var row = ui.layout.HStack.init(viewer_ctrls.x, viewer_ctrls.y, viewer_ctrls.w, viewer_ctrls.h, 10);
@@ -153,18 +158,18 @@ pub const App = struct {
         const fwd_clicked = imgui.iconButton(5, fwd_rect.x, fwd_rect.y, fwd_rect.w, fwd_rect.h, .play) catch false;
         const loop_clicked = imgui.textButton(6, loop_rect.x, loop_rect.y, loop_rect.w, loop_rect.h, loop_button_text) catch false;
 
-        const current_frame = source_monitor.current_frame_index.load(.acquire);
+        const current_frame = session.monitor.current_frame_index.load(.acquire);
         var disp_frame_buf: [64]u8 = undefined;
         const frame_text = std.fmt.bufPrint(&disp_frame_buf, "Frame: {d}  Speed: {d:.2}x", .{
             current_frame,
-            self.core.playback.speed.load(.acquire),
+            session.playback.speed.load(.acquire),
         }) catch "---";
         try imgui.textLabel(tc_rect.x, tc_rect.y, tc_rect.w, tc_rect.h, frame_text, ui.ImGui.packColor(0.2, 0.2, 0.2, 1), .{ 255, 255, 255, 255 }, .left);
 
         //  Video Controls
-        var ctrl_slider: f32 = self.core.playback.speed.load(.acquire);
+        var ctrl_slider: f32 = session.playback.speed.load(.acquire);
         if (try imgui.slider(2, speed_rect.x, speed_rect.y, speed_rect.w, speed_rect.h / 2, &ctrl_slider, 0.01, 12.0)) {
-            self.core.playback.speed.store(ctrl_slider, .release);
+            session.playback.speed.store(ctrl_slider, .release);
         }
 
         // Outlines
@@ -172,23 +177,23 @@ pub const App = struct {
         try imgui.addRectOutline(viewer_chin.x, viewer_chin.y, viewer_chin.w, viewer_chin.h, ui.ImGui.packColor(1, 1, 1, 1), 0.5);
 
         if (fwd_clicked) {
-            self.core.playback.playing.store(1.0, .release);
-            try source_monitor.startMonitor(self.io);
+            session.playback.playing.store(1.0, .release);
+            try session.monitor.startMonitor(self.io);
         }
 
         if (rev_clicked) {
-            self.core.playback.playing.store(-1.0, .release);
-            try source_monitor.startMonitor(self.io);
+            session.playback.playing.store(-1.0, .release);
+            try session.monitor.startMonitor(self.io);
         }
 
         if (pause_clicked) {
-            self.core.playback.playing.store(0.0, .release);
-            source_monitor.stopMonitor(self.io);
+            session.playback.playing.store(0.0, .release);
+            session.monitor.stopMonitor(self.io);
         }
 
         if (loop_clicked) {
-            const current = self.core.playback.loop.load(.acquire);
-            self.core.playback.loop.store(!current, .release);
+            const current = session.playback.loop.load(.acquire);
+            session.playback.loop.store(!current, .release);
         }
 
         //:INFO: SOURCES UI
@@ -199,9 +204,35 @@ pub const App = struct {
 
         try imgui.textLabel(titlebar.x, titlebar.y, titlebar.w, titlebar.h, "Sources", transparent, .{ 255, 255, 255, 255 }, .left);
 
-        const sources_text = self.core.sources.map.values()[0].file_name;
+        // List all sources as clickable buttons
+        const row_height: f32 = 24.0;
+        const source_keys = self.core.sources.map.keys();
+        const source_values = self.core.sources.map.values();
 
-        try imgui.textLabel(sources_pane.x, sources_pane.y, sources_pane.w, sources_pane.h, sources_text, transparent, .{ 255, 255, 255, 255 }, .left);
+        for (source_keys, source_values, 0..) |uuid, sm, i| {
+            const y_offset = sources_pane.y + @as(f32, @floatFromInt(i)) * row_height;
+
+            // Highlight if this is the current session's source
+            const is_selected = if (session.source == sm) true else false;
+            const bg_color = if (is_selected)
+                ui.ImGui.packColor(0.3, 0.3, 0.5, 1.0)
+            else
+                transparent;
+
+            // Use unique ID based on index (offset to avoid collision with other widgets)
+            const button_id: u32 = 1000 + @as(u32, @intCast(i));
+
+            // Draw selection background
+            if (is_selected) {
+                try imgui.addRect(sources_pane.x, y_offset, sources_pane.w, row_height, bg_color);
+            }
+
+            if (try imgui.textButton(button_id, sources_pane.x, y_offset, sources_pane.w, row_height, sm.file_name)) {
+                // Switch to this source - get or create session
+                const new_session = try self.core.getOrCreateSession(uuid);
+                source_viewer.session = new_session;
+            }
+        }
 
         // Outlines
         try imgui.addRectOutline(sources.x, sources.y, sources.w, sources.h, ui.ImGui.packColor(1, 1, 1, 1), 0.5);

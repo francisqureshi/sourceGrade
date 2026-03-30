@@ -36,6 +36,14 @@ pub const Sources = struct {
         return self.map.get(uuid);
     }
 
+    /// Check if a source with this file path already exists
+    pub fn hasPath(self: *Sources, file_path: []const u8) bool {
+        for (self.map.values()) |sm| {
+            if (std.mem.eql(u8, sm.file_path, file_path)) return true;
+        }
+        return false;
+    }
+
     /// Import a source from file path, add to DB and map
     pub fn importFromFile(
         self: *Sources,

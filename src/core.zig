@@ -7,8 +7,7 @@ const Database = @import("io/db/database.zig").Database;
 const SourceMedia = @import("io/media/media.zig").SourceMedia;
 const Sources = @import("io/media/sources.zig").Sources;
 const ProjectManager = @import("io/project/project_manager.zig").ProjectManager;
-pub const Playback = @import("playback/playback.zig").Playback;
-const VideoMonitor = @import("playback/video_monitor.zig").VideoMonitor;
+const Session = @import("playback/session.zig").Session;
 
 const log = std.log.scoped(.core);
 
@@ -17,13 +16,14 @@ pub const Core = struct {
     io: Io,
 
     cfg: Config,
-    playback: Playback,
 
     database: *Database,
     project_manager: *ProjectManager,
     sources: *Sources,
 
-    video_monitors: std.ArrayList(VideoMonitor),
+    /// Active sessions (UUID -> Session)
+    /// Sessions are created on-demand when a viewer loads a source
+    sessions: std.AutoArrayHashMapUnmanaged([16]u8, *Session),
 
     pub fn init(allocator: Allocator, io: Io) !Core {
         // Load and parse all configuration
@@ -57,73 +57,71 @@ pub const Core = struct {
         const project_id = cfg.constants.default_project_id;
         project_manager.load(database.pool, project_id) catch |err| {
             log.warn("Project {d} not found ({}), no project loaded", .{ project_id, err });
-            // Continue without a project - ProjectManager UI will handle this later
         };
 
         // Hydrate sources from database
         try sources.hydrateFromDb(database.pool, io, allocator);
 
-        // Import test video if project loaded and sources is empty
-        if (project_manager.current != null and sources.map.count() == 0) {
-            _ = try sources.importFromFile(
-                database.pool,
-                project_manager.current.?.id,
+        // Import test videos if project loaded and they don't exist
+        if (project_manager.current != null) {
+            const test_videos = [_][]const u8{
                 cfg.testing.video_path,
-                io,
-                allocator,
-            );
+                "/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov",
+            };
+            for (test_videos) |video_path| {
+                if (!sources.hasPath(video_path)) {
+                    _ = try sources.importFromFile(
+                        database.pool,
+                        project_manager.current.?.id,
+                        video_path,
+                        io,
+                        allocator,
+                    );
+                }
+            }
         }
-
-        // Initialize playback state with test in/out points
-        const playback: Playback = .{
-            .playing = std.atomic.Value(f32).init(0.0),
-            .speed = std.atomic.Value(f32).init(1.0),
-            .loop = std.atomic.Value(bool).init(true),
-            .in_point = cfg.testing.in_point,
-            .out_point = cfg.testing.out_point,
-        };
 
         return .{
             .allocator = allocator,
             .io = io,
             .cfg = cfg,
-            .playback = playback,
             .database = database,
             .project_manager = project_manager,
             .sources = sources,
-            .video_monitors = std.ArrayList(VideoMonitor).empty,
+            .sessions = std.AutoArrayHashMapUnmanaged([16]u8, *Session).empty,
         };
     }
 
-    /// Load first source from Sources and initialize VideoMonitor.
-    /// Called after Platform is ready
-    pub fn loadSourceMedia(self: *Core) !void {
-        // Get first source from sources map
-        if (self.sources.map.values().len == 0) {
-            return error.NoSourcesAvailable;
-        }
-        const sm = self.sources.map.values()[0];
+    /// Get or create a session for a source by UUID.
+    /// Sessions are reused if already loaded (shared playback state).
+    //FIXME: Not 100% on this fn... could we be checking somewhere above and just get or create above?
+    pub fn getOrCreateSession(self: *Core, uuid: [16]u8) !*Session {
 
-        // Initialize VideoMonitor with loaded media
-        const video_monitor = try VideoMonitor.init(
-            &sm.frame_rate.get(),
-            self.io,
-            self.allocator,
-            &self.playback,
-        );
-        try self.video_monitors.append(self.allocator, video_monitor);
+        // Get source from Sources
+        const source = self.sources.get(uuid) orelse return error.SourceNotFound;
 
-        log.debug("✓ Core loaded video: {d}x{d} @ {d:.2}fps, {d} frames", .{
-            sm.resolution.width,
-            sm.resolution.height,
-            sm.frame_rate_float,
-            sm.duration_in_frames,
-        });
+        // Allocate and initialize session
+        const session = try self.allocator.create(Session);
+        errdefer self.allocator.destroy(session);
+
+        try session.init(source, self.io, self.allocator);
+        try self.sessions.put(self.allocator, uuid, session);
+
+        return session;
+    }
+
+    /// Get session by UUID (returns null if not loaded)
+    pub fn getSession(self: *Core, uuid: [16]u8) ?*Session {
+        return self.sessions.get(uuid);
     }
 
     pub fn deinit(self: *Core) void {
-        for (self.video_monitors.items) |*vm| vm.deinit();
-        self.video_monitors.deinit(self.allocator);
+        // Clean up all sessions
+        for (self.sessions.values()) |session| {
+            session.deinit();
+            self.allocator.destroy(session);
+        }
+        self.sessions.deinit(self.allocator);
 
         self.sources.deinit(self.allocator);
         self.allocator.destroy(self.sources);
