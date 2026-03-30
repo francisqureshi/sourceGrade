@@ -5,7 +5,7 @@ const builtin = @import("builtin");
 
 const App = @import("app.zig").App;
 const Core = @import("core.zig").Core;
-const dev = @import("dev_runner.zig");
+const dev = @import("_dev.zig");
 const Platform = @import("os/mod.zig").Platform;
 
 pub fn main(init: std.process.Init.Minimal) !void {

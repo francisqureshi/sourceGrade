@@ -2,12 +2,11 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 
-const Database = @import("io/db/database.zig").Database;
-const ProjectManager = @import("io/project/project_manager.zig").ProjectManager;
-const Sources = @import("io/media/sources.zig").Sources;
-
 const Config = @import("config.zig").Config;
+const Database = @import("io/db/database.zig").Database;
 const SourceMedia = @import("io/media/media.zig").SourceMedia;
+const Sources = @import("io/media/sources.zig").Sources;
+const ProjectManager = @import("io/project/project_manager.zig").ProjectManager;
 pub const Playback = @import("playback/playback.zig").Playback;
 const VideoMonitor = @import("playback/video_monitor.zig").VideoMonitor;
 
@@ -23,8 +22,6 @@ pub const Core = struct {
     database: *Database,
     project_manager: *ProjectManager,
     sources: *Sources,
-    // Core owns SourceMedia (will eventually be managed by MediaPool/Sources)
-    source_media: ?*SourceMedia,
 
     video_monitors: std.ArrayList(VideoMonitor),
 
@@ -94,7 +91,6 @@ pub const Core = struct {
             .database = database,
             .project_manager = project_manager,
             .sources = sources,
-            .source_media = null,
             .video_monitors = std.ArrayList(VideoMonitor).empty,
         };
     }
@@ -107,7 +103,6 @@ pub const Core = struct {
             return error.NoSourcesAvailable;
         }
         const sm = self.sources.map.values()[0];
-        self.source_media = sm;
 
         // Initialize VideoMonitor with loaded media
         const video_monitor = try VideoMonitor.init(
@@ -129,9 +124,6 @@ pub const Core = struct {
     pub fn deinit(self: *Core) void {
         for (self.video_monitors.items) |*vm| vm.deinit();
         self.video_monitors.deinit(self.allocator);
-
-        // source_media is just a pointer into sources.map, don't free it separately
-        self.source_media = null;
 
         self.sources.deinit(self.allocator);
         self.allocator.destroy(self.sources);

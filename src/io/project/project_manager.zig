@@ -45,6 +45,10 @@ pub const ProjectManager = struct {
         }
     }
 
+    pub fn close(self: *ProjectManager) !void {
+        self.current = if (self.current) null;
+    }
+
     /// List all projects
     pub fn list(self: *ProjectManager, db_pool: *pg.Pool) !void {
         _ = self;
