@@ -132,11 +132,11 @@ pub const Platform = struct {
 
         // Clean up decoders stored in sessions
         for (self.core.sessions.values()) |session| {
-            if (session.decoder) |decoder_ptr| {
+            if (session.getDecoder()) |decoder_ptr| {
                 const frame_decoder: *FrameDecoder = @ptrCast(@alignCast(decoder_ptr));
                 frame_decoder.deinit();
                 self.app.allocator.destroy(frame_decoder);
-                session.decoder = null;
+                session.setDecoder(null);
             }
         }
 
@@ -179,7 +179,7 @@ fn renderUiFrame(self: *Platform) !void {
 
     // Get or init FrameDecoder for this session
     const frame_decoder: *FrameDecoder = blk: {
-        if (session.decoder) |ptr| {
+        if (session.getDecoder()) |ptr| {
             break :blk @ptrCast(@alignCast(ptr));
         }
 
@@ -190,7 +190,7 @@ fn renderUiFrame(self: *Platform) !void {
             self.app.allocator.destroy(fd);
             return;
         };
-        session.decoder = @ptrCast(fd);
+        session.setDecoder(@ptrCast(fd));
         break :blk fd;
     };
 
@@ -264,8 +264,9 @@ fn renderUiFrame(self: *Platform) !void {
         source_viewer.pan_x += temp_pan_x_delta;
         source_viewer.pan_y += temp_pan_y_delta;
 
-        const video_width: f32 = @floatFromInt(session.source.resolution.width);
-        const video_height: f32 = @floatFromInt(session.source.resolution.height);
+        const current_source = session.getCurrentSource();
+        const video_width: f32 = @floatFromInt(current_source.resolution.width);
+        const video_height: f32 = @floatFromInt(current_source.resolution.height);
 
         const video_aspect = video_width / video_height;
         const viewer_aspect = source_viewer.width / source_viewer.height;
@@ -306,10 +307,11 @@ fn renderUiFrame(self: *Platform) !void {
             pan_offset: [2]f32,
         };
 
+        const vid_source = session.getCurrentSource();
         const video_uniforms = VideoUniforms{
             .video_size = .{
-                @floatFromInt(session.source.resolution.width),
-                @floatFromInt(session.source.resolution.height),
+                @floatFromInt(vid_source.resolution.width),
+                @floatFromInt(vid_source.resolution.height),
             },
             .viewport_size = .{ display_width_pts, display_height_pts },
             .viewer_rect = .{ source_viewer.x, source_viewer.y, source_viewer.width, source_viewer.height },
@@ -368,15 +370,17 @@ fn renderUiFrame(self: *Platform) !void {
 }
 
 fn decodeVideoFrame(frame_decoder: *FrameDecoder, session: *Session) !void {
+    const monitor = session.getMonitor();
+
     // Read current frame from session's monitor
-    const frame_idx = session.monitor.current_frame_index.load(.acquire);
+    const frame_idx = monitor.current_frame_index.load(.acquire);
 
     // Only decode if frame changed
-    if (session.monitor.last_decoded_frame_index == null or
-        session.monitor.last_decoded_frame_index.? != frame_idx)
+    if (monitor.last_decoded_frame_index == null or
+        monitor.last_decoded_frame_index.? != frame_idx)
     {
         // Reset scratch arena before decode
-        _ = session.monitor.decode_arena.reset(.free_all);
+        _ = monitor.decode_arena.reset(.free_all);
 
         // Clean up previous frame resources before next decode
         if (frame_decoder.decoded_frame_buffer) |*df| {
@@ -390,7 +394,7 @@ fn decodeVideoFrame(frame_decoder: *FrameDecoder, session: *Session) !void {
 
         const decoded_frame = frame_decoder.decoder.decodeFrame(
             frame_idx,
-            session.monitor.decode_arena.allocator(),
+            monitor.decode_arena.allocator(),
         ) catch |err| {
             log.debug("Failed to decode frame: {}", .{err});
             return error.DecodeFrameFailed;
@@ -411,6 +415,6 @@ fn decodeVideoFrame(frame_decoder: *FrameDecoder, session: *Session) !void {
         frame_decoder.packed_metal_texture = metal.MetalTexture.initFromPtr(mtl_tex);
 
         // Mark as decoded
-        session.monitor.last_decoded_frame_index = frame_idx;
+        monitor.last_decoded_frame_index = frame_idx;
     }
 }

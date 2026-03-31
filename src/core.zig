@@ -92,29 +92,6 @@ pub const Core = struct {
         };
     }
 
-    /// Get or create a session for a source by UUID.
-    /// Sessions are reused if already loaded (shared playback state).
-    //FIXME: Not 100% on this fn... could we be checking somewhere above and just get or create above?
-    pub fn getOrCreateSession(self: *Core, uuid: [16]u8) !*Session {
-
-        // Get source from Sources
-        const source = self.sources.get(uuid) orelse return error.SourceNotFound;
-
-        // Allocate and initialize session
-        const session = try self.allocator.create(Session);
-        errdefer self.allocator.destroy(session);
-
-        try session.init(source, self.io, self.allocator);
-        try self.sessions.put(self.allocator, uuid, session);
-
-        return session;
-    }
-
-    /// Get session by UUID (returns null if not loaded)
-    pub fn getSession(self: *Core, uuid: [16]u8) ?*Session {
-        return self.sessions.get(uuid);
-    }
-
     pub fn deinit(self: *Core) void {
         // Clean up all sessions
         for (self.sessions.values()) |session| {

@@ -32,7 +32,7 @@ pub const FrameDecoder = struct {
     texture_set_holder: ?videotoolbox.MetalTextureSet,
 
     pub fn init(platform: *Platform, session: *Session) !FrameDecoder {
-        const source_media = session.source;
+        const source_media = session.getCurrentSource();
 
         // Create platform-specific decoder
         var decoder = try videotoolbox.Decoder.init(
