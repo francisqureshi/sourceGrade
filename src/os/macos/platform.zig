@@ -132,11 +132,11 @@ pub const Platform = struct {
 
         // Clean up decoders stored in sessions
         for (self.core.sessions.values()) |session| {
-            if (session.getDecoder()) |decoder_ptr| {
+            if (session.source.decoder) |decoder_ptr| {
                 const frame_decoder: *FrameDecoder = @ptrCast(@alignCast(decoder_ptr));
                 frame_decoder.deinit();
                 self.app.allocator.destroy(frame_decoder);
-                session.setDecoder(null);
+                session.source.decoder = null;
             }
         }
 
@@ -177,9 +177,11 @@ fn renderUiFrame(self: *Platform) !void {
     // Get session from viewer (early return if no session)
     const session = source_viewer.session orelse return;
 
+    const session_source = &session.source;
+
     // Get or init FrameDecoder for this session
     const frame_decoder: *FrameDecoder = blk: {
-        if (session.getDecoder()) |ptr| {
+        if (session_source.decoder) |ptr| {
             break :blk @ptrCast(@alignCast(ptr));
         }
 
@@ -190,7 +192,7 @@ fn renderUiFrame(self: *Platform) !void {
             self.app.allocator.destroy(fd);
             return;
         };
-        session.setDecoder(@ptrCast(fd));
+        session_source.decoder = @ptrCast(fd);
         break :blk fd;
     };
 
@@ -370,7 +372,7 @@ fn renderUiFrame(self: *Platform) !void {
 }
 
 fn decodeVideoFrame(frame_decoder: *FrameDecoder, session: *Session) !void {
-    const monitor = session.getMonitor();
+    const monitor = &session.source.monitor;
 
     // Read current frame from session's monitor
     const frame_idx = monitor.current_frame_index.load(.acquire);

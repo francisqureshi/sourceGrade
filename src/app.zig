@@ -122,13 +122,12 @@ pub const App = struct {
         _ = scrubber_hstack.add(.{ .percent = 0.025 }, .{ .fill = 1.0 }, 1.0);
         scrubber_hstack.solve();
 
-        const playback = session.getPlayback();
-        const monitor = session.getMonitor();
+        const session_source = &session.source;
         const current_source = session.getCurrentSource();
 
-        var scrubber_slider: usize = monitor.current_frame_index.load(.acquire);
-        var scrubber_in: usize = @intCast(playback.in_point);
-        var scrubber_out: usize = @intCast(playback.out_point);
+        var scrubber_slider: usize = session_source.monitor.current_frame_index.load(.acquire);
+        var scrubber_in: usize = @intCast(session_source.playback.in_point);
+        var scrubber_out: usize = @intCast(session_source.playback.out_point);
         if (try imgui.scrubBar(
             111,
             112,
@@ -143,13 +142,13 @@ pub const App = struct {
             0,
             @intCast(current_source.duration_in_frames),
         )) {
-            monitor.current_frame_index.store(scrubber_slider, .release);
+            session_source.monitor.current_frame_index.store(scrubber_slider, .release);
 
-            playback.in_point = @intCast(scrubber_in);
-            playback.out_point = @intCast(scrubber_out);
+            session_source.playback.in_point = @intCast(scrubber_in);
+            session_source.playback.out_point = @intCast(scrubber_out);
         }
 
-        const loop_button_text: []const u8 = if (playback.loop.load(.acquire)) "loop ON" else "loop OFF";
+        const loop_button_text: []const u8 = if (session_source.playback.loop.load(.acquire)) "loop ON" else "loop OFF";
 
         //  Transport Controls
         var row = ui.layout.HStack.init(viewer_ctrls.x, viewer_ctrls.y, viewer_ctrls.w, viewer_ctrls.h, 10);
@@ -168,18 +167,18 @@ pub const App = struct {
         const fwd_clicked = imgui.iconButton(5, fwd_rect.x, fwd_rect.y, fwd_rect.w, fwd_rect.h, .play) catch false;
         const loop_clicked = imgui.textButton(6, loop_rect.x, loop_rect.y, loop_rect.w, loop_rect.h, loop_button_text) catch false;
 
-        const current_frame = monitor.current_frame_index.load(.acquire);
+        const current_frame = session_source.monitor.current_frame_index.load(.acquire);
         var disp_frame_buf: [64]u8 = undefined;
         const frame_text = std.fmt.bufPrint(&disp_frame_buf, "Frame: {d}  Speed: {d:.2}x", .{
             current_frame,
-            playback.speed.load(.acquire),
+            session_source.playback.speed.load(.acquire),
         }) catch "---";
         try imgui.textLabel(tc_rect.x, tc_rect.y, tc_rect.w, tc_rect.h, frame_text, ui.ImGui.packColor(0.2, 0.2, 0.2, 1), .{ 255, 255, 255, 255 }, .left);
 
         //  Video Controls
-        var ctrl_slider: f32 = playback.speed.load(.acquire);
+        var ctrl_slider: f32 = session_source.playback.speed.load(.acquire);
         if (try imgui.slider(2, speed_rect.x, speed_rect.y, speed_rect.w, speed_rect.h / 2, &ctrl_slider, 0.01, 12.0)) {
-            playback.speed.store(ctrl_slider, .release);
+            session_source.playback.speed.store(ctrl_slider, .release);
         }
 
         // Outlines
@@ -187,23 +186,23 @@ pub const App = struct {
         try imgui.addRectOutline(viewer_chin.x, viewer_chin.y, viewer_chin.w, viewer_chin.h, ui.ImGui.packColor(1, 1, 1, 1), 0.5);
 
         if (fwd_clicked) {
-            playback.playing.store(1.0, .release);
-            try monitor.startMonitor(self.io);
+            session_source.playback.playing.store(1.0, .release);
+            try session_source.monitor.startMonitor(self.io);
         }
 
         if (rev_clicked) {
-            playback.playing.store(-1.0, .release);
-            try monitor.startMonitor(self.io);
+            session_source.playback.playing.store(-1.0, .release);
+            try session_source.monitor.startMonitor(self.io);
         }
 
         if (pause_clicked) {
-            playback.playing.store(0.0, .release);
-            monitor.stopMonitor(self.io);
+            session_source.playback.playing.store(0.0, .release);
+            session_source.monitor.stopMonitor(self.io);
         }
 
         if (loop_clicked) {
-            const current = playback.loop.load(.acquire);
-            playback.loop.store(!current, .release);
+            const current = session_source.playback.loop.load(.acquire);
+            session_source.playback.loop.store(!current, .release);
         }
 
         //:INFO: SOURCES UI

@@ -14,38 +14,6 @@ pub const Session = union(enum) {
     source: SourceSession,
     timeline: TimelineSession,
 
-    /// Get the playback state for this session
-    pub fn getPlayback(self: *Session) *Playback {
-        return switch (self.*) {
-            .source => |*s| &s.playback,
-            .timeline => |*t| &t.playback,
-        };
-    }
-
-    /// Get the monitor for this session
-    pub fn getMonitor(self: *Session) *VideoMonitor {
-        return switch (self.*) {
-            .source => |*s| &s.monitor,
-            .timeline => |*t| &t.monitor,
-        };
-    }
-
-    /// Get the decoder (platform-specific, opaque pointer)
-    pub fn getDecoder(self: *Session) ?*anyopaque {
-        return switch (self.*) {
-            .source => |s| s.decoder,
-            .timeline => |t| t.decoder,
-        };
-    }
-
-    /// Set the decoder
-    pub fn setDecoder(self: *Session, decoder: ?*anyopaque) void {
-        switch (self.*) {
-            .source => |*s| s.decoder = decoder,
-            .timeline => |*t| t.decoder = decoder,
-        }
-    }
-
     /// Get the current source to decode from.
     /// For SourceSession: returns the source directly.
     /// For TimelineSession: resolves current frame to the appropriate source.
@@ -120,7 +88,6 @@ pub const TimelineSession = struct {
 
     /// TODO: Clip list for resolving frames
     /// clips: []Clip,
-
     /// Initialize a pre-allocated TimelineSession.
     pub fn init(self: *TimelineSession, duration_frames: i64, frame_rate: *const @import("../io/media/media.zig").Rational, io: Io, allocator: Allocator) !void {
         self.playback = Playback.init(0, duration_frames);
