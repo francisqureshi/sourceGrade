@@ -55,7 +55,7 @@ pub const Core = struct {
 
         // Load default project from config
         const project_id = cfg.constants.default_project_id;
-        project_manager.load(database.pool, project_id) catch |err| {
+        project_manager.load(allocator, database.pool, project_id) catch |err| {
             log.warn("Project {d} not found ({}), no project loaded", .{ project_id, err });
         };
 

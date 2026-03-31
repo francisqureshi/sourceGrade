@@ -83,7 +83,7 @@ pub const Sources = struct {
         var result = try conn.queryOpts(
             \\SELECT id, path
             \\FROM sources
-            \\ORDER BY created_at DESC
+            \\ORDER BY created_at ASC
         , .{}, .{ .column_names = true });
         defer result.deinit();
 
@@ -96,6 +96,7 @@ pub const Sources = struct {
 
         while (try mapper.next()) |db_source| {
             const uuid: [16]u8 = db_source.id[0..16].*;
+            std.debug.print("uuid: {any}\n", .{uuid});
 
             // Heap allocate hydrated to SourcePoolAllocator
             const source_media = try allocator.create(media.SourceMedia);

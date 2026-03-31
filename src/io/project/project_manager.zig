@@ -25,16 +25,17 @@ pub const ProjectManager = struct {
     }
 
     /// Create a new project and set it as current
-    pub fn create(self: *ProjectManager, db_pool: *pg.Pool, name: []const u8, frame_rate: f64) !void {
+    pub fn create(self: *ProjectManager, allocator: Allocator, db_pool: *pg.Pool, name: []const u8, frame_rate: f64) !void {
         const id = try pgdb.createProject(db_pool, name, frame_rate);
-        self.current = Project.init(id, name, frame_rate);
+        self.current = try Project.init(allocator, id, name, frame_rate);
         log.debug("Created project: {s} (id: {d})", .{ name, id });
     }
 
     /// Load an existing project by ID
-    pub fn load(self: *ProjectManager, db_pool: *pg.Pool, project_id: i32) !void {
+    pub fn load(self: *ProjectManager, allocator: Allocator, db_pool: *pg.Pool, project_id: i32) !void {
         if (try pgdb.getProjectById(db_pool, project_id)) |db_proj| {
-            self.current = Project.init(
+            self.current = try Project.init(
+                allocator,
                 project_id,
                 db_proj.name,
                 db_proj.frame_rate orelse 24.0,

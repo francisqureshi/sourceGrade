@@ -81,19 +81,32 @@ pub const App = struct {
     pub fn buildUi(self: *App, imgui: *ui.ImGui) !void {
         const transparent = ui.ImGui.packColor(0, 0, 0, 0);
 
+        const project_name = if (self.core.project_manager.current) |proj|
+            proj.name
+        else
+            "No Project";
+
+        // const project_name = "notReal";
+
         const source_viewer = &self.viewers.items[0];
 
         // Get session from viewer (early return if no session loaded)
         const session = source_viewer.session orelse return;
 
         var window_vstack = ui.layout.VStack.init(1, 0, imgui.display_width - 1, imgui.display_height, 0); // X + 1 px
-        const top_stack = window_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 28 }, 0);
-        const main_stack = window_vstack.add(.{ .fill = 1.0 }, .{ .fill = 1.0 }, 0);
+        const top_vstack = window_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 28 }, 0);
+        const main_vstack = window_vstack.add(.{ .fill = 1.0 }, .{ .fill = 1.0 }, 0);
         window_vstack.solve();
 
-        _ = top_stack;
+        var top_bar = ui.layout.HStack.init(top_vstack.x, top_vstack.y, top_vstack.w, top_vstack.h / 2, 0);
+        const left = top_bar.add(.{ .fill = 0.80 }, .{ .fill = 1.0 }, 0);
+        const right = top_bar.add(.{ .fill = 0.20 }, .{ .fill = 1.0 }, 0);
+        top_bar.solve();
 
-        var main_hstack = ui.layout.HStack.init(main_stack.x, main_stack.y, main_stack.w, main_stack.h / 2, 0);
+        try imgui.textLabel(left.x, left.y, left.w, left.h, project_name, transparent, .{ 255, 255, 255, 255 }, .center);
+        try imgui.textLabel(right.x, right.y, right.w, right.h, "sG", transparent, .{ 255, 255, 255, 255 }, .right);
+
+        var main_hstack = ui.layout.HStack.init(main_vstack.x, main_vstack.y, main_vstack.w, main_vstack.h / 2, 0);
         const sources = main_hstack.add(.{ .fill = 0.33 }, .{ .fill = 1.0 }, 0);
         const viewer = main_hstack.add(.{ .fill = 0.66 }, .{ .fill = 1.0 }, 0);
         main_hstack.solve();

@@ -6,17 +6,15 @@ pub const Project = struct {
     name: []const u8,
     frame_rate: f64,
 
-    pub fn init(id: i32, name: []const u8, frame_rate: f64) Project {
+    pub fn init(allocator: Allocator, id: i32, name: []const u8, frame_rate: f64) !Project {
         return .{
             .id = id,
-            .name = name,
+            .name = try allocator.dupe(u8, name),
             .frame_rate = frame_rate,
         };
     }
 
     pub fn deinit(self: *Project, allocator: Allocator) void {
-        _ = self;
-        _ = allocator;
-        // Nothing to free yet - name is borrowed
+        allocator.free(self.name);
     }
 };
