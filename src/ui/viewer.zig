@@ -29,7 +29,7 @@ pub const Viewer = struct {
             imgui.mouse_y >= self.y and imgui.mouse_y < self.y + self.height;
     }
 
-    /// Handle pan/zoom input. Call this each frame.
+    /// Handle pan/zoom input  - Called each frame.
     pub fn handleInput(self: *Viewer, imgui: *const ui.ImGui) void {
         const mouse_over = self.isMouseOver(imgui);
 

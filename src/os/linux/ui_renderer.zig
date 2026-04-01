@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const com = @import("com");
-const ui = @import("../../gui/ui.zig");
+const ui = @import("../../ui/ui.zig");
 const vk = @import("vk");
 const vulkan = @import("vulkan");
 

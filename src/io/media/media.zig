@@ -60,7 +60,9 @@ pub const SourceMedia = struct {
     start_timecode: []const u8,
     end_timecode: []const u8,
     duration_in_frames: i64,
+    /// SRC TC frame number
     start_frame_number: i64,
+    /// Inclusive SRC TC end frame number
     end_frame_number: i64,
     reel_name: ?[]const u8,
     codec: []const u8,

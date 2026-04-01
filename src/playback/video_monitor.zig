@@ -129,7 +129,7 @@ pub const VideoMonitor = struct {
         const loop = playback.loop.load(.acquire);
         const in_point = playback.in_point;
         const out_point = playback.out_point;
-        const last_frame: isize = playback.duration_in_frames - 1; //FIXME: inclusive.....
+        const end_frame: isize = playback.end_frame;
 
         // Calculate raw new position
         const new_pos: isize = if (direction > 0.0)
@@ -153,14 +153,14 @@ pub const VideoMonitor = struct {
             if (new_pos < 0) {
                 frames = 0;
                 hit_boundary = (new_pos != curr_idx);
-            } else if (new_pos > last_frame) {
-                frames = last_frame;
+            } else if (new_pos > end_frame) {
+                frames = end_frame;
                 hit_boundary = (new_pos != curr_idx);
             } else {
                 frames = new_pos;
             }
         }
-        // // No loop: but clamp to in/ouy and detect boundary
+        // // No loop: but clamp to in/out and detect boundary
         // if (new_pos < in_point) {
         //     frames = in_point;
         //     hit_boundary = (new_pos != curr_idx);

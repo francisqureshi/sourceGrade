@@ -56,7 +56,7 @@ pub const Config = struct {
 };
 
 /// Temporary testing configuration
-/// TODO: Remove when proper media loading is implemented
+/// FIXME: Remove when proper media loading is implemented
 pub const TestingConfig = struct {
     video_path: []const u8,
     video_path_two: []const u8,

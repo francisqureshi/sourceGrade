@@ -8,7 +8,7 @@ const vulkan = @import("vulkan");
 const mcach = @import("modelsCache.zig");
 const rscn = @import("renderScn.zig");
 const wnd = @import("window.zig");
-const ui = @import("../../gui/ui.zig");
+const ui = @import("../../ui/ui.zig");
 const ImGuiRenderer = @import("ui_renderer.zig").ImGuiRenderer;
 
 /// Top-level Vulkan renderer. Owns the VkCtx, per-frame sync objects,

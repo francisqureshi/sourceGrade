@@ -6,6 +6,9 @@ const Atlas = @import("text/font/Atlas.zig");
 const Glyph = @import("text/font/Glyph.zig");
 const GlyphCache = @import("text/font/GlyphCache.zig");
 
+const SourceSession = @import("../playback/session.zig").SourceSession;
+const Viewer = @import("viewer.zig").Viewer;
+
 pub const layout = @import("layout.zig");
 
 /// Vertex format for immediate-mode GUI rendering
@@ -508,8 +511,9 @@ pub const ImGui = struct {
         min_val: usize,
         max_val: usize,
     ) !bool {
+        const end_frame = max_val - 1;
         var val_changed: bool = false;
-        const range_f: f32 = @floatFromInt(max_val - min_val);
+        const range_f: f32 = @floatFromInt(end_frame - min_val);
 
         // Helper to convert frame to x position
         const frameToX = struct {
@@ -884,4 +888,127 @@ pub const ImGui = struct {
             };
         }
     };
+
+    /// Viewer controls widget - scrubber, transport buttons, speed slider
+    /// Renders controls for a viewer's session and handles input
+    pub fn viewerControls(
+        self: *ImGui,
+        io: std.Io,
+        viewer_rect: *layout.Rect,
+        source_viewer: *Viewer,
+        session_source: *SourceSession,
+        duration_in_frames: i64,
+    ) !void {
+        // Layout: split into video surface and chin (controls)
+        var viewer_vstack = layout.VStack.init(viewer_rect.x, viewer_rect.y, viewer_rect.w, viewer_rect.h, 0);
+        const viewer_video_surface = viewer_vstack.add(.{ .fill = 1.0 }, .{ .fill = 1.0 }, 0.0);
+        const viewer_chin = viewer_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 50.0 }, 0.0);
+        viewer_vstack.solve();
+
+        // Update viewer bounds
+        source_viewer.x = viewer_video_surface.x;
+        source_viewer.y = viewer_video_surface.y;
+        source_viewer.width = viewer_video_surface.w;
+        source_viewer.height = viewer_video_surface.h;
+
+        // Handle viewer pan/zoom input
+        source_viewer.handleInput(self);
+
+        // Controls layout
+        var viewer_ctrls_vstack = layout.VStack.init(viewer_chin.x, viewer_chin.y, viewer_chin.w, viewer_chin.h, 0);
+        const viewer_scrubber = viewer_ctrls_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 20.0 }, 0.0);
+        const viewer_ctrls = viewer_ctrls_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 30.0 }, 0.0);
+        viewer_ctrls_vstack.solve();
+
+        // Scrubber with padding
+        var scrubber_hstack = layout.HStack.init(viewer_scrubber.x, viewer_scrubber.y, viewer_scrubber.w, viewer_scrubber.h, 0);
+        _ = scrubber_hstack.add(.{ .percent = 0.025 }, .{ .fill = 1.0 }, 1.0);
+        const scrubber = scrubber_hstack.add(.{ .fill = 1.0 }, .{ .fill = 1.0 }, 1.0);
+        _ = scrubber_hstack.add(.{ .percent = 0.025 }, .{ .fill = 1.0 }, 1.0);
+        scrubber_hstack.solve();
+
+        // Scrubber bar
+        var scrubber_slider: usize = session_source.monitor.current_frame_index.load(.acquire);
+        var scrubber_in: usize = @intCast(session_source.playback.in_point);
+        var scrubber_out: usize = @intCast(session_source.playback.out_point);
+        if (try self.scrubBar(
+            111,
+            112,
+            113,
+            114,
+            scrubber.x,
+            scrubber.y,
+            scrubber.w,
+            scrubber.h,
+            &scrubber_slider,
+            &scrubber_in,
+            &scrubber_out,
+            0,
+            @intCast(duration_in_frames),
+        )) {
+            session_source.monitor.current_frame_index.store(scrubber_slider, .release);
+            session_source.playback.in_point = @intCast(scrubber_in);
+            session_source.playback.out_point = @intCast(scrubber_out);
+        }
+
+        const loop_button_text: []const u8 = if (session_source.playback.loop.load(.acquire)) "loop ON" else "loop OFF";
+
+        // Transport controls layout
+        var row = layout.HStack.init(viewer_ctrls.x, viewer_ctrls.y, viewer_ctrls.w, viewer_ctrls.h, 10);
+        const toolbar_height: layout.SizePolicy = .{ .fill = 1.0 };
+        _ = row.add(.{ .pixels = 30 }, toolbar_height, 0.0);
+        const rev_rect = row.add(.{ .pixels = 30 }, toolbar_height, 0.0);
+        const pause_rect = row.add(.{ .pixels = 30 }, toolbar_height, 0.0);
+        const fwd_rect = row.add(.{ .pixels = 30 }, toolbar_height, 0.0);
+        const loop_rect = row.add(.{ .fill = 0.33 }, toolbar_height, 0.0);
+        const tc_rect = row.add(.{ .fill = 1.0 }, toolbar_height, 0.0);
+        const speed_rect = row.add(.{ .fill = 1.0 }, toolbar_height, 0.0);
+        row.solve();
+
+        // Transport buttons
+        const rev_clicked = self.iconButton(3, rev_rect.x, rev_rect.y, rev_rect.w, rev_rect.h, .reverse) catch false;
+        const pause_clicked = self.iconButton(4, pause_rect.x, pause_rect.y, pause_rect.w, pause_rect.h, .pause) catch false;
+        const fwd_clicked = self.iconButton(5, fwd_rect.x, fwd_rect.y, fwd_rect.w, fwd_rect.h, .play) catch false;
+        const loop_clicked = self.textButton(6, loop_rect.x, loop_rect.y, loop_rect.w, loop_rect.h, loop_button_text) catch false;
+
+        // Timecode display
+        const current_frame = session_source.monitor.current_frame_index.load(.acquire);
+        var disp_frame_buf: [64]u8 = undefined;
+        const frame_text = std.fmt.bufPrint(&disp_frame_buf, "Frame: {d}  Speed: {d:.2}x", .{
+            current_frame,
+            session_source.playback.speed.load(.acquire),
+        }) catch "---";
+        try self.textLabel(tc_rect.x, tc_rect.y, tc_rect.w, tc_rect.h, frame_text, packColor(0.2, 0.2, 0.2, 1), .{ 255, 255, 255, 255 }, .left);
+
+        // Speed slider
+        var ctrl_slider: f32 = session_source.playback.speed.load(.acquire);
+        if (try self.slider(2, speed_rect.x, speed_rect.y, speed_rect.w, speed_rect.h / 2, &ctrl_slider, 0.01, 12.0)) {
+            session_source.playback.speed.store(ctrl_slider, .release);
+        }
+
+        // Outlines
+        try self.addRectOutline(viewer_video_surface.x, viewer_video_surface.y, viewer_video_surface.w, viewer_video_surface.h, packColor(1, 1, 1, 1), 0.5);
+        try self.addRectOutline(viewer_chin.x, viewer_chin.y, viewer_chin.w, viewer_chin.h, packColor(1, 1, 1, 1), 0.5);
+
+        // Handle button clicks
+        if (fwd_clicked) {
+            session_source.playback.playing.store(1.0, .release);
+            try session_source.monitor.startMonitor(io);
+        }
+
+        if (rev_clicked) {
+            session_source.playback.playing.store(-1.0, .release);
+            try session_source.monitor.startMonitor(io);
+        }
+
+        if (pause_clicked) {
+            session_source.playback.playing.store(0.0, .release);
+            session_source.monitor.stopMonitor(io);
+        }
+
+        if (loop_clicked) {
+            const current = session_source.playback.loop.load(.acquire);
+            session_source.playback.loop.store(!current, .release);
+        }
+    }
 };

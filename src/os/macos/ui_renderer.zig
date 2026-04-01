@@ -1,5 +1,5 @@
 const std = @import("std");
-const ui = @import("../../gui/ui.zig");
+const ui = @import("../../ui/ui.zig");
 const metal = @import("metal");
 
 /// Ring buffer configuration

@@ -6,7 +6,7 @@ pub const Playback = struct {
     loop: std.atomic.Value(bool),
     in_point: isize,
     out_point: isize,
-    duration_in_frames: i64,
+    end_frame: i64,
 
     pub fn init(in_point: isize, out_point: isize, duration_in_frames: i64) Playback {
         return .{
@@ -15,7 +15,7 @@ pub const Playback = struct {
             .loop = std.atomic.Value(bool).init(true),
             .in_point = in_point,
             .out_point = out_point,
-            .duration_in_frames = duration_in_frames,
+            .end_frame = duration_in_frames - 1,
         };
     }
 };

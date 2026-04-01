@@ -73,66 +73,11 @@ pub const Database = struct {
         try pgdb.deleteProject(self.pool, project_id);
     }
 
-    pub fn createSource(self: *Database, project_id: i32, source_media: *media.SourceMedia) ![16]u8 {
+    pub fn createSource(
+        self: *Database,
+        project_id: i32,
+        source_media: *media.SourceMedia,
+    ) ![16]u8 {
         return pgdb.createSource(self.pool, project_id, source_media);
     }
-
-    pub fn getSourceById(self: *Database, source_id: []const u8) !?pgdb.DbSource {
-        return pgdb.getSourceById(self.pool, source_id);
-    }
 };
-
-// pub fn addSourceToDb(pool: *pg.Pool, project_id: i32, source_media: *media.SourceMedia) !void {
-//
-//     // Store source in database
-//     const source_id = try pgdb.createSource(pool, project_id, source_media);
-//
-//     // Retrieve and verify
-//     if (try pgdb.getSourceById(pool, &source_id)) |retrieved| {
-//         std.debug.print("\n✓ Retrieved source from database:\n", .{});
-//
-//         const hex_id = try pg.uuidToHex(retrieved.id);
-//
-//         std.debug.print("  ID: {s}\n", .{&hex_id});
-//         std.debug.print("  File: {s}\n", .{retrieved.filename});
-//         std.debug.print("  Codec: {s}\n", .{retrieved.codec});
-//         std.debug.print("    → Codec bytes: ", .{});
-//         for (retrieved.codec) |b| std.debug.print("{c}", .{@as(u8, b)});
-//         std.debug.print("\n", .{});
-//         std.debug.print("  Resolution: {d}x{d}\n", .{ retrieved.width, retrieved.height });
-//         std.debug.print("  Container: {?d}x{?d}\n", .{ retrieved.container_width, retrieved.container_height });
-//         std.debug.print("  Frame rate: {d}/{d} = {d:.2}fps\n", .{ retrieved.frame_rate_num, retrieved.frame_rate_den, @as(f32, @floatFromInt(retrieved.frame_rate_num)) / @as(f32, @floatFromInt(retrieved.frame_rate_den)) });
-//         std.debug.print("  Duration: {d} frames\n", .{retrieved.duration_frames});
-//         std.debug.print("  Start TC: {s} -> End TC: {?s}\n", .{ retrieved.start_timecode, retrieved.end_timecode });
-//         std.debug.print("  Drop frame: {}\n", .{retrieved.drop_frame});
-//         std.debug.print("  File size: {?d} bytes\n", .{retrieved.file_size_bytes});
-//     } else {
-//         std.debug.print("ERROR: Could not retrieve source from database\n", .{});
-//     }
-//
-//     // List all sources
-//     try pgdb.listSources(pool);
-// }
-//
-// pub fn testPgsql(pool: *pg.Pool) !void {
-//
-//     // Initialize database schema
-//     try pgdb.resetAndInitializeDatabase(pool);
-//
-//     // Create a new project
-//     const project_id = try pgdb.createProject(pool, "testProject", 23.976);
-//     std.debug.print("Created project ID: {d}\n", .{project_id});
-//
-//     // List all projects
-//     try pgdb.listProjects(pool);
-//
-//     // Retreive project
-//     const project = try pgdb.getProjectById(pool, project_id);
-//     std.debug.print("project: {any}\n", .{project});
-//
-//     // delete project
-//     try pgdb.deleteProject(pool, project_id);
-//
-//     // List all projects
-//     try pgdb.listProjects(pool);
-// }

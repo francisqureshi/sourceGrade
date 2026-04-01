@@ -5,7 +5,7 @@ const metal = @import("metal");
 
 const App = @import("../../app.zig").App;
 const Core = @import("../../core.zig").Core;
-const ImGui = @import("../../gui/ui.zig").ImGui;
+const ImGui = @import("../../ui/ui.zig").ImGui;
 const Session = @import("../../playback/session.zig").Session;
 const DisplayLink = @import("window.zig").DisplayLink;
 const FrameDecoder = @import("frame_decoder.zig").FrameDecoder;
@@ -268,7 +268,12 @@ fn renderUiFrame(self: *Platform) !void {
                 @floatFromInt(vid_source.resolution.height),
             },
             .viewport_size = .{ display_width_pts, display_height_pts },
-            .viewer_rect = .{ source_viewer.x, source_viewer.y, source_viewer.width, source_viewer.height },
+            .viewer_rect = .{
+                source_viewer.x,
+                source_viewer.y,
+                source_viewer.width,
+                source_viewer.height,
+            },
             .zoom = source_viewer.zoom,
             .pan_offset = .{ source_viewer.pan_x, source_viewer.pan_y },
         };

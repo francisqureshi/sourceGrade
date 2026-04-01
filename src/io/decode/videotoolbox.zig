@@ -55,9 +55,6 @@ pub const Decoder = struct {
         source_media: *const media.SourceMedia,
         metal_device: c.MTLDeviceRef,
     ) !Decoder {
-        // FIXME: Register professional video workflow decoders (ProRes, etc.  - still down know wtf this is or if we need it...)
-        _ = c.VTRegisterProfessionalVideoWorkflowVideoDecoders();
-
         const format_desc = try createFormatDescription(source_media);
 
         // Check Fmt Description
@@ -260,16 +257,6 @@ const FrameContext = struct {
 fn releasePixelBuffer(handle: *anyopaque) void {
     c.CFRelease(handle);
 }
-
-// FIXME: Deprecated for abstracted version via decoder.zig
-// pub const DecodedFrame = struct {
-//     pixel_buffer: c.CVPixelBufferRef,
-//     compressed_frame_size: usize,
-//     decoded_frame_size: usize,
-//     pub fn deinit(self: *const DecodedFrame) void {
-//         c.CFRelease(self.pixel_buffer);
-//     }
-// };
 
 /// VideoToolbox decompression callback - receives decoded frames asynchronously.
 /// Called by VTDecompressionSession after each frame is decoded.

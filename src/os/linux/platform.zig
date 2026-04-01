@@ -4,7 +4,7 @@ const com = @import("com");
 
 const App = @import("../../app.zig").App;
 const Core = @import("../../core.zig").Core;
-const ImGui = @import("../../gui/ui.zig").ImGui;
+const ImGui = @import("../../ui/ui.zig").ImGui;
 const Rational = @import("../../io/media/media.zig").Rational;
 const VideoMonitor = @import("../../playback/video_monitor.zig").VideoMonitor;
 const ImGuiRenderer = @import("ui_renderer.zig").ImGuiRenderer;

@@ -191,55 +191,55 @@ pub fn createSource(pool: *pg.Pool, project_id: i32, source_media: *media.Source
     return error.NoSourceCreated;
 }
 
-//FIXME: This should maybe now just be a look up to source_pool and return the SourceMedia...
-
-pub fn getSourceById(pool: *pg.Pool, source_id: []const u8) !?DbSource {
-    var conn = try pool.acquire();
-    defer conn.release();
-
-    var row = (try conn.rowOpts(
-        \\SELECT id, project_id, path, filename, file_modified_at, file_size_bytes,
-        \\       codec, width, height, container_width, container_height,
-        \\       frame_rate_num, frame_rate_den, frame_rate_float,
-        \\       time_base_num, time_base_den,
-        \\       start_timecode, end_timecode, drop_frame,
-        \\       start_frame_number, end_frame_number,
-        \\       duration_frames, reel_name, color_space,
-        \\       created_at, modified_at
-        \\FROM sources
-        \\WHERE id = $1
-    , .{source_id}, .{ .column_names = true })) orelse return null;
-    defer row.deinit() catch {};
-
-    return DbSource{
-        .id = row.getCol([]const u8, "id"),
-        .project_id = row.getCol(i32, "project_id"),
-        .path = row.getCol([]const u8, "path"),
-        .filename = row.getCol([]const u8, "filename"),
-        .file_modified_at = row.getCol(?i64, "file_modified_at"),
-        .file_size_bytes = row.getCol(?i64, "file_size_bytes"),
-        .codec = row.getCol([]const u8, "codec"),
-        .width = row.getCol(i32, "width"),
-        .height = row.getCol(i32, "height"),
-        .container_width = row.getCol(?i32, "container_width"),
-        .container_height = row.getCol(?i32, "container_height"),
-        .frame_rate_num = row.getCol(i32, "frame_rate_num"),
-        .frame_rate_den = row.getCol(i32, "frame_rate_den"),
-        .frame_rate_float = row.getCol(?f64, "frame_rate_float"),
-        .time_base_num = row.getCol(?i32, "time_base_num"),
-        .time_base_den = row.getCol(?i32, "time_base_den"),
-        .start_timecode = row.getCol([]const u8, "start_timecode"),
-        .end_timecode = row.getCol(?[]const u8, "end_timecode"),
-        .drop_frame = row.getCol(bool, "drop_frame"),
-        .start_frame_number = row.getCol(i64, "start_frame_number"),
-        .end_frame_number = row.getCol(?i64, "end_frame_number"),
-        .duration_frames = row.getCol(i64, "duration_frames"),
-        .reel_name = row.getCol(?[]const u8, "reel_name"),
-        .color_space = row.getCol(?[]const u8, "color_space"),
-        .created_at = row.getCol(i64, "created_at"),
-        .modified_at = row.getCol(i64, "modified_at"),
-    };
-}
+// //FIXME:: DEPRECATED: This should maybe now just be a look up to source_pool and return the SourceMedia...
+//
+// pub fn getSourceById(pool: *pg.Pool, source_id: []const u8) !?DbSource {
+//     var conn = try pool.acquire();
+//     defer conn.release();
+//
+//     var row = (try conn.rowOpts(
+//         \\SELECT id, project_id, path, filename, file_modified_at, file_size_bytes,
+//         \\       codec, width, height, container_width, container_height,
+//         \\       frame_rate_num, frame_rate_den, frame_rate_float,
+//         \\       time_base_num, time_base_den,
+//         \\       start_timecode, end_timecode, drop_frame,
+//         \\       start_frame_number, end_frame_number,
+//         \\       duration_frames, reel_name, color_space,
+//         \\       created_at, modified_at
+//         \\FROM sources
+//         \\WHERE id = $1
+//     , .{source_id}, .{ .column_names = true })) orelse return null;
+//     defer row.deinit() catch {};
+//
+//     return DbSource{
+//         .id = row.getCol([]const u8, "id"),
+//         .project_id = row.getCol(i32, "project_id"),
+//         .path = row.getCol([]const u8, "path"),
+//         .filename = row.getCol([]const u8, "filename"),
+//         .file_modified_at = row.getCol(?i64, "file_modified_at"),
+//         .file_size_bytes = row.getCol(?i64, "file_size_bytes"),
+//         .codec = row.getCol([]const u8, "codec"),
+//         .width = row.getCol(i32, "width"),
+//         .height = row.getCol(i32, "height"),
+//         .container_width = row.getCol(?i32, "container_width"),
+//         .container_height = row.getCol(?i32, "container_height"),
+//         .frame_rate_num = row.getCol(i32, "frame_rate_num"),
+//         .frame_rate_den = row.getCol(i32, "frame_rate_den"),
+//         .frame_rate_float = row.getCol(?f64, "frame_rate_float"),
+//         .time_base_num = row.getCol(?i32, "time_base_num"),
+//         .time_base_den = row.getCol(?i32, "time_base_den"),
+//         .start_timecode = row.getCol([]const u8, "start_timecode"),
+//         .end_timecode = row.getCol(?[]const u8, "end_timecode"),
+//         .drop_frame = row.getCol(bool, "drop_frame"),
+//         .start_frame_number = row.getCol(i64, "start_frame_number"),
+//         .end_frame_number = row.getCol(?i64, "end_frame_number"),
+//         .duration_frames = row.getCol(i64, "duration_frames"),
+//         .reel_name = row.getCol(?[]const u8, "reel_name"),
+//         .color_space = row.getCol(?[]const u8, "color_space"),
+//         .created_at = row.getCol(i64, "created_at"),
+//         .modified_at = row.getCol(i64, "modified_at"),
+//     };
+// }
 
 pub fn listSources(pool: *pg.Pool) !void {
     var conn = try pool.acquire();
