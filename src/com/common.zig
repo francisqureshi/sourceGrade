@@ -13,6 +13,12 @@ pub const Constants = struct {
     video_path: []const u8,
     video_path_two: []const u8,
 
+    // Database
+    username: []const u8,
+    database_name: []const u8,
+    database_address: []const u8,
+    database_port: u16,
+
     // Metal (macOS)
     metal_use_display_p3: bool,
     metal_use_10bit: bool,
@@ -41,6 +47,11 @@ pub const Constants = struct {
             .video_path = try allocator.dupe(u8, tmp.video_path),
             .video_path_two = try allocator.dupe(u8, tmp.video_path_two),
 
+            .username = try allocator.dupe(u8, tmp.username),
+            .database_name = try allocator.dupe(u8, tmp.database_name),
+            .database_address = try allocator.dupe(u8, tmp.database_address),
+            .database_port = tmp.database_port,
+
             .metal_use_display_p3 = tmp.metal_use_display_p3,
             .metal_use_10bit = tmp.metal_use_10bit,
 
@@ -59,6 +70,9 @@ pub const Constants = struct {
         allocator.free(self.window_config);
         allocator.free(self.video_path);
         allocator.free(self.video_path_two);
+        allocator.free(self.username);
+        allocator.free(self.database_name);
+        allocator.free(self.database_address);
         allocator.free(self.vulkan_gpu);
     }
 };

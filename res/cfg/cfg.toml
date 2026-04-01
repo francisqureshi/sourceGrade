@@ -1,10 +1,17 @@
 # General
 window_config="1600x900"
 default_project_id=1
-# video_path="/Users/fq/Desktop/AGMM/Kolon_Spring_SS25_16x9_90s_GRADE_3840x1440.mov"
-# video_path="/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov"
-video_path="/Users/mac10/Desktop/sG/Kolon_Spring_SS25_16x9_90s_GRADE_3840x1440.mov"
-video_path_two="/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov"
+video_path="/Users/fq/Desktop/AGMM/Kolon_Spring_SS25_16x9_90s_GRADE_3840x1440.mov"
+video_path_two="/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov"
+# video_path="/Users/mac10/Desktop/sG/Kolon_Spring_SS25_16x9_90s_GRADE_3840x1440.mov"
+# video_path_two="/Users/mac10/Desktop/A_0005C014_251204_170032_p1CMW_S01.mov"
+
+# Db 
+username="fq"
+# username="mac10"
+database_name="sourcegrade"
+database_address="127.0.0.1"
+database_port=5433
 
 # Metal (macOS)
 metal_use_display_p3=true

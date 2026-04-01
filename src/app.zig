@@ -121,6 +121,9 @@ pub const App = struct {
         source_viewer.width = viewer_video_surface.w;
         source_viewer.height = viewer_video_surface.h;
 
+        // Handle viewer pan/zoom input
+        source_viewer.handleInput(imgui);
+
         var viewer_ctrls_vstack = ui.layout.VStack.init(viewer_chin.x, viewer_chin.y, viewer_chin.w, viewer_chin.h, 0);
         const viewer_scrubber = viewer_ctrls_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 20.0 }, 0.0); // scrubber
         const viewer_ctrls = viewer_ctrls_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 30.0 }, 0.0); // buttons

@@ -8,6 +8,7 @@ const builtin = @import("builtin");
 
 const pg = @import("pg");
 
+const com = @import("com");
 const media = @import("../media/media.zig");
 const pgdb = @import("pgdb.zig");
 
@@ -17,7 +18,7 @@ pub const Database = struct {
     pool: *pg.Pool,
     allocator: Allocator,
 
-    pub fn init(allocator: Allocator, io: Io) !Database {
+    pub fn init(allocator: Allocator, io: Io, cfg: *const com.common.Constants) !Database {
         // While a connection can be created directly, pools should be used in most
         // cases. The pool's `acquire` method, to get a connection is thread-safe.
         // The pool may start 1 background thread to reconnect disconnected
@@ -25,13 +26,12 @@ pub const Database = struct {
         const pool = pg.Pool.init(allocator, io, .{
             .size = 5,
             .connect = .{
-                .port = 5433,
-                .host = "127.0.0.1",
+                .port = cfg.database_port,
+                .host = cfg.database_address,
             },
             .auth = .{
-                // .username = "fq",
-                .username = "mac10",
-                .database = "sourcegrade",
+                .username = cfg.username,
+                .database = cfg.database_name,
                 .timeout = 10_000,
             },
         }) catch |err| {

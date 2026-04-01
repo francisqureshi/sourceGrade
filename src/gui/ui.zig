@@ -74,6 +74,9 @@ pub const ImGui = struct {
     mouse_y: f32,
     mouse_down: bool,
     mouse_two_down: bool,
+    mouse_middle_down: bool,
+    scroll_x: f32,
+    scroll_y: f32,
 
     // Screen dimensions for coordinate mapping
     display_width: f32,
@@ -122,6 +125,9 @@ pub const ImGui = struct {
             .mouse_y = 0,
             .mouse_down = false,
             .mouse_two_down = false,
+            .mouse_middle_down = false,
+            .scroll_x = 0,
+            .scroll_y = 0,
             .display_width = 1600,
             .display_height = 900,
             .backing_scale_factor = 1.0,

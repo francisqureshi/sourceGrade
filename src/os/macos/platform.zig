@@ -236,62 +236,14 @@ fn renderUiFrame(self: *Platform) !void {
     self.imgui_ctx.newFrame();
 
     // Get all mouse input (position, buttons, scroll)
-    var mouse_x: f32 = 0;
-    var mouse_y: f32 = 0;
-    var mouse_down: bool = false;
-    var mouse_middle_down: bool = false;
-    var scroll_x: f32 = 0;
-    var scroll_y: f32 = 0;
-
     self.window.getMouse(
-        &mouse_x,
-        &mouse_y,
-        &mouse_down,
-        &mouse_middle_down,
-        &scroll_x,
-        &scroll_y,
+        &self.imgui_ctx.mouse_x,
+        &self.imgui_ctx.mouse_y,
+        &self.imgui_ctx.mouse_down,
+        &self.imgui_ctx.mouse_middle_down,
+        &self.imgui_ctx.scroll_x,
+        &self.imgui_ctx.scroll_y,
     );
-
-    const last_mouse_x = self.imgui_ctx.mouse_x;
-    const last_mouse_y = self.imgui_ctx.mouse_y;
-
-    self.imgui_ctx.mouse_x = mouse_x;
-    self.imgui_ctx.mouse_y = mouse_y;
-    self.imgui_ctx.mouse_down = mouse_down;
-
-    const temp_pan_x_delta = (mouse_x - last_mouse_x);
-    const temp_pan_y_delta = (mouse_y - last_mouse_y);
-
-    if (mouse_middle_down) {
-        source_viewer.pan_x += temp_pan_x_delta;
-        source_viewer.pan_y += temp_pan_y_delta;
-
-        const current_source = session.getCurrentSource();
-        const video_width: f32 = @floatFromInt(current_source.resolution.width);
-        const video_height: f32 = @floatFromInt(current_source.resolution.height);
-
-        const video_aspect = video_width / video_height;
-        const viewer_aspect = source_viewer.width / source_viewer.height;
-
-        var scale_x: f32 = 1.0;
-        var scale_y: f32 = 1.0;
-        if (video_aspect > viewer_aspect) {
-            scale_y = viewer_aspect / video_aspect;
-        } else {
-            scale_x = video_aspect / viewer_aspect;
-        }
-
-        const max_pan_x = source_viewer.width * (scale_x * source_viewer.zoom * 0.5 + 0.45);
-        const max_pan_y = source_viewer.height * (scale_y * source_viewer.zoom * 0.5 + 0.45);
-
-        source_viewer.pan_x = std.math.clamp(source_viewer.pan_x, -max_pan_x, max_pan_x);
-        source_viewer.pan_y = std.math.clamp(source_viewer.pan_y, -max_pan_y, max_pan_y);
-    }
-
-    if (scroll_y != 0) {
-        source_viewer.zoom += scroll_y * -0.01;
-        source_viewer.zoom = std.math.clamp(source_viewer.zoom, 0.01, 3000.0);
-    }
 
     try self.app.buildUi(self.imgui_ctx);
 

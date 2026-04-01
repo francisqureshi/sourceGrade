@@ -31,7 +31,7 @@ pub const Core = struct {
 
         // Initialize database
         const database = try allocator.create(Database);
-        database.* = try Database.init(allocator, io);
+        database.* = try Database.init(allocator, io, &cfg.constants);
         errdefer {
             database.deinit();
             allocator.destroy(database);
