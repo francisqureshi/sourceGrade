@@ -51,12 +51,12 @@ pub const SourceSession = struct {
     /// Initialize a pre-allocated SourceSession.
     pub fn init(self: *SourceSession, source: *SourceMedia, io: Io, allocator: Allocator) !void {
         self.source = source;
-        self.playback = Playback.init(0, source.duration_in_frames);
+        self.playback = Playback.init(0, source.duration_in_frames, source.duration_in_frames);
         self.decoder = null;
 
         // Monitor references &self.playback - stable because self is heap-allocated
         self.monitor = try VideoMonitor.init(
-            &source.frame_rate.get(),
+            source.frame_rate.get(),
             io,
             allocator,
             &self.playback,
@@ -90,11 +90,11 @@ pub const TimelineSession = struct {
     /// clips: []Clip,
     /// Initialize a pre-allocated TimelineSession.
     pub fn init(self: *TimelineSession, duration_frames: i64, frame_rate: *const @import("../io/media/media.zig").Rational, io: Io, allocator: Allocator) !void {
-        self.playback = Playback.init(0, duration_frames);
+        self.playback = Playback.init(0, duration_frames, duration_frames);
         self.decoder = null;
 
         self.monitor = try VideoMonitor.init(
-            frame_rate,
+            frame_rate.*,
             io,
             allocator,
             &self.playback,

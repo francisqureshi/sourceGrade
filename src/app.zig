@@ -152,7 +152,7 @@ pub const App = struct {
             &scrubber_in,
             &scrubber_out,
             0,
-            @intCast(current_source.duration_in_frames),
+            @intCast(current_source.duration_in_frames - 1), //FIXME: inclusive.....
         )) {
             session_source.monitor.current_frame_index.store(scrubber_slider, .release);
 

@@ -18,7 +18,6 @@ const Rational = @import("../io/media/media.zig").Rational;
 /// - stopMonitor() cancels task and cleans up Future
 /// - Auto-stops when hitting in/out point boundaries (if not looping)
 pub const VideoMonitor = struct {
-    frame_rate: *const Rational,
     io: Io,
     decode_arena: std.heap.ArenaAllocator,
 
@@ -38,7 +37,7 @@ pub const VideoMonitor = struct {
     last_decoded_frame_index: ?usize,
 
     pub fn init(
-        frame_rate: *const Rational,
+        frame_rate: Rational,
         io: Io,
         allocator: std.mem.Allocator,
         playback: *Playback,
@@ -46,15 +45,13 @@ pub const VideoMonitor = struct {
         const base_frame_duration_ns: u64 = std.time.ns_per_s / (frame_rate.num / frame_rate.den);
 
         return .{
-            .frame_rate = frame_rate,
             .io = io,
             .decode_arena = std.heap.ArenaAllocator.init(allocator),
             .playback = playback,
 
             .base_frame_duration_ns = base_frame_duration_ns,
 
-            // Start at in_point
-            .current_frame_index = std.atomic.Value(usize).init(@intCast(playback.in_point)),
+            .current_frame_index = std.atomic.Value(usize).init(0),
             .running = std.atomic.Value(bool).init(false),
 
             .last_decoded_frame_index = null,
@@ -128,14 +125,11 @@ pub const VideoMonitor = struct {
         playback: *const Playback,
         frames_to_advance: isize,
     ) AdvanceResult {
-        // Read playback state
         const direction = playback.playing.load(.acquire);
         const loop = playback.loop.load(.acquire);
         const in_point = playback.in_point;
         const out_point = playback.out_point;
-
-        // Range == Duration
-        const range = out_point - in_point;
+        const last_frame: isize = playback.duration_in_frames - 1; //FIXME: inclusive.....
 
         // Calculate raw new position
         const new_pos: isize = if (direction > 0.0)
@@ -145,37 +139,37 @@ pub const VideoMonitor = struct {
         else
             curr_idx;
 
-        // Apply loop or clamp
         var frames: isize = undefined;
         var hit_boundary = false;
 
         if (loop) {
-            // Loop: wrap within range
+            // Loop: wrap within in/out range
+            const range = out_point - in_point;
             const offset = new_pos - in_point;
             const wrapped = @mod(offset, range);
             frames = in_point + wrapped;
         } else {
-            // FIXME: No loop: but adjust so clamp to start end only
-            if (new_pos < in_point) {
-                frames = in_point;
+            // No loop: clamp to 0..last_frame
+            if (new_pos < 0) {
+                frames = 0;
                 hit_boundary = (new_pos != curr_idx);
-            } else if (new_pos > out_point) {
-                frames = out_point;
+            } else if (new_pos > last_frame) {
+                frames = last_frame;
                 hit_boundary = (new_pos != curr_idx);
             } else {
                 frames = new_pos;
             }
-            // // No loop: but clamp to in/ouy and detect boundary
-            // if (new_pos < in_point) {
-            //     frames = in_point;
-            //     hit_boundary = (new_pos != curr_idx);
-            // } else if (new_pos > out_point) {
-            //     frames = out_point;
-            //     hit_boundary = (new_pos != curr_idx);
-            // } else {
-            //     frames = new_pos;
-            // }
         }
+        // // No loop: but clamp to in/ouy and detect boundary
+        // if (new_pos < in_point) {
+        //     frames = in_point;
+        //     hit_boundary = (new_pos != curr_idx);
+        // } else if (new_pos > out_point) {
+        //     frames = out_point;
+        //     hit_boundary = (new_pos != curr_idx);
+        // } else {
+        //     frames = new_pos;
+        // }
 
         return .{ .frame_idx = @intCast(frames), .hit_boundary = hit_boundary };
     }
