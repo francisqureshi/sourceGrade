@@ -21,6 +21,7 @@ pub const Config = struct {
             .window = parseWndCfg(constants.window_config),
             .testing = .{
                 .video_path = constants.video_path,
+                .video_path_two = constants.video_path_two,
                 .in_point = 15, // Hard coded debug vals
                 .out_point = 450,
             },
@@ -58,6 +59,7 @@ pub const Config = struct {
 /// TODO: Remove when proper media loading is implemented
 pub const TestingConfig = struct {
     video_path: []const u8,
+    video_path_two: []const u8,
     in_point: isize,
     out_point: isize,
 };

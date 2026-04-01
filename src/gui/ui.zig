@@ -491,6 +491,7 @@ pub const ImGui = struct {
         playhead_id: u32,
         in_id: u32,
         out_id: u32,
+        track_id: u32,
         x: f32,
         y: f32,
         w: f32,
@@ -538,13 +539,15 @@ pub const ImGui = struct {
             self.mouse_y >= y and self.mouse_y < y + h;
         const out_hot = self.mouse_x >= out_x - hit_margin and self.mouse_x <= out_x + hit_margin and
             self.mouse_y >= y and self.mouse_y < y + h;
+        const track_hot = self.mouse_x >= x - hit_margin and self.mouse_x <= x + w + hit_margin and
+            self.mouse_y >= y and self.mouse_y < y + h;
 
         // Handle playhead dragging
         if (self.active_id == playhead_id) {
             if (self.mouse_down) {
                 curr_frame.* = xToFrame(self.mouse_x, x, w, min_val, range_f);
                 // Clamp playhead between in and out points
-                curr_frame.* = std.math.clamp(curr_frame.*, in_point.*, out_point.*);
+                // curr_frame.* = std.math.clamp(curr_frame.*, in_point.*, out_point.*);
                 val_changed = true;
             } else {
                 self.active_id = 0;
@@ -581,10 +584,23 @@ pub const ImGui = struct {
             self.active_id = out_id;
         }
 
+        // Handle random track click/dragging
+        if (self.active_id == track_id) {
+            if (self.mouse_down) {
+                curr_frame.* = xToFrame(self.mouse_x, x, w, min_val, range_f);
+                val_changed = true;
+            } else {
+                self.active_id = 0;
+            }
+        } else if (track_hot and self.mouse_down and self.active_id == 0) {
+            self.active_id = track_id;
+        }
+
         // Update hot_id for cursor feedback
         if (playhead_hot) self.hot_id = playhead_id;
         if (in_hot) self.hot_id = in_id;
         if (out_hot) self.hot_id = out_id;
+        if (playhead_hot) self.hot_id = track_id;
 
         // Draw track
         const track_height = h * 0.2;

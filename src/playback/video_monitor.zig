@@ -155,7 +155,7 @@ pub const VideoMonitor = struct {
             const wrapped = @mod(offset, range);
             frames = in_point + wrapped;
         } else {
-            // No loop: clamp and detect boundary
+            // FIXME: No loop: but adjust so clamp to start end only
             if (new_pos < in_point) {
                 frames = in_point;
                 hit_boundary = (new_pos != curr_idx);
@@ -165,6 +165,16 @@ pub const VideoMonitor = struct {
             } else {
                 frames = new_pos;
             }
+            // // No loop: but clamp to in/ouy and detect boundary
+            // if (new_pos < in_point) {
+            //     frames = in_point;
+            //     hit_boundary = (new_pos != curr_idx);
+            // } else if (new_pos > out_point) {
+            //     frames = out_point;
+            //     hit_boundary = (new_pos != curr_idx);
+            // } else {
+            //     frames = new_pos;
+            // }
         }
 
         return .{ .frame_idx = @intCast(frames), .hit_boundary = hit_boundary };

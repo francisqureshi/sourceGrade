@@ -66,7 +66,7 @@ pub const Core = struct {
         if (project_manager.current != null) {
             const test_videos = [_][]const u8{
                 cfg.testing.video_path,
-                "/Users/fq/Desktop/AGMM/A_0005C014_251204_170032_p1CMW_S01.mov",
+                cfg.testing.video_path_two,
             };
             for (test_videos) |video_path| {
                 if (!sources.hasPath(video_path)) {

@@ -84,9 +84,7 @@ pub const App = struct {
         const project_name = if (self.core.project_manager.current) |proj|
             proj.name
         else
-            "No Project";
-
-        // const project_name = "notReal";
+            "-";
 
         const source_viewer = &self.viewers.items[0];
 
@@ -104,7 +102,7 @@ pub const App = struct {
         top_bar.solve();
 
         try imgui.textLabel(left.x, left.y, left.w, left.h, project_name, transparent, .{ 255, 255, 255, 255 }, .center);
-        try imgui.textLabel(right.x, right.y, right.w, right.h, "sG", transparent, .{ 255, 255, 255, 255 }, .right);
+        try imgui.textLabel(right.x, right.y, right.w, right.h, "*", transparent, .{ 255, 255, 255, 255 }, .right);
 
         var main_hstack = ui.layout.HStack.init(main_vstack.x, main_vstack.y, main_vstack.w, main_vstack.h / 2, 0);
         const sources = main_hstack.add(.{ .fill = 0.33 }, .{ .fill = 1.0 }, 0);
@@ -145,6 +143,7 @@ pub const App = struct {
             111,
             112,
             113,
+            114,
             scrubber.x,
             scrubber.y,
             scrubber.w,

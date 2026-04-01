@@ -11,6 +11,7 @@ pub const Constants = struct {
     window_config: []const u8,
     default_project_id: i32,
     video_path: []const u8,
+    video_path_two: []const u8,
 
     // Metal (macOS)
     metal_use_display_p3: bool,
@@ -38,6 +39,7 @@ pub const Constants = struct {
             .window_config = try allocator.dupe(u8, tmp.window_config),
             .default_project_id = tmp.default_project_id,
             .video_path = try allocator.dupe(u8, tmp.video_path),
+            .video_path_two = try allocator.dupe(u8, tmp.video_path_two),
 
             .metal_use_display_p3 = tmp.metal_use_display_p3,
             .metal_use_10bit = tmp.metal_use_10bit,
@@ -56,6 +58,7 @@ pub const Constants = struct {
     pub fn cleanup(self: *Constants, allocator: std.mem.Allocator) void {
         allocator.free(self.window_config);
         allocator.free(self.video_path);
+        allocator.free(self.video_path_two);
         allocator.free(self.vulkan_gpu);
     }
 };
