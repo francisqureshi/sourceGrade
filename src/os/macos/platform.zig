@@ -35,7 +35,7 @@ pub const Platform = struct {
     /// CVDisplayLink for vsync-synchronized rendering.
     displaylink: DisplayLink,
     /// IMGUI context for immediate-mode UI rendering (heap-allocated).
-    imgui_ctx: *ImGui,
+    imgui: *ImGui,
     /// ui renderer
     ui_renderer: ImGuiRenderer,
     /// Timestamp when the platform was initialized (for elapsed time).
@@ -76,18 +76,18 @@ pub const Platform = struct {
         var metal_renderer = try MetalRenderer.init(pixel_format);
 
         // Initialize ImGui context on heap so pointer stays valid
-        const imgui_ctx = try app.allocator.create(ImGui);
-        imgui_ctx.* = try ImGui.init(app.allocator);
+        const imgui = try app.allocator.create(ImGui);
+        imgui.* = try ImGui.init(app.allocator);
 
         // Set ImGui display size from config
-        imgui_ctx.display_width = @floatFromInt(width);
-        imgui_ctx.display_height = @floatFromInt(height);
+        imgui.display_width = @floatFromInt(width);
+        imgui.display_height = @floatFromInt(height);
         log.debug("Created IMGUI context (triple-buffered)", .{});
 
         // Initialize ImGuiRenderer
         const imgui_renderer = try ImGuiRenderer.init(
             &metal_renderer.device,
-            imgui_ctx.atlas.size,
+            imgui.atlas.size,
         );
 
         // Initialize NSApplication (must happen before showing window)
@@ -109,7 +109,7 @@ pub const Platform = struct {
             .window = window,
             .metal_renderer = metal_renderer,
             .displaylink = displaylink,
-            .imgui_ctx = imgui_ctx,
+            .imgui = imgui,
             .ui_renderer = imgui_renderer,
             .start_time = start_time,
         };
@@ -127,7 +127,7 @@ pub const Platform = struct {
     /// Stops display link, destroys IMGUI context, renderer, and window.
     pub fn deinit(self: *Platform) void {
         self.displaylink.deinit();
-        self.imgui_ctx.deinit();
+        self.imgui.deinit();
         self.ui_renderer.deinit();
 
         // Clean up decoders stored in sessions
@@ -140,7 +140,7 @@ pub const Platform = struct {
             }
         }
 
-        self.app.allocator.destroy(self.imgui_ctx);
+        self.app.allocator.destroy(self.imgui);
         self.metal_renderer.deinit();
         self.window.deinit();
 
@@ -196,7 +196,7 @@ fn renderUiFrame(self: *Platform) !void {
         break :blk fd;
     };
 
-    frame_decoder.ui_frame += 1;
+    self.imgui.frame_index += 1;
 
     //  Get drawable and render
     const drawable_ptr = self.window.getNextDrawable() orelse return;
@@ -208,7 +208,7 @@ fn renderUiFrame(self: *Platform) !void {
     const drawable_height = drawable_texture.getHeight();
 
     const backing_scale = self.window.getBackingScale();
-    self.imgui_ctx.backing_scale_factor = @floatCast(backing_scale);
+    self.imgui.backing_scale_factor = @floatCast(backing_scale);
 
     const display_width_pts = @as(f32, @floatFromInt(drawable_width)) / @as(
         f32,
@@ -218,8 +218,8 @@ fn renderUiFrame(self: *Platform) !void {
         f32,
         @floatCast(backing_scale),
     );
-    self.imgui_ctx.display_width = display_width_pts;
-    self.imgui_ctx.display_height = display_height_pts;
+    self.imgui.display_width = display_width_pts;
+    self.imgui.display_height = display_height_pts;
 
     var render_pass = metal.MetalRenderPassDescriptor.init();
     defer render_pass.deinit();
@@ -233,19 +233,20 @@ fn renderUiFrame(self: *Platform) !void {
     defer render_encoder.deinit();
 
     //  Build IMGUI frame
-    self.imgui_ctx.newFrame();
+    self.imgui.newFrame();
 
     // Get all mouse input (position, buttons, scroll)
     self.window.getMouse(
-        &self.imgui_ctx.mouse_x,
-        &self.imgui_ctx.mouse_y,
-        &self.imgui_ctx.mouse_down,
-        &self.imgui_ctx.mouse_middle_down,
-        &self.imgui_ctx.scroll_x,
-        &self.imgui_ctx.scroll_y,
+        &self.imgui.mouse_x,
+        &self.imgui.mouse_y,
+        &self.imgui.mouse_down,
+        &self.imgui.mouse_middle_down,
+        &self.imgui.scroll_x,
+        &self.imgui.scroll_y,
     );
 
-    try self.app.buildUi(self.imgui_ctx);
+    try self.app.buildUi(self.imgui);
+    try self.imgui.endFrame();
 
     // Decode the frame using session's monitor
     decodeVideoFrame(frame_decoder, session) catch {};
@@ -295,10 +296,9 @@ fn renderUiFrame(self: *Platform) !void {
     }
 
     // Layer 2: IMGUI
-    self.ui_renderer.upload(self.imgui_ctx);
+    self.ui_renderer.upload(self.imgui);
 
-    const imgui_index_count = self.imgui_ctx.getIndexCount();
-    if (imgui_index_count > 0) {
+    if (self.imgui.getIndexCount() > 0) {
         render_encoder.setPipeline(&self.metal_renderer.imgui_pipeline);
 
         const imgui_vb = self.ui_renderer.getVertexBuffer();
@@ -310,13 +310,28 @@ fn renderUiFrame(self: *Platform) !void {
             use_display_p3: bool,
         };
         const imgui_uniforms = ImGuiUniforms{
-            .screen_size = .{ self.imgui_ctx.display_width, self.imgui_ctx.display_height },
+            .screen_size = .{ self.imgui.display_width, self.imgui.display_height },
             .use_display_p3 = self.core.cfg.constants.metal_use_display_p3,
         };
         render_encoder.setVertexBytes(@ptrCast(&imgui_uniforms), @sizeOf(ImGuiUniforms), 1);
-
         render_encoder.setFragmentTexture(&self.ui_renderer.atlas_texture, 0);
-        render_encoder.drawIndexedPrimitives(.triangle, imgui_index_count, imgui_ib, 0);
+
+        // Iterate draw commands — each has its own clip rect and index range
+        for (self.imgui.draw_cmds.items) |cmd| {
+            if (cmd.elem_count == 0) continue;
+
+            // Convert clip rect (x, y, w, h in points) to pixel scissor
+            const sx: u32 = @intFromFloat(cmd.clip_rect[0] * backing_scale);
+            const sy: u32 = @intFromFloat(cmd.clip_rect[1] * backing_scale);
+            const sw: u32 = @intFromFloat(cmd.clip_rect[2] * backing_scale);
+            const sh: u32 = @intFromFloat(cmd.clip_rect[3] * backing_scale);
+            render_encoder.setScissorRect(sx, sy, sw, sh);
+
+            render_encoder.drawIndexedPrimitives(.triangle, cmd.elem_count, imgui_ib, cmd.index_offset * @sizeOf(u16));
+        }
+
+        // Reset scissor to full drawable
+        render_encoder.setScissorRect(0, 0, @intCast(drawable_width), @intCast(drawable_height));
     }
 
     render_encoder.end();

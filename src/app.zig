@@ -7,6 +7,7 @@ const Core = @import("core.zig").Core;
 const Session = @import("playback/session.zig").Session;
 const ui = @import("ui/ui.zig");
 const Viewer = @import("ui/viewer.zig").Viewer;
+const sources_panel = @import("ui/sources_panel.zig");
 
 pub const WindowConfig = union(enum) {
     maximised,
@@ -156,80 +157,6 @@ pub const App = struct {
         );
 
         //:INFO: SOURCES UI
-        var sources_vstack = ui.layout.VStack.init(
-            sources.x,
-            sources.y,
-            sources.w,
-            sources.h,
-            0,
-        );
-        const titlebar = sources_vstack.add(.{ .fill = 1.0 }, .{ .pixels = 20 }, 1.0);
-        const sources_pane = sources_vstack.add(.{ .fill = 1.0 }, .{ .fill = 1.0 }, 1.0);
-        sources_vstack.solve();
-
-        try imgui.textLabel(
-            titlebar.x,
-            titlebar.y,
-            titlebar.w,
-            titlebar.h,
-            "Sources",
-            transparent,
-            .{ 255, 255, 255, 255 },
-            .left,
-        );
-
-        // List all sources as clickable buttons
-        const row_height: f32 = 24.0;
-        const source_keys = self.core.sources.map.keys();
-        const source_values = self.core.sources.map.values();
-
-        for (source_keys, source_values, 0..) |uuid, sm, i| {
-            const y_offset = sources_pane.y + @as(f32, @floatFromInt(i)) * row_height;
-
-            // Highlight if this is the current session's source
-            const is_selected = if (current_source == sm) true else false;
-            const bg_color = if (is_selected)
-                ui.ImGui.packColor(0.3, 0.3, 0.5, 1.0)
-            else
-                transparent;
-
-            // Use unique ID based on index (offset to avoid collision with other widgets)
-            const button_id: u32 = 1000 + @as(u32, @intCast(i));
-
-            // Draw selection background
-            if (is_selected) {
-                try imgui.addRect(sources_pane.x, y_offset, sources_pane.w, row_height, bg_color);
-            }
-
-            if (try imgui.textButton(
-                button_id,
-                sources_pane.x,
-                y_offset,
-                sources_pane.w,
-                row_height,
-                sm.file_name,
-            )) {
-                // Switch to this source
-                if (self.core.sessions.get(uuid)) |existing| {
-                    source_viewer.session = existing;
-                } else {
-                    const new_session = try self.allocator.create(Session);
-                    new_session.* = .{ .source = undefined };
-                    try new_session.source.init(sm, self.io, self.allocator);
-                    try self.core.sessions.put(self.allocator, uuid, new_session);
-                    source_viewer.session = new_session;
-                }
-            }
-        }
-
-        // Outlines
-        try imgui.addRectOutline(
-            sources.x,
-            sources.y,
-            sources.w,
-            sources.h,
-            ui.ImGui.packColor(1, 1, 1, 1),
-            0.5,
-        );
+        try sources_panel.draw(imgui, sources, self.core, current_source, source_viewer, self.allocator, self.io);
     }
 };

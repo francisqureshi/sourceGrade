@@ -30,6 +30,7 @@ pub const ImVertex = extern struct {
 /// Draw command for batched rendering
 /// Each command represents a group of primitives with the same state
 pub const ImDrawCmd = struct {
+    index_offset: u32, // First index in the index buffer for this command
     elem_count: u32, // Number of indices
     clip_rect: [4]f32, // Clipping rectangle (x, y, width, height)
     texture_id: ?*anyopaque, // Optional texture binding
@@ -60,6 +61,12 @@ const FontEntry = struct {
     }
 };
 
+const WidgetState = struct {
+    scroll_x: f32,
+    scroll_y: f32,
+    last_frame_touched: usize,
+};
+
 /// Main immediate-mode GUI context
 /// Manages dynamic vertex/index buffers and UI state
 pub const ImGui = struct {
@@ -71,6 +78,7 @@ pub const ImGui = struct {
     draw_cmds: std.ArrayList(ImDrawCmd),
 
     // UI state tracking (immediate-mode pattern)
+    frame_index: usize,
     hot_id: u32, // Widget under mouse cursor
     active_id: u32, // Widget being interacted with
     mouse_x: f32,
@@ -80,6 +88,10 @@ pub const ImGui = struct {
     mouse_middle_down: bool,
     scroll_x: f32,
     scroll_y: f32,
+
+    scroll_view_index_start: u32, // index count at beginScrollView, for clip cmd sizing
+
+    widget_cache: std.AutoHashMap(u32, WidgetState),
 
     // Screen dimensions for coordinate mapping
     display_width: f32,
@@ -122,6 +134,7 @@ pub const ImGui = struct {
             .vertices = std.ArrayList(ImVertex).empty,
             .indices = std.ArrayList(u16).empty,
             .draw_cmds = std.ArrayList(ImDrawCmd).empty,
+            .frame_index = 0,
             .hot_id = 0,
             .active_id = 0,
             .mouse_x = 0,
@@ -131,6 +144,8 @@ pub const ImGui = struct {
             .mouse_middle_down = false,
             .scroll_x = 0,
             .scroll_y = 0,
+            .scroll_view_index_start = 0,
+            .widget_cache = std.AutoHashMap(u32, WidgetState).init(allocator),
             .display_width = 1600,
             .display_height = 900,
             .backing_scale_factor = 1.0,
@@ -162,6 +177,8 @@ pub const ImGui = struct {
         self.vertices.deinit(self.allocator);
         self.indices.deinit(self.allocator);
         self.draw_cmds.deinit(self.allocator);
+
+        self.widget_cache.deinit();
     }
 
     /// Call at the start of each frame to reset buffers
@@ -170,18 +187,117 @@ pub const ImGui = struct {
         self.vertices.clearRetainingCapacity();
         self.indices.clearRetainingCapacity();
         self.draw_cmds.clearRetainingCapacity();
+        self.scroll_view_index_start = 0;
         self.hot_id = 0; // Reset hot tracking (active persists across frames)
     }
 
     /// Call after buildUI() to finalise the frame's draw command.
-    /// Creates one draw cmd covering all accumulated geometry with a full-screen scissor.
+    /// Seals the final batch covering any geometry after the last endScrollView.
     pub fn endFrame(self: *ImGui) !void {
         if (self.indices.items.len == 0) return;
+        const remaining = @as(u32, @intCast(self.indices.items.len)) - self.scroll_view_index_start;
+        if (remaining > 0) {
+            try self.draw_cmds.append(self.allocator, .{
+                .index_offset = self.scroll_view_index_start,
+                .elem_count = remaining,
+                .clip_rect = .{ 0, 0, self.display_width, self.display_height },
+                .texture_id = null,
+            });
+        }
+
+        // Prune widget cache entries that haven't been touched in 9 frames.
+        const prune_threshold = 9;
+        var iter = self.widget_cache.iterator();
+
+        var pruned_keys = std.ArrayList(u32).empty;
+        defer pruned_keys.deinit(self.allocator);
+
+        while (iter.next()) |entry| {
+            if (self.frame_index - entry.value_ptr.last_frame_touched > prune_threshold) {
+                try pruned_keys.append(self.allocator, entry.key_ptr.*);
+            }
+        }
+
+        for (pruned_keys.items) |key| {
+            _ = self.widget_cache.remove(key);
+        }
+
+        self.frame_index += 1;
+    }
+
+    /// Look up or create a widget's persistent state by ID.
+    /// Stamps last_frame_touched so the entry survives pruning this frame.
+    pub fn getOrPutWidgetState(self: *ImGui, id: u32) !*WidgetState {
+        const result = try self.widget_cache.getOrPut(id);
+        if (!result.found_existing) {
+            result.value_ptr.* = .{
+                .scroll_x = 0,
+                .scroll_y = 0,
+                .last_frame_touched = self.frame_index,
+            };
+        } else {
+            result.value_ptr.last_frame_touched = self.frame_index;
+        }
+        return result.value_ptr;
+    }
+
+    /// Begin a scrollable region. Returns the current scroll_y offset.
+    /// Caller subtracts scroll_y from all child y coordinates.
+    /// Call endScrollView() after drawing children.
+    pub fn beginScrollView(
+        self: *ImGui,
+        id: u32,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        content_height: f32,
+    ) !f32 {
+        const state = try self.getOrPutWidgetState(id);
+
+        // Accumulate scroll wheel input if mouse is over this region
+        const mouse_over = self.mouse_x >= x and self.mouse_x < x + w and
+            self.mouse_y >= y and self.mouse_y < y + h;
+        if (mouse_over and self.scroll_y != 0) {
+            const max_scroll = @max(0.0, content_height - h);
+            state.scroll_y -= self.scroll_y * 3.0;
+            state.scroll_y = std.math.clamp(state.scroll_y, 0.0, max_scroll);
+        }
+
+        const current_idx: u32 = @intCast(self.indices.items.len);
+
+        // Seal the pre-scroll batch with full-screen clip
+        if (current_idx > self.scroll_view_index_start) {
+            try self.draw_cmds.append(self.allocator, .{
+                .index_offset = self.scroll_view_index_start,
+                .elem_count = current_idx - self.scroll_view_index_start,
+                .clip_rect = .{ 0, 0, self.display_width, self.display_height },
+                .texture_id = null,
+            });
+        }
+
+        // Record where scroll view content starts
+        self.scroll_view_index_start = current_idx;
+
+        // Push clipped draw command — elem_count filled in by endScrollView
         try self.draw_cmds.append(self.allocator, .{
-            .elem_count = @intCast(self.indices.items.len),
-            .clip_rect = .{ 0, 0, 10000, 10000 },
+            .index_offset = current_idx,
+            .elem_count = 0,
+            .clip_rect = .{ x, y, w, h },
             .texture_id = null,
         });
+
+        return state.scroll_y;
+    }
+
+    /// End a scrollable region started with beginScrollView.
+    pub fn endScrollView(self: *ImGui) void {
+        if (self.draw_cmds.items.len == 0) return;
+        const current_idx: u32 = @intCast(self.indices.items.len);
+        const cmd = &self.draw_cmds.items[self.draw_cmds.items.len - 1];
+        cmd.elem_count = current_idx - cmd.index_offset;
+        // Advance cursor so endFrame only seals geometry added after this point
+        self.scroll_view_index_start = current_idx;
     }
 
     /// Add a filled triangle to the current frame's geometry, xy is first point, other points followed are relative.

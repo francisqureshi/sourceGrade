@@ -96,7 +96,6 @@ pub const Sources = struct {
 
         while (try mapper.next()) |db_source| {
             const uuid: [16]u8 = db_source.id[0..16].*;
-            std.debug.print("uuid: {any}\n", .{uuid});
 
             // Heap allocate hydrated to SourcePoolAllocator
             const source_media = try allocator.create(media.SourceMedia);

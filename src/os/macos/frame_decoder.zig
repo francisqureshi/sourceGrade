@@ -23,9 +23,6 @@ pub const FrameDecoder = struct {
     /// Platform-specific video decoder (VideoToolbox on macOS).
     decoder: videotoolbox.Decoder,
 
-    /// UI frame counter.
-    ui_frame: usize,
-
     /// Decoded frame resources - kept alive between vsync callbacks.
     packed_metal_texture: ?metal.MetalTexture,
     decoded_frame_buffer: ?DecodedFrame,
@@ -52,7 +49,6 @@ pub const FrameDecoder = struct {
             .source_media = source_media,
             .decoder = decoder,
             .decoded_frame_buffer = null,
-            .ui_frame = 0,
             .packed_metal_texture = null,
             .texture_set_holder = null,
         };
