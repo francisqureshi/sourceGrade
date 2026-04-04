@@ -648,7 +648,7 @@ pub const ImGui = struct {
         }.f;
 
         // Thumb dimensions
-        const playhead_width: f32 = 4;
+        const playhead_width: f32 = 3;
         const io_width: f32 = 2;
 
         // Calculate positions
@@ -672,8 +672,6 @@ pub const ImGui = struct {
         if (self.active_id == playhead_id) {
             if (self.mouse_down) {
                 curr_frame.* = xToFrame(self.mouse_x, x, w, min_val, range_f);
-                // Clamp playhead between in and out points
-                // curr_frame.* = std.math.clamp(curr_frame.*, in_point.*, out_point.*);
                 val_changed = true;
             } else {
                 self.active_id = 0;
@@ -732,10 +730,19 @@ pub const ImGui = struct {
         const track_height = h * 0.2;
         const track_y = y + (h - track_height) / 2;
         const track_color = packColor(0.4, 0.4, 0.4, 1.0);
-        try self.addRect(x, track_y, w, track_height, track_color);
+        const track_alt_color = packColor(0.8, 0.8, 0.8, 1.0);
+        if (@as(f32, @floatFromInt(max_val)) < (w / 3)) {
+            try self.addRect(x, track_y, w, track_height, track_color);
+            for (0..(max_val)) |frm| {
+                const notch_x = frameToX(frm, min_val, range_f, x, w);
+                try self.addRect(notch_x, track_y, 1, track_height, track_alt_color);
+            }
+        } else {
+            try self.addRect(x, track_y, w, track_height, track_color);
+        }
 
         // Draw in/out region (highlighted area between in and out)
-        const region_color = packColor(0.7, 0.7, 0.7, 1.0);
+        const region_color = packColor(0.7, 0.7, 0.7, 0.3);
         try self.addRect(in_x, track_y, out_x - in_x, track_height, region_color);
 
         // Draw in point (thin line)

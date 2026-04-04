@@ -20,7 +20,6 @@ pub const Viewer = struct {
     last_mouse_y: f32 = 0,
 
     /// The session being displayed (not owned)
-    /// null = no session loaded (shows placeholder)
     session: ?*Session,
 
     /// Check if mouse is within viewer bounds

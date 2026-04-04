@@ -51,7 +51,7 @@ pub const SourceSession = struct {
     /// Initialize a pre-allocated SourceSession.
     pub fn init(self: *SourceSession, source: *SourceMedia, io: Io, allocator: Allocator) !void {
         self.source = source;
-        self.playback = Playback.init(0, source.duration_in_frames, source.duration_in_frames);
+        self.playback = Playback.init(0, source.duration_in_frames - 1, source.duration_in_frames);
         self.decoder = null;
 
         // Monitor references &self.playback - stable because self is heap-allocated
