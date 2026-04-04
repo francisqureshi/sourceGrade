@@ -2,7 +2,7 @@ const std = @import("std");
 const Io = std.Io;
 
 const Playback = @import("playback.zig").Playback;
-const Rational = @import("../io/media/media.zig").Rational;
+const Rational = @import("../io/units.zig").Rational;
 
 /// VideoMonitor - Push model video playback monitor
 ///

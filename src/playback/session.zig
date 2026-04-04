@@ -71,8 +71,6 @@ pub const SourceSession = struct {
     }
 };
 
-/// TimelineSession: runtime state for viewing a timeline (sequence of clips).
-/// Stub for now - will resolve frame index to appropriate source + offset.
 pub const TimelineSession = struct {
     /// The timeline being viewed (not owned) - TODO: Timeline type
     // timeline: *Timeline,
@@ -86,7 +84,8 @@ pub const TimelineSession = struct {
     /// Platform-specific decoder - lazy initialized (owned, optional)
     decoder: ?*anyopaque,
 
-    /// TODO: Clip list for resolving frames
+    /// WARN:: Psudeo llm stub code...
+    /// TODO: Clip list for resolving frames - At bet really this is a 'Source Tape/Reel' not a Timeline.
     /// clips: []Clip,
     /// Initialize a pre-allocated TimelineSession.
     pub fn init(self: *TimelineSession, duration_frames: i64, frame_rate: *const @import("../io/media/media.zig").Rational, io: Io, allocator: Allocator) !void {

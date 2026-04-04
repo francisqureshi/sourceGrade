@@ -2,6 +2,9 @@ const std = @import("std");
 const smpte = @import("smpte");
 const mov = @import("mov.zig");
 
+const Resolution = @import("../units.zig").Resolution;
+const Rational = @import("../units.zig").Rational;
+
 const assert = std.debug.assert;
 
 const Allocator = std.mem.Allocator;
@@ -36,16 +39,6 @@ pub fn Attr(comptime T: type) type {
     };
 }
 
-pub const Resolution = struct {
-    width: usize,
-    height: usize,
-};
-
-pub const Rational = struct {
-    num: usize,
-    den: usize,
-};
-
 pub const SourceMedia = struct {
     mctx: Media,
     file_path: []const u8,
@@ -76,20 +69,20 @@ pub const SourceMedia = struct {
         errdefer file.close(io);
 
         // Create media context
-        const mctx = Media{ .file = file, .io = io, .allocator = allocator };
+        const media = Media{ .file = file, .io = io, .allocator = allocator };
 
-        const file_path = try mctx.allocator.dupe(u8, fp);
-        errdefer mctx.allocator.free(file_path);
+        const file_path = try media.allocator.dupe(u8, fp);
+        errdefer media.allocator.free(file_path);
 
-        const file_name = try mctx.allocator.dupe(u8, std.fs.path.basename(fp));
-        errdefer mctx.allocator.free(file_name);
+        const file_name = try media.allocator.dupe(u8, std.fs.path.basename(fp));
+        errdefer media.allocator.free(file_name);
 
-        const tracks = try mov.parseMovFile(mctx.io, mctx.allocator, mctx.file, false);
+        const tracks = try mov.parseMovFile(media.io, media.allocator, media.file, false);
         defer {
             for (tracks) |*track| {
-                track.deinit(mctx.allocator);
+                track.deinit(media.allocator);
             }
-            mctx.allocator.free(tracks);
+            media.allocator.free(tracks);
         }
 
         // Single pass through tracks to extract all metadata
@@ -110,14 +103,14 @@ pub const SourceMedia = struct {
         const resolution = Resolution{ .width = vi.width, .height = vi.height };
 
         const codec_array = vi.codec;
-        const codec = try mctx.allocator.dupe(u8, &codec_array);
-        errdefer mctx.allocator.free(codec);
+        const codec = try media.allocator.dupe(u8, &codec_array);
+        errdefer media.allocator.free(codec);
 
         const stsd_data = if (vt.stsd_data) |data|
-            try mctx.allocator.dupe(u8, data)
+            try media.allocator.dupe(u8, data)
         else
             return error.NoStsdData;
-        errdefer mctx.allocator.free(stsd_data);
+        errdefer media.allocator.free(stsd_data);
 
         const frame_duration = if (stts.len > 0) stts[0].sample_duration else return error.NoFrameDuration;
         const frame_rate: Attr(Rational) = .{ .original = Rational{ .num = mdhd.timescale, .den = frame_duration } };
@@ -140,13 +133,13 @@ pub const SourceMedia = struct {
         var start_tc_buf: [32]u8 = undefined;
 
         const start_timecode_slice = try smpte_calc.getTC(start_frame_number, &start_tc_buf);
-        const start_timecode = try mctx.allocator.dupe(u8, start_timecode_slice);
-        errdefer mctx.allocator.free(start_timecode);
+        const start_timecode = try media.allocator.dupe(u8, start_timecode_slice);
+        errdefer media.allocator.free(start_timecode);
 
         // Build frame index from video track
         const frames = if (vt.sizes != null and vt.chunk_offsets != null and vt.stsc_entries != null)
             try mov.buildFrameIndex(
-                mctx.allocator,
+                media.allocator,
                 vt.sizes.?,
                 vt.chunk_offsets.?,
                 vt.stsc_entries.?,
@@ -165,11 +158,11 @@ pub const SourceMedia = struct {
 
         var end_tc_buf: [32]u8 = undefined;
         const end_timecode_slice = try smpte_calc.getTC(end_frame_number, &end_tc_buf);
-        const end_timecode = try mctx.allocator.dupe(u8, end_timecode_slice);
-        errdefer mctx.allocator.free(end_timecode);
+        const end_timecode = try media.allocator.dupe(u8, end_timecode_slice);
+        errdefer media.allocator.free(end_timecode);
 
         return .{
-            .mctx = mctx,
+            .mctx = media,
             .file_name = file_name,
             .file_path = file_path,
             .db_uuid = null,
