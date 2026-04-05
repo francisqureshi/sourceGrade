@@ -6,6 +6,7 @@ const Config = @import("config.zig").Config;
 const Database = @import("io/db/database.zig").Database;
 const SourceMedia = @import("io/media/media.zig").SourceMedia;
 const Sources = @import("io/media/sources.zig").Sources;
+const Timeline = @import("io/timeline/timeline.zig").Timeline;
 const ProjectManager = @import("io/project/project_manager.zig").ProjectManager;
 const Session = @import("playback/session.zig").Session;
 
@@ -20,6 +21,7 @@ pub const Core = struct {
     database: *Database,
     project_manager: *ProjectManager,
     sources: *Sources,
+    timelines: std.AutoArrayHashMapUnmanaged([16]u8, *Timeline),
 
     /// Active sessions (UUID -> Session)
     /// Sessions are created on-demand when a viewer loads a source
@@ -89,11 +91,17 @@ pub const Core = struct {
             .project_manager = project_manager,
             .sources = sources,
             .sessions = std.AutoArrayHashMapUnmanaged([16]u8, *Session).empty,
+            .timelines = std.AutoArrayHashMapUnmanaged([16]u8, *Timeline).empty,
         };
     }
 
     pub fn deinit(self: *Core) void {
-        // Clean up all sessions
+        for (self.timelines.values()) |timeline| {
+            timeline.deinit();
+            self.allocator.destroy(timeline);
+        }
+        self.timelines.deinit(self.allocator);
+
         for (self.sessions.values()) |session| {
             session.deinit();
             self.allocator.destroy(session);

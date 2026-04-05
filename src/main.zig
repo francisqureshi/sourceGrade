@@ -28,6 +28,9 @@ pub fn main(init: std.process.Init.Minimal) !void {
     var app = try App.init(allocator, io, &core);
     defer app.deinit();
 
+    // _Dev
+    try dev.testTimeline(&core);
+
     // Run via specific Platform:
     var platform = try Platform.init(&app, &core);
     defer platform.deinit();
